@@ -1,0 +1,68 @@
+[package]
+name = "bulletproofs"
+# Before doing a release:
+# - update version field 
+# - update html_root_url
+# - ensure yoloproofs was disabled in an atomic (revertable) commit
+# - update CHANGELOG
+version = "2.0.0"
+authors = ["Cathie Yun <cathieyun@gmail.com>", 
+           "Henry de Valence <hdevalence@hdevalence.ca>",
+           "Oleg Andreev <oleganza@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/dalek-cryptography/bulletproofs"
+categories = ["cryptography"]
+keywords = ["cryptography", "crypto", "ristretto", "zero-knowledge", "bulletproofs"]
+description = "A pure-Rust implementation of Bulletproofs using Ristretto"
+edition = "2018"
+
+[dependencies]
+sha3 = { version = "0.9.1", default-features = false }
+digest = { version = "0.9.0", default-features = false }
+rand_core = { version = "0.5", default-features = false, features = ["alloc"] }
+rand = { version = "0.8", default-features = false, optional = true }
+byteorder = { version = "1", default-features = false }
+serde = { version = "1", default-features = false, features = ["alloc"] }
+serde_derive = { version = "1", default-features = false }
+thiserror = { version = "1", optional = true }
+merlin = { version = "2", default-features = false }
+clear_on_drop = { version = "0.2", default-features = false }
+ark-ec = { version = "0.3.0", features = ["parallel"] }
+ark-ff = { version = "0.3.0", features = ["parallel", "asm"] }
+ark-serialize = { version = "0.3.0" } 
+ark-std = { version = "0.3.0" } 
+rust-crypto = "^0.2"
+
+[dev-dependencies]
+hex = "0.3"
+criterion = "0.3"
+bincode = "1"
+rand_chacha = "0.2"
+ark-algebra-test-templates = "0.3.0"
+ark-std = "0.3.0"
+
+[features]
+default = ["std", "yoloproofs"]
+yoloproofs = []
+std = ["rand", "rand/std", "thiserror"]
+nightly = ["clear_on_drop/nightly"]
+docs = ["nightly"]
+
+[[test]]
+name = "r1cs"
+required-features = ["yoloproofs"]
+
+[[bench]]
+name = "range_proof"
+harness = false
+required-features = ["avx2_backend"]
+
+[[bench]]
+name = "generators"
+harness = false
+
+[[bench]]
+name = "r1cs"
+harness = false
+required-features = ["yoloproofs"]
