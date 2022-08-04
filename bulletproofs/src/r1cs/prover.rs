@@ -6,7 +6,7 @@ use core::borrow::BorrowMut;
 use core::mem;
 use ark_ec::{AffineCurve, msm::VariableBaseMSM};
 use ark_ff::{Field, PrimeField};
-use ark_std::{Zero, One, UniformRand, test_rng};
+use ark_std::{Zero, One, UniformRand};
 use merlin::Transcript;
 
 use super::proof::R1CSProof;
@@ -454,7 +454,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // We are performing a single-party circuit proof, so party index is 0.
         let gens = bp_gens.share(0);
 
-        let mut rng = rand::thread_rng(); // todo
+        let mut rng = rand::thread_rng();
         let i_blinding1 = C::ScalarField::rand(&mut rng);
         let o_blinding1 = C::ScalarField::rand(&mut rng);
         let s_blinding1 = C::ScalarField::rand(&mut rng);

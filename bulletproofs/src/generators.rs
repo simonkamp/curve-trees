@@ -53,10 +53,7 @@ impl<C: AffineCurve> Default for PedersenGens<C> {
         basepoint.write(&mut buffer);
         PedersenGens {
             B: C::prime_subgroup_generator(),
-            B_blinding: util::affine_from_bytes_tai(&buffer), // todo not sha3_512
-            // B_blinding: RistrettoPoint::hash_from_bytes::<Sha3_512>(
-            //     RISTRETTO_BASEPOINT_COMPRESSED.as_bytes(),
-            // ), 
+            B_blinding: util::affine_from_bytes_tai(&buffer),
         }
     }
 }

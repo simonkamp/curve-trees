@@ -19,7 +19,7 @@ extern crate rand;
 
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens, pallas::Affine};
-use ark_std::{UniformRand, test_rng};
+use ark_std::{UniformRand};
 use ark_ec::{AffineCurve};
 use merlin::Transcript;
 use rand::seq::SliceRandom;
@@ -102,7 +102,7 @@ impl ShuffleProof {
 
         // Construct blinding factors using an RNG.
         // Note: a non-example implementation would want to operate on existing commitments.
-        let mut blinding_rng = test_rng(); // todo rng
+        let mut blinding_rng = rand::thread_rng();
 
         let (input_commitments, input_vars): (Vec<_>, Vec<_>) = input
             .into_iter()

@@ -5,7 +5,7 @@ extern crate merlin;
 extern crate rand;
 
 use ark_ec::{AffineCurve};
-use ark_std::{One, UniformRand, test_rng};
+use ark_std::{One, UniformRand};
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
 use bulletproofs::pasta::pallas::Affine;
@@ -86,20 +86,18 @@ impl<C: AffineCurve> ShuffleProof<C> {
 
         let mut prover = Prover::new(&pc_gens, transcript);
 
-        // // Construct blinding factors using an RNG.
-        // // Note: a non-example implementation would want to operate on existing commitments.
-        // let mut blinding_rng = rand::thread_rng();
-        let mut rng = test_rng(); // todo
+        // Construct blinding factors using an RNG.
+        // Note: a non-example implementation would want to operate on existing commitments.
+        let mut blinding_rng = rand::thread_rng();
 
         let (input_commitments, input_vars): (Vec<_>, Vec<_>) = input
             .into_iter()
-            .map(|v| prover.commit(*v, C::ScalarField::rand(&mut rng)))
+            .map(|v| prover.commit(*v, C::ScalarField::rand(&mut blinding_rng)))
             .unzip();
-
-        let (output_commitments, output_vars): (Vec<_>, Vec<_>) = output
+            
+            let (output_commitments, output_vars): (Vec<_>, Vec<_>) = output
             .into_iter()
-            // .map(|v| prover.commit(*v, Scalar::random(&mut blinding_rng)))
-            .map(|v| prover.commit(*v, C::ScalarField::one()))
+            .map(|v| prover.commit(*v, C::ScalarField::rand(&mut blinding_rng)))
             .unzip();
 
         ShuffleProof::gadget(&mut prover, input_vars, output_vars)?;
@@ -257,7 +255,7 @@ fn example_gadget_proof<C: AffineCurve>(
     let mut prover = Prover::new(pc_gens, &mut transcript);
 
     // 2. Commit high-level variables
-    let mut rng = ark_std::test_rng();
+    let mut rng = rand::thread_rng();
     let (commitments, vars): (Vec<_>, Vec<_>) = [a1, a2, b1, b2, c1]
         .iter()
         .map(|x| prover.commit(C::ScalarField::from(*x), C::ScalarField::rand(&mut rng)))
@@ -433,7 +431,7 @@ fn range_proof_helper<C: AffineCurve>(v_val: u64, n: usize) -> Result<(), R1CSEr
     let (proof, commitment) = {
         // Prover makes a `ConstraintSystem` instance representing a range proof gadget
         let mut prover_transcript = Transcript::new(b"RangeProofTest");
-        let mut rng = test_rng();
+        let mut rng = rand::thread_rng();
 
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 

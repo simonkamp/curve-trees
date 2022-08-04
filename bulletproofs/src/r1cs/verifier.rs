@@ -6,7 +6,7 @@ use core::mem;
 use merlin::Transcript;
 use ark_ec::{AffineCurve, msm::VariableBaseMSM};
 use ark_ff::{Field, PrimeField};
-use ark_std::{Zero, One, UniformRand, test_rng};
+use ark_std::{Zero, One, UniformRand};
 
 use super::proof::R1CSProof;
 use super::linear_combination::{LinearCombination, Variable};
@@ -467,7 +467,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         //     .borrow_mut()
         //     .build_rng()
         //     .finalize(&mut thread_rng());
-        let mut rng = test_rng(); //todo
+        let mut rng = rand::thread_rng();
         let r = C::ScalarField::rand(&mut rng);
         let xx = x * x;
         let rxx = r * xx;
