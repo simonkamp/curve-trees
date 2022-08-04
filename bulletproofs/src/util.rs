@@ -5,9 +5,9 @@ extern crate alloc;
 
 use alloc::vec;
 use alloc::vec::Vec;
-use clear_on_drop::clear::Clear;
 use ark_ec::AffineCurve;
-use ark_ff::{Field};
+use ark_ff::Field;
+use clear_on_drop::clear::Clear;
 
 use crate::inner_product_proof::inner_product;
 
@@ -17,12 +17,7 @@ pub struct VecPoly1<F: Field>(pub Vec<F>, pub Vec<F>);
 /// Represents a degree-3 vector polynomial
 /// \\(\mathbf{a} + \mathbf{b} \cdot x + \mathbf{c} \cdot x^2 + \mathbf{d} \cdot x^3 \\).
 #[cfg(feature = "yoloproofs")]
-pub struct VecPoly3<F: Field>(
-    pub Vec<F>,
-    pub Vec<F>,
-    pub Vec<F>,
-    pub Vec<F>,
-);
+pub struct VecPoly3<F: Field>(pub Vec<F>, pub Vec<F>, pub Vec<F>, pub Vec<F>);
 
 /// Represents a degree-2 scalar polynomial \\(a + b \cdot x + c \cdot x^2\\)
 pub struct Poly2<F: Field>(pub F, pub F, pub F);
@@ -282,7 +277,7 @@ pub fn affine_from_bytes_tai<C: AffineCurve>(bytes: &[u8]) -> C {
         sha.result(&mut buf);
         let res = C::from_random_bytes(&buf);
         if let Some(point) = res {
-            return point
+            return point;
         }
     }
     panic!()

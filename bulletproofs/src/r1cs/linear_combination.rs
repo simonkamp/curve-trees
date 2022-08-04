@@ -44,13 +44,11 @@ impl<F: Field> From<F> for LinearCombination<F> {
     }
 }
 
-
 pub fn constant<F: Field, I: Into<F>>(c: I) -> LinearCombination<F> {
     LinearCombination {
         terms: vec![(Variable::One(PhantomData), c.into())],
     }
 }
-
 
 // Arithmetic on variables produces linear combinations
 
@@ -174,8 +172,12 @@ impl<F: Field, L: Into<LinearCombination<F>>> Sub<L> for LinearCombination<F> {
     type Output = Self;
 
     fn sub(mut self, rhs: L) -> Self::Output {
-        self.terms
-            .extend(rhs.into().terms.iter().map(|(var, coeff)| (*var, -(*coeff))));
+        self.terms.extend(
+            rhs.into()
+                .terms
+                .iter()
+                .map(|(var, coeff)| (*var, -(*coeff))),
+        );
         LinearCombination { terms: self.terms }
     }
 }

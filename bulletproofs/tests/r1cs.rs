@@ -4,11 +4,11 @@ extern crate bulletproofs;
 extern crate merlin;
 extern crate rand;
 
-use ark_ec::{AffineCurve};
+use ark_ec::AffineCurve;
 use ark_std::{One, UniformRand};
+use bulletproofs::pasta::pallas::Affine;
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
-use bulletproofs::pasta::pallas::Affine;
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 
@@ -70,14 +70,7 @@ impl<C: AffineCurve> ShuffleProof<C> {
         transcript: &'a mut Transcript,
         input: &[C::ScalarField],
         output: &[C::ScalarField],
-    ) -> Result<
-        (
-            ShuffleProof<C>,
-            Vec<C>,
-            Vec<C>,
-        ),
-        R1CSError,
-    > {
+    ) -> Result<(ShuffleProof<C>, Vec<C>, Vec<C>), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
         let k = input.len();
@@ -94,8 +87,8 @@ impl<C: AffineCurve> ShuffleProof<C> {
             .into_iter()
             .map(|v| prover.commit(*v, C::ScalarField::rand(&mut blinding_rng)))
             .unzip();
-            
-            let (output_commitments, output_vars): (Vec<_>, Vec<_>) = output
+
+        let (output_commitments, output_vars): (Vec<_>, Vec<_>) = output
             .into_iter()
             .map(|v| prover.commit(*v, C::ScalarField::rand(&mut blinding_rng)))
             .unzip();
@@ -323,7 +316,8 @@ fn example_gadget_roundtrip_helper<C: AffineCurve>(
     let pc_gens = PedersenGens::<C>::default();
     let bp_gens = BulletproofGens::<C>::new(128, 1);
 
-    let (proof, commitments) = example_gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, b1, b2, c1, c2)?;
+    let (proof, commitments) =
+        example_gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, b1, b2, c1, c2)?;
 
     example_gadget_verify::<C>(&pc_gens, &bp_gens, c2, proof, commitments)
 }
@@ -351,7 +345,6 @@ fn example_gadget_roundtrip_helper<C: AffineCurve>(
 
 #[test]
 fn example_gadget_test() {
-
     // (3 + 4) * (6 + 1) = (40 + 9)
     assert!(example_gadget_roundtrip_helper::<Affine>(3, 4, 6, 1, 40, 9).is_ok());
     // (3 + 4) * (6 + 1) != (40 + 10)

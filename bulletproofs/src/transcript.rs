@@ -1,12 +1,11 @@
 //! Defines a `TranscriptProtocol` trait for using a Merlin transcript.
 
-use merlin::Transcript;
 use ark_ec::AffineCurve;
-use ark_ff::{Field};
+use ark_ff::Field;
+use merlin::Transcript;
 
 use crate::errors::ProofError;
 use crate::util;
-
 
 pub trait TranscriptProtocol {
     /// Append a domain separator for an `n`-bit, `m`-party range proof.
@@ -41,7 +40,6 @@ pub trait TranscriptProtocol {
     /// Compute a `label`ed challenge variable.
     fn challenge_scalar<C: AffineCurve>(&mut self, label: &'static [u8]) -> C::ScalarField;
 }
-
 
 impl TranscriptProtocol for Transcript {
     fn rangeproof_domain_sep(&mut self, n: u64, m: u64) {
@@ -114,7 +112,7 @@ impl TranscriptProtocol for Transcript {
             let res = <C::ScalarField as Field>::from_random_bytes(&buf);
 
             if let Some(scalar) = res {
-                return scalar
+                return scalar;
             }
         }
         panic!()

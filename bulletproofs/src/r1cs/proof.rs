@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 //! Definition of the proof struct.
 
-use ark_ec::{AffineCurve};
-use ark_std::{Zero};
+use ark_ec::AffineCurve;
+use ark_std::Zero;
 
 use crate::errors::R1CSError;
 use crate::inner_product_proof::InnerProductProof;

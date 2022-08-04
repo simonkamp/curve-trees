@@ -6,13 +6,15 @@ extern crate alloc;
 use alloc::borrow::Borrow;
 use alloc::vec::Vec;
 
-use core::iter;
-use ark_ff::{Field, fields::{PrimeField, batch_inversion}};
-use ark_ec::{AffineCurve, msm::VariableBaseMSM};
-use ark_std::{UniformRand, One, Zero};
-use merlin::Transcript;
+use ark_ec::{msm::VariableBaseMSM, AffineCurve};
+use ark_ff::{
+    fields::{batch_inversion, PrimeField},
+    Field,
+};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-
+use ark_std::{One, UniformRand, Zero};
+use core::iter;
+use merlin::Transcript;
 
 use crate::errors::ProofError;
 use crate::transcript::TranscriptProtocol;
@@ -86,50 +88,57 @@ impl<C: AffineCurve> InnerProductProof<C> {
             let c_L = inner_product(&a_L, &b_R);
             let c_R = inner_product(&a_R, &b_L);
 
-            let l_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = 
-                a_L.iter()
-                    .zip(G_factors[n..2 * n].into_iter())
-                    .map(|(a_L_i, g)| *a_L_i * g)
-                    .chain(
-                        b_R.iter()
-                            .zip(H_factors[0..n].into_iter())
-                            .map(|(b_R_i, h)| *b_R_i * h),
-                    )
-                    .chain(iter::once(c_L))
-                    .map(|s| s.into())
-                    .collect();
-            let l_points: Vec<C>  = G_R.iter().chain(H_L.iter()).chain(iter::once(Q)).cloned().collect();
-            let L = VariableBaseMSM::multi_scalar_mul(
-                l_points.as_slice(),
-                l_scalars.as_slice(),
-            ).into();
+            let l_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = a_L
+                .iter()
+                .zip(G_factors[n..2 * n].into_iter())
+                .map(|(a_L_i, g)| *a_L_i * g)
+                .chain(
+                    b_R.iter()
+                        .zip(H_factors[0..n].into_iter())
+                        .map(|(b_R_i, h)| *b_R_i * h),
+                )
+                .chain(iter::once(c_L))
+                .map(|s| s.into())
+                .collect();
+            let l_points: Vec<C> = G_R
+                .iter()
+                .chain(H_L.iter())
+                .chain(iter::once(Q))
+                .cloned()
+                .collect();
+            let L =
+                VariableBaseMSM::multi_scalar_mul(l_points.as_slice(), l_scalars.as_slice()).into();
 
-            let r_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = 
-                a_R.iter()
-                    .zip(G_factors[0..n].into_iter())
-                    .map(|(a_R_i, g)| *a_R_i * g)
-                    .chain(
-                        b_L.iter()
-                            .zip(H_factors[n..2 * n].into_iter())
-                            .map(|(b_L_i, h)| *b_L_i * h),
-                    )
-                    .chain(iter::once(c_R))
-                    .map(|s| s.into())
-                    .collect();
-            let r_points: Vec<C>  = G_L.iter().chain(H_R.iter()).chain(iter::once(Q)).cloned().collect(); // todo avoid cloning?
-            let R = VariableBaseMSM::multi_scalar_mul(
-                r_points.as_slice(),
-                r_scalars.as_slice(),
-            ).into();
+            let r_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = a_R
+                .iter()
+                .zip(G_factors[0..n].into_iter())
+                .map(|(a_R_i, g)| *a_R_i * g)
+                .chain(
+                    b_L.iter()
+                        .zip(H_factors[n..2 * n].into_iter())
+                        .map(|(b_L_i, h)| *b_L_i * h),
+                )
+                .chain(iter::once(c_R))
+                .map(|s| s.into())
+                .collect();
+            let r_points: Vec<C> = G_L
+                .iter()
+                .chain(H_R.iter())
+                .chain(iter::once(Q))
+                .cloned()
+                .collect(); // todo avoid cloning?
+            let R =
+                VariableBaseMSM::multi_scalar_mul(r_points.as_slice(), r_scalars.as_slice()).into();
 
             L_vec.push(L);
-            R_vec.push(R); 
+            R_vec.push(R);
 
             transcript.append_point(b"L", &L);
             transcript.append_point(b"R", &R);
 
             let u = transcript.challenge_scalar::<C>(b"u");
-            let u_inv = if let Some(res) = u.inverse() { //todo
+            let u_inv = if let Some(res) = u.inverse() {
+                //todo
                 res
             } else {
                 panic!("u challenge is zero");
@@ -141,11 +150,13 @@ impl<C: AffineCurve> InnerProductProof<C> {
                 G_L[i] = VariableBaseMSM::multi_scalar_mul(
                     &[G_L[i], G_R[i]],
                     &[(u_inv * G_factors[i]).into(), (u * G_factors[n + i]).into()],
-                ).into();
+                )
+                .into();
                 H_L[i] = VariableBaseMSM::multi_scalar_mul(
                     &[H_L[i], H_R[i]],
                     &[(u * H_factors[i]).into(), (u_inv * H_factors[n + i]).into()],
-                ).into();
+                )
+                .into();
             }
 
             a = a_L;
@@ -165,14 +176,34 @@ impl<C: AffineCurve> InnerProductProof<C> {
             let c_R = inner_product(&a_R, &b_L);
 
             let L = VariableBaseMSM::multi_scalar_mul(
-                G_R.iter().chain(H_L.iter()).chain(iter::once(Q)).cloned().collect::<Vec<C>>().as_slice(),
-                a_L.iter().chain(b_R.iter()).chain(iter::once(&c_L)).map(|s| (*s).into()).collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>().as_slice(),
+                G_R.iter()
+                    .chain(H_L.iter())
+                    .chain(iter::once(Q))
+                    .cloned()
+                    .collect::<Vec<C>>()
+                    .as_slice(),
+                a_L.iter()
+                    .chain(b_R.iter())
+                    .chain(iter::once(&c_L))
+                    .map(|s| (*s).into())
+                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .as_slice(),
             )
             .into();
 
             let R = VariableBaseMSM::multi_scalar_mul(
-                G_L.iter().chain(H_R.iter()).chain(iter::once(Q)).cloned().collect::<Vec<C>>().as_slice(),
-                a_R.iter().chain(b_L.iter()).chain(iter::once(&c_R)).map(|s| (*s).into()).collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>().as_slice(),
+                G_L.iter()
+                    .chain(H_R.iter())
+                    .chain(iter::once(Q))
+                    .cloned()
+                    .collect::<Vec<C>>()
+                    .as_slice(),
+                a_R.iter()
+                    .chain(b_L.iter())
+                    .chain(iter::once(&c_R))
+                    .map(|s| (*s).into())
+                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .as_slice(),
             )
             .into();
 
@@ -192,14 +223,12 @@ impl<C: AffineCurve> InnerProductProof<C> {
             for i in 0..n {
                 a_L[i] = a_L[i] * u + u_inv * a_R[i];
                 b_L[i] = b_L[i] * u_inv + u * b_R[i];
-                G_L[i] = VariableBaseMSM::multi_scalar_mul(
-                    &[G_L[i], G_R[i]],
-                    &[u_inv.into(), u.into()], 
-                ).into();
-                H_L[i] = VariableBaseMSM::multi_scalar_mul(
-                    &[H_L[i], H_R[i]],
-                    &[u.into(), u_inv.into()], 
-                ).into();
+                G_L[i] =
+                    VariableBaseMSM::multi_scalar_mul(&[G_L[i], G_R[i]], &[u_inv.into(), u.into()])
+                        .into();
+                H_L[i] =
+                    VariableBaseMSM::multi_scalar_mul(&[H_L[i], H_R[i]], &[u.into(), u_inv.into()])
+                        .into();
             }
 
             a = a_L;
@@ -224,7 +253,14 @@ impl<C: AffineCurve> InnerProductProof<C> {
         &self,
         n: usize,
         transcript: &mut Transcript,
-    ) -> Result<(Vec<C::ScalarField>, Vec<C::ScalarField>, Vec<C::ScalarField>), ProofError> {
+    ) -> Result<
+        (
+            Vec<C::ScalarField>,
+            Vec<C::ScalarField>,
+            Vec<C::ScalarField>,
+        ),
+        ProofError,
+    > {
         let lg_n = self.L_vec.len();
         if lg_n >= 32 {
             // 4 billion multiplications should be enough for anyone
@@ -352,8 +388,9 @@ impl<C: AffineCurve> InnerProductProof<C> {
     ///
     /// For vectors of length `n` the proof size is
     /// \\(32 \cdot (2\lg n+2)\\) bytes.
-    pub fn serialized_size(&self) -> usize {        
-        (self.L_vec.len() * 2 * C::zero().serialized_size()) + (2 * C::ScalarField::zero().serialized_size())
+    pub fn serialized_size(&self) -> usize {
+        (self.L_vec.len() * 2 * C::zero().serialized_size())
+            + (2 * C::ScalarField::zero().serialized_size())
     }
 
     // / Serializes the proof into a byte array of \\(2n+2\\) 32-byte elements.
@@ -369,14 +406,14 @@ impl<C: AffineCurve> InnerProductProof<C> {
                 panic!("{}", e)
             }
             buf.extend_from_slice(bytes.as_slice());
-        
+
             let mut bytes = Vec::new();
             if let Err(e) = r.serialize(&mut bytes) {
                 panic!("{}", e)
             }
             buf.extend_from_slice(bytes.as_slice());
         }
-        
+
         let mut bytes = Vec::new();
         if let Err(e) = self.a.serialize(&mut bytes) {
             panic!("{}", e)
@@ -418,22 +455,30 @@ impl<C: AffineCurve> InnerProductProof<C> {
             return Err(ProofError::FormatError);
         }
 
-        
         let mut L_vec: Vec<C> = Vec::with_capacity(lg_n);
         let mut R_vec: Vec<C> = Vec::with_capacity(lg_n);
 
         for i in 0..lg_n {
             let pos = 2 * i * point_length;
-            match (C::deserialize(&slice[pos..]), C::deserialize(&slice[pos + point_length..])) {
-                (Ok(l), Ok(r)) => {L_vec.push(l); R_vec.push(r);},
-                _ => return Err(ProofError::FormatError)
+            match (
+                C::deserialize(&slice[pos..]),
+                C::deserialize(&slice[pos + point_length..]),
+            ) {
+                (Ok(l), Ok(r)) => {
+                    L_vec.push(l);
+                    R_vec.push(r);
+                }
+                _ => return Err(ProofError::FormatError),
             }
         }
 
         let pos = 2 * lg_n * point_length;
-        let (a, b) = match (C::ScalarField::deserialize(&slice[pos..]), C::ScalarField::deserialize(&slice[pos + scalar_length..])) {
+        let (a, b) = match (
+            C::ScalarField::deserialize(&slice[pos..]),
+            C::ScalarField::deserialize(&slice[pos + scalar_length..]),
+        ) {
             (Ok(a), Ok(b)) => (a, b),
-            _ => return Err(ProofError::FormatError)
+            _ => return Err(ProofError::FormatError),
         };
 
         Ok(InnerProductProof { L_vec, R_vec, a, b })
@@ -465,9 +510,11 @@ mod tests {
     use crate::util;
 
     fn test_helper_create(n: usize) {
-        use ark_std::rand::{Rng, prelude::StdRng, SeedableRng};
-        let seed = [1,0,0,0, 23,0,0,0, 200,1,0,0, 210,30,0,0,
-                    0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0];
+        use ark_std::rand::{prelude::StdRng, Rng, SeedableRng};
+        let seed = [
+            1, 0, 0, 0, 23, 0, 0, 0, 200, 1, 0, 0, 210, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+        ];
         let mut rng = StdRng::from_seed(seed);
 
         use crate::generators::BulletproofGens;
@@ -483,7 +530,9 @@ mod tests {
         let b: Vec<_> = (0..n).map(|_| F::rand(&mut rng)).collect();
         let c = inner_product(&a, &b);
 
-        let G_factors: Vec<_> = iter::repeat(<Affine as AffineCurve>::ScalarField::one()).take(n).collect();
+        let G_factors: Vec<_> = iter::repeat(<Affine as AffineCurve>::ScalarField::one())
+            .take(n)
+            .collect();
 
         // y_inv is (the inverse of) a random challenge
         let y_inv: F = rng.gen();
@@ -499,9 +548,20 @@ mod tests {
         let a_prime = a.iter().cloned();
 
         let P = VariableBaseMSM::multi_scalar_mul(
-            G.iter().chain(H.iter()).chain(iter::once(&Q)).cloned().collect::<Vec<_>>().as_slice(),
-            a_prime.chain(b_prime).chain(iter::once(c)).map(|s| s.into()).collect::<Vec<_>>().as_slice(),
-        ).into();
+            G.iter()
+                .chain(H.iter())
+                .chain(iter::once(&Q))
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
+            a_prime
+                .chain(b_prime)
+                .chain(iter::once(c))
+                .map(|s| s.into())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .into();
 
         let mut verifier = Transcript::new(b"innerproducttest");
         let proof = InnerProductProof::create(
@@ -572,18 +632,8 @@ mod tests {
 
     #[test]
     fn test_inner_product() {
-        let a = vec![
-            F::from(1u64),
-            F::from(2u64),
-            F::from(3u64),
-            F::from(4u64),
-        ];
-        let b = vec![
-            F::from(2u64),
-            F::from(3u64),
-            F::from(4u64),
-            F::from(5u64),
-        ];
+        let a = vec![F::from(1u64), F::from(2u64), F::from(3u64), F::from(4u64)];
+        let b = vec![F::from(2u64), F::from(3u64), F::from(4u64), F::from(5u64)];
         assert_eq!(F::from(40u64), inner_product(&a, &b));
     }
 }

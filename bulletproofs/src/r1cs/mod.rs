@@ -13,7 +13,7 @@ mod verifier;
 pub use self::constraint_system::{
     ConstraintSystem, RandomizableConstraintSystem, RandomizedConstraintSystem,
 };
-pub use self::linear_combination::{LinearCombination, Variable, constant};
+pub use self::linear_combination::{constant, LinearCombination, Variable};
 pub use self::metrics::Metrics;
 pub use self::proof::R1CSProof;
 pub use self::prover::Prover;

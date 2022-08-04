@@ -17,10 +17,10 @@ extern crate bulletproofs;
 extern crate merlin;
 extern crate rand;
 
+use ark_ec::AffineCurve;
+use ark_std::UniformRand;
 use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens, pallas::Affine};
-use ark_std::{UniformRand};
-use ark_ec::{AffineCurve};
+use bulletproofs::{pallas::Affine, BulletproofGens, PedersenGens};
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -84,14 +84,7 @@ impl ShuffleProof {
         transcript: &'a mut Transcript,
         input: &[<Affine as AffineCurve>::ScalarField],
         output: &[<Affine as AffineCurve>::ScalarField],
-    ) -> Result<
-        (
-            ShuffleProof,
-            Vec<Affine>,
-            Vec<Affine>,
-        ),
-        R1CSError,
-    > {
+    ) -> Result<(ShuffleProof, Vec<Affine>, Vec<Affine>), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
         let k = input.len();

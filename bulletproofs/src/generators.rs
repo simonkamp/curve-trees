@@ -6,13 +6,13 @@
 
 extern crate alloc;
 
-use std::marker::PhantomData;
 use alloc::vec::Vec;
-use ark_ec::{AffineCurve, msm::VariableBaseMSM};
+use ark_ec::{msm::VariableBaseMSM, AffineCurve};
+use std::marker::PhantomData;
 
+use crate::util;
 use digest::{ExtendableOutputDirty, Update, XofReader};
 use sha3::{Sha3XofReader, Sha3_512, Shake256};
-use crate::util;
 
 /// Represents a pair of base points for Pedersen commitments.
 ///
@@ -38,8 +38,9 @@ impl<C: AffineCurve> PedersenGens<C> {
     pub fn commit(&self, value: C::ScalarField, blinding: C::ScalarField) -> C {
         VariableBaseMSM::multi_scalar_mul(
             &[self.B, self.B_blinding],
-            &[value.into(), blinding.into()], 
-        ).into()
+            &[value.into(), blinding.into()],
+        )
+        .into()
     }
 }
 

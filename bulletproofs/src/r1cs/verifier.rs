@@ -1,18 +1,17 @@
 #![allow(non_snake_case)]
 
+use ark_ec::{msm::VariableBaseMSM, AffineCurve};
+use ark_ff::{Field, PrimeField};
+use ark_std::{One, UniformRand, Zero};
 use core::borrow::BorrowMut;
 use core::mem;
 use merlin::Transcript;
-use ark_ec::{AffineCurve, msm::VariableBaseMSM};
-use ark_ff::{Field, PrimeField};
-use ark_std::{Zero, One, UniformRand};
 
-use super::proof::R1CSProof;
-use super::linear_combination::{LinearCombination, Variable};
 use super::constraint_system::{
-    ConstraintSystem, RandomizableConstraintSystem,
-    RandomizedConstraintSystem,
+    ConstraintSystem, RandomizableConstraintSystem, RandomizedConstraintSystem,
 };
+use super::linear_combination::{LinearCombination, Variable};
+use super::proof::R1CSProof;
 
 use crate::errors::R1CSError;
 use crate::generators::{BulletproofGens, PedersenGens};
@@ -73,7 +72,11 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Verifier<
         &mut self,
         mut left: LinearCombination<C::ScalarField>,
         mut right: LinearCombination<C::ScalarField>,
-    ) -> (Variable<C::ScalarField>, Variable<C::ScalarField>, Variable<C::ScalarField>) {
+    ) -> (
+        Variable<C::ScalarField>,
+        Variable<C::ScalarField>,
+        Variable<C::ScalarField>,
+    ) {
         let var = self.num_vars;
         self.num_vars += 1;
 
@@ -91,7 +94,10 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Verifier<
         (l_var, r_var, o_var)
     }
 
-    fn allocate(&mut self, _: Option<C::ScalarField>) -> Result<Variable<C::ScalarField>, R1CSError> {
+    fn allocate(
+        &mut self,
+        _: Option<C::ScalarField>,
+    ) -> Result<Variable<C::ScalarField>, R1CSError> {
         match self.pending_multiplier {
             None => {
                 let i = self.num_vars;
@@ -109,7 +115,14 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Verifier<
     fn allocate_multiplier(
         &mut self,
         _: Option<(C::ScalarField, C::ScalarField)>,
-    ) -> Result<(Variable<C::ScalarField>, Variable<C::ScalarField>, Variable<C::ScalarField>), R1CSError> {
+    ) -> Result<
+        (
+            Variable<C::ScalarField>,
+            Variable<C::ScalarField>,
+            Variable<C::ScalarField>,
+        ),
+        R1CSError,
+    > {
         let var = self.num_vars;
         self.num_vars += 1;
 
@@ -140,7 +153,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Verifier<
 
 impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C> for Verifier<T, C> {
     type RandomizedCS = RandomizingVerifier<T, C>;
-    
+
     fn specify_randomized_constraints<F>(&mut self, callback: F) -> Result<(), R1CSError>
     where
         F: 'static + FnOnce(&mut Self::RandomizedCS) -> Result<(), R1CSError>,
@@ -159,18 +172,32 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Randomizi
         &mut self,
         left: LinearCombination<C::ScalarField>,
         right: LinearCombination<C::ScalarField>,
-    ) -> (Variable<C::ScalarField>, Variable<C::ScalarField>, Variable<C::ScalarField>) {
+    ) -> (
+        Variable<C::ScalarField>,
+        Variable<C::ScalarField>,
+        Variable<C::ScalarField>,
+    ) {
         self.verifier.multiply(left, right)
     }
 
-    fn allocate(&mut self, assignment: Option<C::ScalarField>) -> Result<Variable<C::ScalarField>, R1CSError> {
+    fn allocate(
+        &mut self,
+        assignment: Option<C::ScalarField>,
+    ) -> Result<Variable<C::ScalarField>, R1CSError> {
         self.verifier.allocate(assignment)
     }
 
     fn allocate_multiplier(
         &mut self,
         input_assignments: Option<(C::ScalarField, C::ScalarField)>,
-    ) -> Result<(Variable<C::ScalarField>, Variable<C::ScalarField>, Variable<C::ScalarField>), R1CSError> {
+    ) -> Result<
+        (
+            Variable<C::ScalarField>,
+            Variable<C::ScalarField>,
+            Variable<C::ScalarField>,
+        ),
+        R1CSError,
+    > {
         self.verifier.allocate_multiplier(input_assignments)
     }
 
@@ -183,7 +210,9 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Randomizi
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C> for RandomizingVerifier<T, C> {
+impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C>
+    for RandomizingVerifier<T, C>
+{
     fn challenge_scalar(&mut self, label: &'static [u8]) -> C::ScalarField {
         self.verifier
             .transcript
@@ -273,7 +302,13 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
     fn flattened_constraints(
         &mut self,
         z: &C::ScalarField,
-    ) -> (Vec<C::ScalarField>, Vec<C::ScalarField>, Vec<C::ScalarField>, Vec<C::ScalarField>, C::ScalarField) {
+    ) -> (
+        Vec<C::ScalarField>,
+        Vec<C::ScalarField>,
+        Vec<C::ScalarField>,
+        Vec<C::ScalarField>,
+        C::ScalarField,
+    ) {
         let n = self.num_vars;
         let m = self.V.len();
 
@@ -451,8 +486,14 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .iter()
             .zip(u_for_h)
             .zip(s.iter().rev().take(padded_n))
-            .zip(wL.into_iter().chain(iter::repeat(C::ScalarField::zero()).take(pad)))
-            .zip(wO.into_iter().chain(iter::repeat(C::ScalarField::zero()).take(pad)))
+            .zip(
+                wL.into_iter()
+                    .chain(iter::repeat(C::ScalarField::zero()).take(pad)),
+            )
+            .zip(
+                wO.into_iter()
+                    .chain(iter::repeat(C::ScalarField::zero()).take(pad)),
+            )
             .map(|((((y_inv_i, u_or_1), s_i_inv), wLi), wOi)| {
                 u_or_1 * (*y_inv_i * (x * wLi + wOi - b * s_i_inv) - C::ScalarField::one())
             });
@@ -477,21 +518,22 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let T_points = [proof.T_1, proof.T_3, proof.T_4, proof.T_5, proof.T_6];
 
         let mega_points = iter::once(proof.A_I1)
-                .chain(iter::once(proof.A_O1))
-                .chain(iter::once(proof.S1))
-                .chain(iter::once(proof.A_I2))
-                .chain(iter::once(proof.A_O2))
-                .chain(iter::once(proof.S2))
-                .chain(self.V.iter().cloned())
-                .chain(T_points.iter().cloned())
-                .chain(iter::once(pc_gens.B))
-                .chain(iter::once(pc_gens.B_blinding))
-                .chain(gens.G(padded_n).map(|&G_i| (G_i)))
-                .chain(gens.H(padded_n).map(|&H_i| (H_i)))
-                .chain(proof.ipp_proof.L_vec.iter().cloned())
-                .chain(proof.ipp_proof.R_vec.iter().cloned())
-                .collect::<Vec<_>>();
-        let mega_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = iter::once(x) // A_I1
+            .chain(iter::once(proof.A_O1))
+            .chain(iter::once(proof.S1))
+            .chain(iter::once(proof.A_I2))
+            .chain(iter::once(proof.A_O2))
+            .chain(iter::once(proof.S2))
+            .chain(self.V.iter().cloned())
+            .chain(T_points.iter().cloned())
+            .chain(iter::once(pc_gens.B))
+            .chain(iter::once(pc_gens.B_blinding))
+            .chain(gens.G(padded_n).map(|&G_i| (G_i)))
+            .chain(gens.H(padded_n).map(|&H_i| (H_i)))
+            .chain(proof.ipp_proof.L_vec.iter().cloned())
+            .chain(proof.ipp_proof.R_vec.iter().cloned())
+            .collect::<Vec<_>>();
+        let mega_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> =
+            iter::once(x) // A_I1
                 .chain(iter::once(xx)) // A_O1
                 .chain(iter::once(xxx)) // S1
                 .chain(iter::once(u * x)) // A_I2
@@ -509,8 +551,9 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 .chain(u_inv_sq.iter().cloned()) // ipp_proof.R_vec
                 .map(|s| s.into())
                 .collect::<Vec<_>>();
-        let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(mega_points.as_slice(), mega_scalars.as_slice());
-        
+        let mega_check: C::Projective =
+            VariableBaseMSM::multi_scalar_mul(mega_points.as_slice(), mega_scalars.as_slice());
+
         if !mega_check.is_zero() {
             return Err(R1CSError::VerificationError);
         }

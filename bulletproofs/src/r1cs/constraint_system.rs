@@ -1,8 +1,8 @@
 //! Definition of the constraint system trait.
 
 // use super::{LinearCombination, R1CSError, Variable};
-use super::{R1CSError};
 use super::linear_combination::{LinearCombination, Variable};
+use super::R1CSError;
 use ark_ec::AffineCurve;
 use merlin::Transcript;
 
@@ -19,7 +19,7 @@ use merlin::Transcript;
 /// using the `ConstraintSystem` trait, so that the prover and
 /// verifier share the logic for specifying constraints.
 pub trait ConstraintSystem<C: AffineCurve> {
-    // type Scalar: Field; 
+    // type Scalar: Field;
 
     /// Leases the proof transcript to the user, so they can
     /// add extra data to which the proof must be bound, but which
@@ -44,7 +44,11 @@ pub trait ConstraintSystem<C: AffineCurve> {
         &mut self,
         left: LinearCombination<C::ScalarField>,
         right: LinearCombination<C::ScalarField>,
-    ) -> (Variable<C::ScalarField>, Variable<C::ScalarField>, Variable<C::ScalarField>);
+    ) -> (
+        Variable<C::ScalarField>,
+        Variable<C::ScalarField>,
+        Variable<C::ScalarField>,
+    );
 
     /// Allocate a single variable.
     ///
@@ -56,7 +60,10 @@ pub trait ConstraintSystem<C: AffineCurve> {
     /// has the `right` assigned to zero and all its variables committed.
     ///
     /// Returns unconstrained `Variable` for use in further constraints.
-    fn allocate(&mut self, assignment: Option<C::ScalarField>) -> Result<Variable<C::ScalarField>, R1CSError>;
+    fn allocate(
+        &mut self,
+        assignment: Option<C::ScalarField>,
+    ) -> Result<Variable<C::ScalarField>, R1CSError>;
 
     /// Allocate variables `left`, `right`, and `out`
     /// with the implicit constraint that
@@ -68,7 +75,14 @@ pub trait ConstraintSystem<C: AffineCurve> {
     fn allocate_multiplier(
         &mut self,
         input_assignments: Option<(C::ScalarField, C::ScalarField)>,
-    ) -> Result<(Variable<C::ScalarField>, Variable<C::ScalarField>, Variable<C::ScalarField>), R1CSError>;
+    ) -> Result<
+        (
+            Variable<C::ScalarField>,
+            Variable<C::ScalarField>,
+            Variable<C::ScalarField>,
+        ),
+        R1CSError,
+    >;
 
     /// Counts the amount of constraints in the constraint system.
     fn metrics(&self) -> crate::r1cs::Metrics;
