@@ -1,6 +1,5 @@
 #![deny(missing_docs)]
 #![allow(non_snake_case)]
-#![allow(dead_code)] // todo
 
 extern crate alloc;
 
@@ -329,15 +328,6 @@ mod tests {
             Scalar::from(5u64),
         ];
         assert_eq!(Scalar::from(40u64), inner_product(&a, &b));
-    }
-
-    /// Raises `x` to the power `n`.
-    fn scalar_exp_vartime_slow(x: &Scalar, n: u64) -> Scalar {
-        let mut result = Scalar::one();
-        for _ in 0..n {
-            result = result * x;
-        }
-        result
     }
 
     #[test]

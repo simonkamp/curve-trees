@@ -1,5 +1,4 @@
 #![allow(non_snake_case)]
-#![allow(unused)] // todo
 
 use clear_on_drop::clear::Clear;
 use core::borrow::BorrowMut;

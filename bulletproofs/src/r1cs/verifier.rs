@@ -1,5 +1,4 @@
 #![allow(non_snake_case)]
-#![allow(unused)] // todo
 
 use core::borrow::BorrowMut;
 use core::mem;
@@ -485,8 +484,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 .chain(iter::once(proof.S2))
                 .chain(self.V.iter().cloned())
                 .chain(T_points.iter().cloned())
-                .chain(iter::once((pc_gens.B)))
-                .chain(iter::once((pc_gens.B_blinding)))
+                .chain(iter::once(pc_gens.B))
+                .chain(iter::once(pc_gens.B_blinding))
                 .chain(gens.G(padded_n).map(|&G_i| (G_i)))
                 .chain(gens.H(padded_n).map(|&H_i| (H_i)))
                 .chain(proof.ipp_proof.L_vec.iter().cloned())

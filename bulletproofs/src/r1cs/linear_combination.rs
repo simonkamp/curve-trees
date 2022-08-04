@@ -1,4 +1,3 @@
-#![allow(unused)] // todo
 //! Definition of linear combinations.
 
 use ark_ff::{Field, One};

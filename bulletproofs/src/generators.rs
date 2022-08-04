@@ -2,7 +2,6 @@
 //! set of generators for a rangeproof.
 
 #![allow(non_snake_case)]
-#![allow(unused)] // todo
 #![deny(missing_docs)]
 
 extern crate alloc;
@@ -10,8 +9,6 @@ extern crate alloc;
 use std::marker::PhantomData;
 use alloc::vec::Vec;
 use ark_ec::{AffineCurve, msm::VariableBaseMSM};
-// use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
-// use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 
 use digest::{ExtendableOutputDirty, Update, XofReader};
 use sha3::{Sha3XofReader, Sha3_512, Shake256};

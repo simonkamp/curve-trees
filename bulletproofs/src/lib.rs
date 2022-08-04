@@ -5,9 +5,6 @@
 
 extern crate alloc;
 
-#[macro_use]
-extern crate serde_derive;
-
 mod util;
 
 #[cfg_attr(feature = "docs", doc(include = "../docs/notes-intro.md"))]
