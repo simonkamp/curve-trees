@@ -134,6 +134,34 @@ impl<C: AffineCurve> ShuffleProof<C> {
         verifier.verify(&self.0, &pc_gens, &bp_gens)?;
         Ok(())
     }
+    pub fn verification_scalars_and_points<'a, 'b>(
+        &self,
+        transcript: &'a mut Transcript,
+        input_commitments: &Vec<C>,
+        output_commitments: &Vec<C>,
+    ) -> Result<(Vec<C>, Vec<C::ScalarField>, Vec<C::ScalarField>, usize), R1CSError> {
+        // Apply a domain separator with the shuffle parameters to the transcript
+        // XXX should this be part of the gadget?
+        let k = input_commitments.len();
+        transcript.append_message(b"dom-sep", b"ShuffleProof");
+        transcript.append_u64(b"k", k as u64);
+
+        let mut verifier = Verifier::new(transcript);
+
+        let input_vars: Vec<_> = input_commitments
+            .iter()
+            .map(|V| verifier.commit(*V))
+            .collect();
+
+        let output_vars: Vec<_> = output_commitments
+            .iter()
+            .map(|V| verifier.commit(*V))
+            .collect();
+
+        ShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
+
+        verifier.verification_scalars_and_points(&self.0)
+    }
 }
 
 fn kshuffle_helper(k: usize) {
@@ -172,14 +200,55 @@ fn kshuffle_helper(k: usize) {
     }
 }
 
+fn kshuffle_batch_helper(k: usize) {
+    use rand::Rng;
+    type Scalar = <Affine as AffineCurve>::ScalarField;
+
+    // Common code
+    let pc_gens = PedersenGens::<Affine>::default();
+    let bp_gens = BulletproofGens::<Affine>::new((2 * k).next_power_of_two(), 1);
+
+    let n = 2;
+    
+    let mut proofs_and_commitments = Vec::with_capacity(n);
+    for _ in 0..n {
+        // Randomly generate inputs and outputs to kshuffle
+        let mut rng = rand::thread_rng();
+        let (min, max) = (0u64, std::u64::MAX);
+        let input: Vec<Scalar> = (0..k)
+            .map(|_| Scalar::from(rng.gen_range(min..max)))
+            .collect();
+        let mut output = input.clone();
+        output.shuffle(&mut rand::thread_rng());
+
+        let mut prover_transcript = Transcript::new(b"ShuffleProofTest");
+        proofs_and_commitments.push(
+            ShuffleProof::prove(&pc_gens, &bp_gens, &mut prover_transcript, &input, &output).unwrap()
+        );
+    }
+    
+    let mut vsps = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut verifier_transcript = Transcript::new(b"ShuffleProofTest");
+        let (proof, input_commitments, output_commitments) = &proofs_and_commitments[i];
+        vsps.push(
+            proof.verification_scalars_and_points(&mut verifier_transcript, &input_commitments, &output_commitments).unwrap()
+        );
+    }
+
+    assert!(batch_verify(vsps, &pc_gens, &bp_gens).is_ok());
+}
+
 #[test]
 fn shuffle_gadget_test_1() {
     kshuffle_helper(1);
+    kshuffle_batch_helper(1);
 }
 
 #[test]
 fn shuffle_gadget_test_2() {
     kshuffle_helper(2);
+    kshuffle_batch_helper(2);
 }
 
 #[test]

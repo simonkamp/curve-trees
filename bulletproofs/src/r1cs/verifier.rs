@@ -380,16 +380,50 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(), R1CSError> {
-        self.verify_and_return_transcript(proof, pc_gens, bp_gens)
-            .map(|_| ())
+        let (proof_points, proof_scalars, fixed_point_scalars, padded_n) =
+            match self.verification_scalars_and_points(proof) {
+                Err(e) => return Err(e),
+                Ok(t) => t,
+            };
+
+        // We are performing a single-party circuit proof, so party index is 0.
+        let gens = bp_gens.share(0);
+
+        if bp_gens.gens_capacity < padded_n {
+            return Err(R1CSError::InvalidGeneratorsLength);
+        }
+
+        use std::iter;
+        let fixed_points = iter::once(pc_gens.B)
+            .chain(iter::once(pc_gens.B_blinding))
+            .chain(gens.G(padded_n).map(|&G_i| (G_i)))
+            .chain(gens.H(padded_n).map(|&H_i| (H_i)));
+
+        let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
+            proof_points
+                .into_iter()
+                .chain(fixed_points)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            proof_scalars
+                .into_iter()
+                .chain(fixed_point_scalars.into_iter())
+                .map(|s| s.into())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+
+        if !mega_check.is_zero() {
+            return Err(R1CSError::VerificationError);
+        }
+
+        Ok(())
     }
-    /// Same as `verify`, but also returns the transcript back to the user.
-    pub fn verify_and_return_transcript(
+
+    pub fn verification_scalars_and_points(
         mut self,
         proof: &R1CSProof<C>,
-        pc_gens: &PedersenGens<C>,
-        bp_gens: &BulletproofGens<C>,
-    ) -> Result<T, R1CSError> {
+    ) -> Result<(Vec<C>, Vec<C::ScalarField>, Vec<C::ScalarField>, usize), R1CSError> {
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -416,12 +450,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         use crate::inner_product_proof::inner_product;
         use crate::util;
         use std::iter;
-
-        if bp_gens.gens_capacity < padded_n {
-            return Err(R1CSError::InvalidGeneratorsLength);
-        }
-        // We are performing a single-party circuit proof, so party index is 0.
-        let gens = bp_gens.share(0);
 
         // These points are the identity in the 1-phase unrandomized case.
         transcript.append_point(b"A_I2", &proof.A_I2);
@@ -498,15 +526,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 u_or_1 * (*y_inv_i * (x * wLi + wOi - b * s_i_inv) - C::ScalarField::one())
             });
 
-        // // Create a `TranscriptRng` from the transcript. The verifier
-        // // has no witness data to commit, so this just mixes external
-        // // randomness into the existing transcript.
-        // use rand::thread_rng;
-        // let mut rng = self
-        //     .transcript
-        //     .borrow_mut()
-        //     .build_rng()
-        //     .finalize(&mut thread_rng());
         let mut rng = rand::thread_rng();
         let r = C::ScalarField::rand(&mut rng);
         let xx = x * x;
@@ -517,7 +536,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let T_scalars = [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
         let T_points = [proof.T_1, proof.T_3, proof.T_4, proof.T_5, proof.T_6];
 
-        let mega_points = iter::once(proof.A_I1)
+        let proof_points = iter::once(proof.A_I1)
             .chain(iter::once(proof.A_O1))
             .chain(iter::once(proof.S1))
             .chain(iter::once(proof.A_I2))
@@ -525,39 +544,91 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(iter::once(proof.S2))
             .chain(self.V.iter().cloned())
             .chain(T_points.iter().cloned())
-            .chain(iter::once(pc_gens.B))
-            .chain(iter::once(pc_gens.B_blinding))
-            .chain(gens.G(padded_n).map(|&G_i| (G_i)))
-            .chain(gens.H(padded_n).map(|&H_i| (H_i)))
             .chain(proof.ipp_proof.L_vec.iter().cloned())
             .chain(proof.ipp_proof.R_vec.iter().cloned())
+            .collect();
+
+        let proof_scalars: Vec<C::ScalarField> = iter::once(x) // A_I1
+            .chain(iter::once(xx)) // A_O1
+            .chain(iter::once(xxx)) // S1
+            .chain(iter::once(u * x)) // A_I2
+            .chain(iter::once(u * xx)) // A_O2
+            .chain(iter::once(u * xxx)) // S2
+            .chain(wV.iter().map(|wVi| *wVi * rxx)) // V
+            .chain(T_scalars.iter().cloned()) // T_points
+            .chain(u_sq.into_iter()) // ipp_proof.L_vec
+            .chain(u_inv_sq.into_iter()) // ipp_proof.R_vec
             .collect::<Vec<_>>();
-        let mega_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> =
-            iter::once(x) // A_I1
-                .chain(iter::once(xx)) // A_O1
-                .chain(iter::once(xxx)) // S1
-                .chain(iter::once(u * x)) // A_I2
-                .chain(iter::once(u * xx)) // A_O2
-                .chain(iter::once(u * xxx)) // S2
-                .chain(wV.iter().map(|wVi| *wVi * rxx)) // V
-                .chain(T_scalars.iter().cloned()) // T_points
-                .chain(iter::once(
-                    w * (proof.t_x - a * b) + r * (xx * (wc + delta) - proof.t_x),
-                )) // B
+
+        let fixed_point_scalars: Vec<C::ScalarField> =
+            iter::once(w * (proof.t_x - a * b) + r * (xx * (wc + delta) - proof.t_x)) // B
                 .chain(iter::once(-proof.e_blinding - r * proof.t_x_blinding)) // B_blinding
                 .chain(g_scalars) // G
                 .chain(h_scalars) // H
-                .chain(u_sq.iter().cloned()) // ipp_proof.L_vec
-                .chain(u_inv_sq.iter().cloned()) // ipp_proof.R_vec
-                .map(|s| s.into())
                 .collect::<Vec<_>>();
-        let mega_check: C::Projective =
-            VariableBaseMSM::multi_scalar_mul(mega_points.as_slice(), mega_scalars.as_slice());
 
-        if !mega_check.is_zero() {
-            return Err(R1CSError::VerificationError);
-        }
-
-        Ok(self.transcript)
+        Ok((proof_points, proof_scalars, fixed_point_scalars, padded_n))
     }
+}
+
+pub fn batch_verify<C: AffineCurve>(
+    verification_tuples: Vec<(Vec<C>, Vec<C::ScalarField>, Vec<C::ScalarField>, usize)>,
+    pc_gens: &PedersenGens<C>,
+    bp_gens: &BulletproofGens<C>,
+) -> Result<(), R1CSError> {
+    let mut rng = rand::thread_rng();
+    let mut ver_iter = verification_tuples.into_iter();
+    let (mut proof_points, mut proof_point_scalars, mut linear_combination, padded_n) =
+        ver_iter.nth(0).unwrap();
+
+    for (mut pp, ps, fps, _) in ver_iter {
+        proof_points.append(&mut pp);
+
+        // Sample random scalar
+        let random_scalar = C::ScalarField::rand(&mut rng);
+
+        // Multiply all scalars
+        let ps = ps.into_iter().map(|s| s * random_scalar);
+        let fps = fps.into_iter().map(|s| s * random_scalar);
+
+        proof_point_scalars.append(&mut ps.collect());
+        linear_combination = linear_combination
+            .iter()
+            .zip(fps)
+            .map(|(a, b)| *a + b)
+            .collect()
+    }
+
+    // We are performing a single-party circuit proof, so party index is 0.
+    let gens = bp_gens.share(0);
+
+    if bp_gens.gens_capacity < padded_n {
+        return Err(R1CSError::InvalidGeneratorsLength);
+    }
+
+    use std::iter;
+    let fixed_points = iter::once(pc_gens.B)
+        .chain(iter::once(pc_gens.B_blinding))
+        .chain(gens.G(padded_n).map(|&G_i| (G_i)))
+        .chain(gens.H(padded_n).map(|&H_i| (H_i)));
+
+    let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
+        proof_points
+            .into_iter()
+            .chain(fixed_points)
+            .collect::<Vec<_>>()
+            .as_slice(),
+        proof_point_scalars
+            .into_iter()
+            .chain(linear_combination)
+            .map(|s| s.into())
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
+
+    if !mega_check.is_zero() {
+        return Err(R1CSError::VerificationError);
+    }
+
+    Ok(())
 }
