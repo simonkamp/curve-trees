@@ -17,6 +17,6 @@ pub use self::linear_combination::{constant, LinearCombination, Variable};
 pub use self::metrics::Metrics;
 pub use self::proof::R1CSProof;
 pub use self::prover::Prover;
-pub use self::verifier::{Verifier, batch_verify};
+pub use self::verifier::{batch_verify, Verifier};
 
 pub use crate::errors::R1CSError;

@@ -209,7 +209,7 @@ fn kshuffle_batch_helper(k: usize) {
     let bp_gens = BulletproofGens::<Affine>::new((2 * k).next_power_of_two(), 1);
 
     let n = 2;
-    
+
     let mut proofs_and_commitments = Vec::with_capacity(n);
     for _ in 0..n {
         // Randomly generate inputs and outputs to kshuffle
@@ -223,16 +223,23 @@ fn kshuffle_batch_helper(k: usize) {
 
         let mut prover_transcript = Transcript::new(b"ShuffleProofTest");
         proofs_and_commitments.push(
-            ShuffleProof::prove(&pc_gens, &bp_gens, &mut prover_transcript, &input, &output).unwrap()
+            ShuffleProof::prove(&pc_gens, &bp_gens, &mut prover_transcript, &input, &output)
+                .unwrap(),
         );
     }
-    
+
     let mut vsps = Vec::with_capacity(n);
     for i in 0..n {
         let mut verifier_transcript = Transcript::new(b"ShuffleProofTest");
         let (proof, input_commitments, output_commitments) = &proofs_and_commitments[i];
         vsps.push(
-            proof.verification_scalars_and_points(&mut verifier_transcript, &input_commitments, &output_commitments).unwrap()
+            proof
+                .verification_scalars_and_points(
+                    &mut verifier_transcript,
+                    &input_commitments,
+                    &output_commitments,
+                )
+                .unwrap(),
         );
     }
 
