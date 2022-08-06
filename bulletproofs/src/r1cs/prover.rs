@@ -350,21 +350,40 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
     }
 
     pub fn commit_vec(
-        // todo
         &mut self,
         v: Vec<C::ScalarField>,
         v_blinding: C::ScalarField,
-    ) -> (C, Variable<C::ScalarField>) {
-        let i = self.secrets.v.len();
-        self.secrets.v.append(&mut v.clone());
-        self.secrets.v_blinding.push(v_blinding);
+        bp_gens: &BulletproofGens<C>, // same as used during proving
+    ) -> (C, Vec<Variable<C::ScalarField>>) {
+        use std::iter;
 
-        // Add the commitment to the transcript.
-        // let V = self.pc_gens.commit(v, v_blinding);
-        let V = C::zero(); // todo
-        self.transcript.borrow_mut().append_point(b"V", &V);
+        // concat: (values || blinding)
+        let open: Vec<C::ScalarField> = v.iter().chain(iter::once(&v_blinding)).cloned().collect();
 
-        (V, Variable::Committed(i))
+        // TODO: make dynamic
+        let comm_idx = self.secrets.vec_open.len();
+
+        // add the opening (values || blinding) to the secrets
+        self.secrets.vec_open.push(open.clone());
+        
+        // compute the commitment
+        let gens = bp_gens.share(0);
+        let comm = VariableBaseMSM::multi_scalar_mul(
+            &gens.H(v.len() + 1).cloned().collect::<Vec<_>>(),
+            open.into_iter()
+                .map(|v| v.into())
+                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                .as_slice(),
+        );
+
+        // create variables for all the addressable coordinates
+        let vars = (0..v.len()).map(|i| Variable::VectorCommit(comm_idx, i) ).collect();
+
+        // add the commitment to the transcript.
+        let comm = comm.into();
+        self.transcript.borrow_mut().append_point(b"V", &comm);
+
+        (comm, vars)
     }
 
     /// Use a challenge, `z`, to flatten the constraints in the

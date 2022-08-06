@@ -31,6 +31,8 @@ pub struct Verifier<T: BorrowMut<Transcript>, C: AffineCurve> {
     transcript: T,
     constraints: Vec<LinearCombination<C::ScalarField>>,
 
+    vec_comms: Vec<usize>,
+
     /// Records the number of low-level variables allocated in the
     /// constraint system.
     ///
@@ -251,6 +253,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         transcript.borrow_mut().r1cs_domain_sep();
 
         Verifier {
+            vec_comms: Vec::new(),
             transcript,
             num_vars: 0,
             V: Vec::new(),
@@ -282,6 +285,19 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         self.transcript.borrow_mut().append_point(b"V", &commitment);
 
         Variable::Committed(i)
+    }
+
+    pub fn commit_vec(
+        &mut self,
+        dimension: usize,
+        commitment: C,
+    ) -> Vec<Variable<C::ScalarField>> {
+        // allocate next index for vector commitment
+        let comm_idx = self.vec_comms.len();
+        self.vec_comms.push(dimension);
+
+        // create variables for all the addressable coordinates
+        (0..dimension).map(|i| Variable::VectorCommit(comm_idx, i) ).collect()
     }
 
     /// Use a challenge, `z`, to flatten the constraints in the
