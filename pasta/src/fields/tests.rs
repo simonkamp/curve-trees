@@ -1,4 +1,5 @@
-use crate::pasta::*;
+use crate::*;
+
 use ark_algebra_test_templates::fields::{field_test, primefield_test, sqrt_field_test};
 use ark_std::rand::Rng;
 use ark_std::test_rng;
