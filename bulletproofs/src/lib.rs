@@ -22,10 +22,8 @@ mod transcript;
 
 pub use crate::errors::ProofError;
 pub use crate::generators::{BulletproofGens, BulletproofGensShare, PedersenGens};
-pub use crate::pasta::*;
 
 #[cfg(feature = "yoloproofs")]
 #[cfg(feature = "std")]
 pub mod r1cs;
 
-pub mod pasta;

@@ -294,7 +294,9 @@ pub fn field_as_bytes<F: Field>(field: &F) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pasta::pallas::*;
+    
+    use pasta::pallas::*;
+
     type Scalar = <Affine as AffineCurve>::ScalarField;
     use ark_ff::{One, Zero};
 

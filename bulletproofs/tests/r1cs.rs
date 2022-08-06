@@ -6,7 +6,9 @@ extern crate rand;
 
 use ark_ec::AffineCurve;
 use ark_std::{One, UniformRand};
-use bulletproofs::pasta::pallas::Affine;
+
+use pasta::pallas::Affine;
+
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
 use merlin::Transcript;

@@ -343,7 +343,8 @@ impl<'a, C: AffineCurve> BulletproofGensShare<'a, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pasta::pallas::*;
+    
+    use pasta::pallas::*;
 
     #[test]
     fn aggregated_gens_iter_matches_flat_map() {

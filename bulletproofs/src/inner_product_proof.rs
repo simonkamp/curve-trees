@@ -504,7 +504,9 @@ pub fn inner_product<S: Field>(a: &[S], b: &[S]) -> S {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pasta::pallas::Affine;
+    
+    use pasta::pallas::Affine;
+    
     type F = <Affine as AffineCurve>::ScalarField;
 
     use crate::util;
