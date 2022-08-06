@@ -394,7 +394,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         }
 
         use std::iter;
-        let fixed_points = iter::once(pc_gens.B)
+        let fixed_points = iter::once(pc_gens.B[0])
             .chain(iter::once(pc_gens.B_blinding))
             .chain(gens.G(padded_n).map(|&G_i| (G_i)))
             .chain(gens.H(padded_n).map(|&H_i| (H_i)));
@@ -607,7 +607,7 @@ pub fn batch_verify<C: AffineCurve>(
     }
 
     use std::iter;
-    let fixed_points = iter::once(pc_gens.B)
+    let fixed_points = iter::once(pc_gens.B[0])
         .chain(iter::once(pc_gens.B_blinding))
         .chain(gens.G(padded_n).map(|&G_i| (G_i)))
         .chain(gens.H(padded_n).map(|&H_i| (H_i)));

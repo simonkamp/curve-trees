@@ -346,6 +346,24 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         (V, Variable::Committed(i))
     }
 
+    pub fn commit_vec(
+        // todo
+        &mut self,
+        v: Vec<C::ScalarField>,
+        v_blinding: C::ScalarField,
+    ) -> (C, Variable<C::ScalarField>) {
+        let i = self.secrets.v.len();
+        self.secrets.v.append(&mut v.clone());
+        self.secrets.v_blinding.push(v_blinding);
+
+        // Add the commitment to the transcript.
+        // let V = self.pc_gens.commit(v, v_blinding);
+        let V = C::zero(); // todo
+        self.transcript.borrow_mut().append_point(b"V", &V);
+
+        (V, Variable::Committed(i))
+    }
+
     /// Use a challenge, `z`, to flatten the constraints in the
     /// constraint system into vectors used for proving and
     /// verification.
@@ -766,7 +784,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // Get a challenge value to combine statements for the IPP
         let w = transcript.challenge_scalar::<C>(b"w");
-        let Q = self.pc_gens.B.mul(w).into();
+        let Q = self.pc_gens.B[0].mul(w).into();
 
         let G_factors = iter::repeat(C::ScalarField::one())
             .take(n1)

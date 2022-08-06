@@ -14,6 +14,7 @@ use crate::util;
 use digest::{ExtendableOutputDirty, Update, XofReader};
 use sha3::{Sha3XofReader, Sha3_512, Shake256};
 
+/// todo
 /// Represents a pair of base points for Pedersen commitments.
 ///
 /// The Bulletproofs implementation and API is designed to support
@@ -25,34 +26,81 @@ use sha3::{Sha3XofReader, Sha3_512, Shake256};
 /// * `B`: the `ristretto255` basepoint;
 /// * `B_blinding`: the result of `ristretto255` SHA3-512 // todo
 /// hash-to-group on input `B_bytes`.
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct PedersenGens<C: AffineCurve> {
-    /// Base for the committed value
-    pub B: C,
-    /// Base for the blinding factor
+    /// The maximum number of usable generators.
+    pub gens_capacity: usize,
+    /// Bases for the committed values.
+    pub B: Vec<C>,
+    /// Base for the blinding factor.
     pub B_blinding: C,
 }
 
 impl<C: AffineCurve> PedersenGens<C> {
+    /// todo
+    pub fn new(gens_capacity: usize) -> Self {
+        let mut gens = PedersenGens {
+            gens_capacity: 0,
+            B: Vec::new(),
+            B_blinding: util::affine_from_bytes_tai(b"PedersenGeneratorsBlinding"),
+        };
+        gens.increase_capacity(gens_capacity);
+        gens
+    }
+
     /// Creates a Pedersen commitment using the value scalar and a blinding factor.
     pub fn commit(&self, value: C::ScalarField, blinding: C::ScalarField) -> C {
+        self.commit_vec(vec![value], blinding)
+    }
+
+    /// Creates a Pedersen commitment using the value scalars and a blinding factor.
+    pub fn commit_vec(&self, values: Vec<C::ScalarField>, blinding: C::ScalarField) -> C {
+        if values.len() > self.B.len() {
+            panic!(
+                "Commitment to {} values, but only {} generators.",
+                values.len(),
+                self.B.len()
+            )
+        }
+        use std::iter;
         VariableBaseMSM::multi_scalar_mul(
-            &[self.B, self.B_blinding],
-            &[value.into(), blinding.into()],
+            self.B
+                .iter()
+                .take(values.len())
+                .cloned()
+                .chain(iter::once(self.B_blinding))
+                .collect::<Vec<_>>()
+                .as_slice(),
+            values
+                .into_iter()
+                .chain(iter::once(blinding))
+                .map(|s| s.into())
+                .collect::<Vec<_>>()
+                .as_slice(),
         )
         .into()
+    }
+
+    /// Increases the generators' capacity to the amount specified.
+    /// If less than or equal to the current capacity, does nothing.
+    pub fn increase_capacity(&mut self, new_capacity: usize) {
+        if self.gens_capacity >= new_capacity {
+            return;
+        }
+
+        self.B.extend(
+            &mut GeneratorsChain::<C>::new(b"PedersenGenerators")
+                .fast_forward(self.gens_capacity)
+                .take(new_capacity - self.gens_capacity),
+        );
+
+        self.gens_capacity = new_capacity;
     }
 }
 
 impl<C: AffineCurve> Default for PedersenGens<C> {
     fn default() -> Self {
-        let basepoint = C::prime_subgroup_generator();
-        let mut buffer: Vec<u8> = Vec::new();
-        basepoint.write(&mut buffer);
-        PedersenGens {
-            B: C::prime_subgroup_generator(),
-            B_blinding: util::affine_from_bytes_tai(&buffer),
-        }
+        Self::new(1)
     }
 }
 
@@ -101,7 +149,6 @@ impl<C: AffineCurve> Iterator for GeneratorsChain<C> {
         let mut uniform_bytes = [0u8; 64];
         self.reader.read(&mut uniform_bytes);
 
-        // Some(RistrettoPoint::from_uniform_bytes(&uniform_bytes))
         Some(util::affine_from_bytes_tai(&uniform_bytes))
     }
 

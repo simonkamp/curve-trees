@@ -200,15 +200,13 @@ fn kshuffle_helper(k: usize) {
     }
 }
 
-fn kshuffle_batch_helper(k: usize) {
+fn kshuffle_batch_helper(k: usize, n: usize) {
     use rand::Rng;
     type Scalar = <Affine as AffineCurve>::ScalarField;
 
     // Common code
     let pc_gens = PedersenGens::<Affine>::default();
     let bp_gens = BulletproofGens::<Affine>::new((2 * k).next_power_of_two(), 1);
-
-    let n = 2;
 
     let mut proofs_and_commitments = Vec::with_capacity(n);
     for _ in 0..n {
@@ -249,13 +247,13 @@ fn kshuffle_batch_helper(k: usize) {
 #[test]
 fn shuffle_gadget_test_1() {
     kshuffle_helper(1);
-    kshuffle_batch_helper(1);
+    kshuffle_batch_helper(1, 2);
 }
 
 #[test]
 fn shuffle_gadget_test_2() {
     kshuffle_helper(2);
-    kshuffle_batch_helper(2);
+    kshuffle_batch_helper(2, 4);
 }
 
 #[test]
@@ -291,6 +289,7 @@ fn shuffle_gadget_test_24() {
 #[test]
 fn shuffle_gadget_test_42() {
     kshuffle_helper(42);
+    // kshuffle_batch_helper(42, 42);
 }
 
 /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
@@ -398,27 +397,6 @@ fn example_gadget_roundtrip_helper<C: AffineCurve>(
     example_gadget_verify::<C>(&pc_gens, &bp_gens, c2, proof, commitments)
 }
 
-// fn example_gadget_roundtrip_serialization_helper(
-//     a1: u64,
-//     a2: u64,
-//     b1: u64,
-//     b2: u64,
-//     c1: u64,
-//     c2: u64,
-// ) -> Result<(), R1CSError> {
-//     // Common
-//     let pc_gens = PedersenGens::default();
-//     let bp_gens = BulletproofGens::new(128, 1);
-
-//     let (proof, commitments) = example_gadget_proof(&pc_gens, &bp_gens, a1, a2, b1, b2, c1, c2)?;
-
-//     let proof = proof.to_bytes();
-
-//     let proof = R1CSProof::from_bytes(&proof)?;
-
-//     example_gadget_verify(&pc_gens, &bp_gens, c2, proof, commitments)
-// }
-
 #[test]
 fn example_gadget_test() {
     // (3 + 4) * (6 + 1) = (40 + 9)
@@ -426,14 +404,6 @@ fn example_gadget_test() {
     // (3 + 4) * (6 + 1) != (40 + 10)
     assert!(example_gadget_roundtrip_helper::<Affine>(3, 4, 6, 1, 40, 10).is_err());
 }
-
-// #[test]
-// fn example_gadget_serialization_test() {
-//     // (3 + 4) * (6 + 1) = (40 + 9)
-//     assert!(example_gadget_roundtrip_serialization_helper(3, 4, 6, 1, 40, 9).is_ok());
-//     // (3 + 4) * (6 + 1) != (40 + 10)
-//     assert!(example_gadget_roundtrip_serialization_helper(3, 4, 6, 1, 40, 10).is_err());
-// }
 
 // Range Proof gadget
 
