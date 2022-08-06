@@ -318,10 +318,21 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let mut wV = vec![C::ScalarField::zero(); m];
         let mut wc = C::ScalarField::zero();
 
+        // TODO: compute dynamically
+        let comm_dim = 32;
+        let comm_num = 1;
+
+        let mut wVC = vec![vec![C::ScalarField::zero(); comm_dim];comm_num];
+
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
             for (var, coeff) in &lc.terms {
                 match var {
+                    Variable::VectorCommit(j, i) => {
+                        // j : index of commitment
+                        // i : coordinate with-in commitment
+                        wVC[*j][*i] += exp_z * coeff;
+                    }
                     Variable::MultiplierLeft(i) => {
                         wL[*i] += exp_z * coeff;
                     }

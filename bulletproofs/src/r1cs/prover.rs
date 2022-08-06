@@ -59,6 +59,8 @@ struct Secrets<F: Field> {
     v: Vec<F>,
     /// High-level witness data (blinding openings to V commitments)
     v_blinding: Vec<F>,
+    ///
+    vec_open: Vec<Vec<F>>,
 }
 
 /// Prover in the randomizing phase.
@@ -306,6 +308,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                 a_L: Vec::new(),
                 a_R: Vec::new(),
                 a_O: Vec::new(),
+                vec_open: Vec::new(),
             },
             constraints: Vec::new(),
             deferred_constraints: Vec::new(),
@@ -392,10 +395,21 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let mut wO = vec![C::ScalarField::zero(); n];
         let mut wV = vec![C::ScalarField::zero(); m];
 
+        // TODO: compute dynamically
+        let comm_dim = 32;
+        let comm_num = 1;
+
+        let mut wVC = vec![vec![C::ScalarField::zero(); comm_dim];comm_num];
+
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
             for (var, coeff) in &lc.terms {
                 match var {
+                    Variable::VectorCommit(j, i) => {
+                        // j : index of commitment
+                        // i : coordinate with-in commitment
+                        wVC[*j][*i] += exp_z * coeff;
+                    }
                     Variable::MultiplierLeft(i) => {
                         wL[*i] += exp_z * coeff;
                     }
@@ -426,6 +440,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             .map(|(var, coeff)| {
                 *coeff
                     * match var {
+                        Variable::VectorCommit(j, i) => self.secrets.vec_open[*i][*j], // lookup in vector commitment
                         Variable::MultiplierLeft(i) => self.secrets.a_L[*i],
                         Variable::MultiplierRight(i) => self.secrets.a_R[*i],
                         Variable::MultiplierOutput(i) => self.secrets.a_O[*i],

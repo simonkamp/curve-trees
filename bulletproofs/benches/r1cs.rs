@@ -17,10 +17,12 @@ extern crate bulletproofs;
 extern crate merlin;
 extern crate rand;
 
+use pasta::pallas::Affine;
+
 use ark_ec::AffineCurve;
 use ark_std::UniformRand;
 use bulletproofs::r1cs::*;
-use bulletproofs::{pallas::Affine, BulletproofGens, PedersenGens};
+use bulletproofs::{BulletproofGens, PedersenGens};
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 use rand::Rng;

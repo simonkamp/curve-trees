@@ -8,6 +8,8 @@ use std::ops::{Add, Mul, Neg, Sub};
 /// Represents a variable in a constraint system.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Variable<F: Field> {
+    /// A Pedersen vector commitment
+    VectorCommit(usize, usize),
     /// Represents an external input specified by a commitment.
     Committed(usize),
     /// Represents the left input of a multiplication gate.

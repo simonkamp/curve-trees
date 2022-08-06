@@ -1,4 +1,6 @@
-use bulletproofs::{pallas::Affine, BulletproofGens, PedersenGens};
+use pasta::pallas::Affine;
+
+use bulletproofs::{BulletproofGens, PedersenGens};
 
 #[macro_use]
 extern crate criterion;
