@@ -197,6 +197,17 @@ impl<F: Field, L: Into<LinearCombination<F>>> Sub<L> for LinearCombination<F> {
 //     }
 // }
 
+impl<F: Field> LinearCombination<F> {
+    pub fn scalar_mul(self, scalar: F) -> LinearCombination<F> {
+        let out_terms = self
+            .terms
+            .into_iter()
+            .map(|(var, entry)| (var, entry * scalar))
+            .collect();
+        LinearCombination { terms: out_terms }
+    }
+}
+
 impl<F: Field> Neg for LinearCombination<F> {
     type Output = Self;
 
