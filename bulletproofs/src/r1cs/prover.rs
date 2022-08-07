@@ -60,7 +60,7 @@ struct Secrets<F: Field> {
     /// High-level witness data (blinding openings to V commitments)
     v_blinding: Vec<F>,
     ///
-    vec_open: Vec<Vec<F>>,
+    vec_open: Vec<(F, Vec<F>)>,
 }
 
 /// Prover in the randomizing phase.
@@ -351,35 +351,49 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
     pub fn commit_vec(
         &mut self,
-        v: Vec<C::ScalarField>,
+        v: &[C::ScalarField],
         v_blinding: C::ScalarField,
-        bp_gens: &BulletproofGens<C>, // same as used during proving
+        bp_gens: &BulletproofGens<C>, // same as used during proving, uses the "G" generators to commit like for a_O
     ) -> (C, Vec<Variable<C::ScalarField>>) {
         use std::iter;
 
-        // concat: (values || blinding)
-        let open: Vec<C::ScalarField> = v.iter().chain(iter::once(&v_blinding)).cloned().collect();
+        let v_blinding = C::ScalarField::zero(); // for simplicity: TODO change
 
-        // TODO: make dynamic
         let comm_idx = self.secrets.vec_open.len();
 
-        // add the opening (values || blinding) to the secrets
-        self.secrets.vec_open.push(open.clone());
-
-        // compute the commitment
+        // compute the commitment:
+        // comm = <v, G> + <v_blinding> B_blinding
         let gens = bp_gens.share(0);
+
+        let generators: Vec<_> = 
+            iter::once(&self.pc_gens.B_blinding)
+                .chain(gens.G(v.len()))
+                .cloned()
+                .collect::<Vec<_>>();
+
+        let scalars: Vec<<C::ScalarField as PrimeField>::BigInt> =
+            iter::once(&v_blinding)
+                .chain(v.iter())
+                .map(|s| {
+                    let s: <C::ScalarField as PrimeField>::BigInt = s.clone().into();
+                    s
+                })
+                .collect();
+        
+        assert_eq!(generators.len(), scalars.len());
+
         let comm = VariableBaseMSM::multi_scalar_mul(
-            &gens.H(v.len() + 1).cloned().collect::<Vec<_>>(),
-            open.into_iter()
-                .map(|v| v.into())
-                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
-                .as_slice(),
+            generators.as_slice(),
+            scalars.as_slice()
         );
 
         // create variables for all the addressable coordinates
         let vars = (0..v.len())
             .map(|i| Variable::VectorCommit(comm_idx, i))
             .collect();
+        
+        // add the opening (values || blinding) to the secrets
+        self.secrets.vec_open.push((v_blinding, v.to_owned()));
 
         // add the commitment to the transcript.
         let comm = comm.into();
@@ -407,6 +421,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         Vec<C::ScalarField>,
         Vec<C::ScalarField>,
         Vec<C::ScalarField>,
+        Vec<Vec<C::ScalarField>>,
     ) {
         let n = self.secrets.a_L.len();
         let m = self.secrets.v.len();
@@ -420,7 +435,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let comm_dim = 32;
         let comm_num = 1;
 
-        let mut wVC = vec![vec![C::ScalarField::zero(); comm_dim]; comm_num];
+        let mut wVCs = vec![vec![C::ScalarField::zero(); comm_dim]; comm_num];
 
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
@@ -429,7 +444,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                     Variable::VectorCommit(j, i) => {
                         // j : index of commitment
                         // i : coordinate with-in commitment
-                        wVC[*j][*i] += exp_z * coeff;
+                        wVCs[*j][*i] += exp_z * coeff;
                     }
                     Variable::MultiplierLeft(i) => {
                         wL[*i] += exp_z * coeff;
@@ -451,7 +466,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             exp_z *= z;
         }
 
-        (wL, wR, wO, wV)
+        (wL, wR, wO, wV, wVCs)
     }
 
     /// Returns the secret value of the linear combination.
@@ -461,7 +476,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             .map(|(var, coeff)| {
                 *coeff
                     * match var {
-                        Variable::VectorCommit(j, i) => self.secrets.vec_open[*i][*j], // lookup in vector commitment
+                        Variable::VectorCommit(j, i) => self.secrets.vec_open[*j].1[*i], // lookup in vector commitment
                         Variable::MultiplierLeft(i) => self.secrets.a_L[*i],
                         Variable::MultiplierRight(i) => self.secrets.a_R[*i],
                         Variable::MultiplierOutput(i) => self.secrets.a_O[*i],
@@ -510,6 +525,12 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         use crate::util;
         use std::iter;
+
+        // this is the 2nd degree term in the case of usual BP
+        // however the degree increases linearly with the number of vec-comm
+        let offset = self.secrets.vec_open.len();
+        let op_degree = 2 + offset;
+        println!("op_degree: {}", op_degree);
 
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
@@ -596,6 +617,9 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         )
         .into();
 
+        // Vector commitments of the form
+        // <Vi, G> + vi_blinding * B:blinding
+
         // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
         let S1 = VariableBaseMSM::multi_scalar_mul(
             iter::once(&self.pc_gens.B_blinding)
@@ -655,6 +679,9 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             (0..n2).map(|_| C::ScalarField::rand(&mut rng)).collect();
         let mut s_R2: Vec<C::ScalarField> =
             (0..n2).map(|_| C::ScalarField::rand(&mut rng)).collect();
+
+        // both not supported atm.
+        assert!(!has_2nd_phase_commitments || self.secrets.vec_open.len() == 0);
 
         let (A_I2, A_O2, S2) = if has_2nd_phase_commitments {
             (
@@ -728,10 +755,11 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         println!("P S2 {}", &S2);
         println!("P z {}", z);
 
-        let (wL, wR, wO, wV) = self.flattened_constraints(&z);
+        let (wL, wR, wO, wV, wVCs) = self.flattened_constraints(&z);
 
-        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3);
-        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3);
+
+        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3+offset);
+        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3+offset);
 
         let mut exp_y = C::ScalarField::one(); // y^n starting at n=0
         let y_inv = y.inverse().unwrap();
@@ -739,13 +767,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         println!("vec comm: {}", self.secrets.vec_open.len());
 
-        // this is the 2nd degree term in the case of usual BP
-        // however the degree increases linearly with the number of vec-comm
-        let op_degree = 2 + self.secrets.vec_open.len();
-        println!("op_degree: {}", op_degree);
 
-        //g
-
+        //
         let sLsR = s_L1
             .iter()
             .chain(s_L2.iter())
@@ -753,16 +776,30 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         for (i, (sl, sr)) in sLsR.enumerate() {
             // l_poly.0 = 0
+
+            // l_poly.i = a_Vi
+            for (j, v) in self.secrets.vec_open.iter().enumerate() {
+                if v.1.len() > j {
+                    l_poly.coeff_mut(1+j)[i] = v.1[i];
+                }
+            }
+            
             // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
-            l_poly.coeff_mut(1)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+            l_poly.coeff_mut(1+offset)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+
             // l_poly.2 = a_O
-            l_poly.coeff_mut(2)[i] = self.secrets.a_O[i];
+            l_poly.coeff_mut(2+offset)[i] = self.secrets.a_O[i];
+
             // l_poly.3 = s_L
-            l_poly.coeff_mut(3)[i] = *sl;
+            l_poly.coeff_mut(3+offset)[i] = *sl;
+
+
             // r_poly.0 = (z * z^Q * W_O) - y^n
             r_poly.coeff_mut(0)[i] = wO[i] - exp_y;
+
             // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
             r_poly.coeff_mut(1)[i] = exp_y * self.secrets.a_R[i] + wL[i];
+
             // r_poly.2 = 0
             // r_poly.3 = y^n * s_R
             r_poly.coeff_mut(3)[i] = exp_y * sr;
@@ -770,6 +807,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             exp_y = exp_y * y; // y^i -> y^(i+1)
         }
 
+        // correct for all the vector commitments
+        // l(x) <- l(x) x^d * a_v
+        // r(x) <- r(x) * x + w_v
+ 
         let mut t_poly = util::VecPoly::inner_product(&l_poly, &r_poly);
 
         // commit to t-poly

@@ -22,8 +22,4 @@ fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
     )
 }
 
-fn curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
-    cs: &mut Cs,
-) {
-    
-}
+fn curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(cs: &mut Cs) {}

@@ -11,3 +11,4 @@ ark-ec = { version = "0.3.0", features = [ "parallel" ] }
 merlin = { version = "2", default-features = false }
 
 [dev-dependencies]
+pasta = { path = "../pasta" }
