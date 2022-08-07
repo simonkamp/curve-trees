@@ -459,6 +459,9 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let transcript = self.transcript.borrow_mut();
         transcript.append_u64(b"m", self.V.len() as u64);
 
+        let op_degree = 2 + self.vec_comms.len();
+        let t_poly_deg = 6 + self.vec_comms.len();
+
         let n1 = self.num_vars;
         transcript.validate_and_append_point(b"A_I1", &proof.A_I1)?;
         transcript.validate_and_append_point(b"A_O1", &proof.A_O1)?;
@@ -492,11 +495,14 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         println!("V S2 {}", &proof.S2);
         println!("V z {}", z);
 
-        transcript.validate_and_append_point(b"T_1", &proof.T[1])?;
-        transcript.validate_and_append_point(b"T_3", &proof.T[3])?;
-        transcript.validate_and_append_point(b"T_4", &proof.T[4])?;
-        transcript.validate_and_append_point(b"T_5", &proof.T[5])?;
-        transcript.validate_and_append_point(b"T_6", &proof.T[6])?;
+        // commit to T
+        let transcript = self.transcript.borrow_mut();
+        for d in 1..t_poly_deg + 1 {
+            if d == op_degree {
+                continue;
+            }
+            transcript.validate_and_append_point(util::T_LABELS[d], &proof.T[d])?;
+        }
 
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");

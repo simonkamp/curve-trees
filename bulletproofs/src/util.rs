@@ -19,6 +19,11 @@ pub struct VecPoly1<F: Field>(pub Vec<F>, pub Vec<F>);
 #[cfg(feature = "yoloproofs")]
 pub struct VecPoly3<F: Field>(pub Vec<F>, pub Vec<F>, pub Vec<F>, pub Vec<F>);
 
+pub const T_LABELS: [&[u8]; 13] = [
+    b"T_0", b"T_1", b"T_2", b"T_3", b"T_4", b"T_5", b"T_6", b"T_7", b"T_8", b"T_9", b"T_10",
+    b"T_11", b"T_12",
+];
+
 /// The general case for Vector CP.
 pub struct VecPoly<F: Field>(Vec<Vec<F>>);
 

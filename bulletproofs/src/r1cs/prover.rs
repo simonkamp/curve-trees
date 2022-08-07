@@ -20,11 +20,6 @@ use crate::inner_product_proof::InnerProductProof;
 use crate::r1cs::Metrics;
 use crate::transcript::TranscriptProtocol;
 
-const T_LABELS: [&[u8]; 13] = [
-    b"T_0", b"T_1", b"T_2", b"T_3", b"T_4", b"T_5", b"T_6", b"T_7", b"T_8", b"T_9", b"T_10",
-    b"T_11", b"T_12",
-];
-
 /// A [`ConstraintSystem`] implementation for use by the prover.
 ///
 /// The prover commits high-level variables and their blinding factors `(v, v_blinding)`,
@@ -749,7 +744,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let op_degree = 2 + self.secrets.vec_open.len();
         println!("op_degree: {}", op_degree);
 
-        //
+        //g
 
         let sLsR = s_L1
             .iter()
@@ -804,7 +799,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             if d == op_degree {
                 continue;
             }
-            transcript.append_point(T_LABELS[d], &T[d]);
+            transcript.append_point(util::T_LABELS[d], &T[d]);
         }
 
         let u = transcript.challenge_scalar::<C>(b"u");
