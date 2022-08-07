@@ -20,6 +20,11 @@ use crate::inner_product_proof::InnerProductProof;
 use crate::r1cs::Metrics;
 use crate::transcript::TranscriptProtocol;
 
+const T_LABELS: [&[u8]; 13] = [
+    b"T_0", b"T_1", b"T_2", b"T_3", b"T_4", b"T_5", b"T_6", b"T_7", b"T_8", b"T_9", b"T_10",
+    b"T_11", b"T_12",
+];
+
 /// A [`ConstraintSystem`] implementation for use by the prover.
 ///
 /// The prover commits high-level variables and their blinding factors `(v, v_blinding)`,
@@ -365,7 +370,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // add the opening (values || blinding) to the secrets
         self.secrets.vec_open.push(open.clone());
-        
+
         // compute the commitment
         let gens = bp_gens.share(0);
         let comm = VariableBaseMSM::multi_scalar_mul(
@@ -377,7 +382,9 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         );
 
         // create variables for all the addressable coordinates
-        let vars = (0..v.len()).map(|i| Variable::VectorCommit(comm_idx, i) ).collect();
+        let vars = (0..v.len())
+            .map(|i| Variable::VectorCommit(comm_idx, i))
+            .collect();
 
         // add the commitment to the transcript.
         let comm = comm.into();
@@ -418,7 +425,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let comm_dim = 32;
         let comm_num = 1;
 
-        let mut wVC = vec![vec![C::ScalarField::zero(); comm_dim];comm_num];
+        let mut wVC = vec![vec![C::ScalarField::zero(); comm_dim]; comm_num];
 
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
@@ -504,6 +511,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         mut self,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(R1CSProof<C>, T), R1CSError> {
+        println!("\n\n");
+
         use crate::util;
         use std::iter;
 
@@ -719,78 +728,93 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let y = transcript.challenge_scalar::<C>(b"y");
         let z = transcript.challenge_scalar::<C>(b"z");
 
+        println!("P A_I2 {}", &A_I2);
+        println!("P A_O2 {}", &A_O2);
+        println!("P S2 {}", &S2);
+        println!("P z {}", z);
+
         let (wL, wR, wO, wV) = self.flattened_constraints(&z);
 
-        let mut l_poly = util::VecPoly3::<C::ScalarField>::zero(n);
-        let mut r_poly = util::VecPoly3::<C::ScalarField>::zero(n);
+        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3);
+        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3);
 
         let mut exp_y = C::ScalarField::one(); // y^n starting at n=0
         let y_inv = y.inverse().unwrap();
         let exp_y_inv = util::exp_iter(y_inv).take(padded_n).collect::<Vec<_>>();
 
+        println!("vec comm: {}", self.secrets.vec_open.len());
+
+        // this is the 2nd degree term in the case of usual BP
+        // however the degree increases linearly with the number of vec-comm
+        let op_degree = 2 + self.secrets.vec_open.len();
+        println!("op_degree: {}", op_degree);
+
+        //
+
         let sLsR = s_L1
             .iter()
             .chain(s_L2.iter())
             .zip(s_R1.iter().chain(s_R2.iter()));
+
         for (i, (sl, sr)) in sLsR.enumerate() {
             // l_poly.0 = 0
             // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
-            l_poly.1[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+            l_poly.coeff_mut(1)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
             // l_poly.2 = a_O
-            l_poly.2[i] = self.secrets.a_O[i];
+            l_poly.coeff_mut(2)[i] = self.secrets.a_O[i];
             // l_poly.3 = s_L
-            l_poly.3[i] = *sl;
+            l_poly.coeff_mut(3)[i] = *sl;
             // r_poly.0 = (z * z^Q * W_O) - y^n
-            r_poly.0[i] = wO[i] - exp_y;
+            r_poly.coeff_mut(0)[i] = wO[i] - exp_y;
             // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
-            r_poly.1[i] = exp_y * self.secrets.a_R[i] + wL[i];
+            r_poly.coeff_mut(1)[i] = exp_y * self.secrets.a_R[i] + wL[i];
             // r_poly.2 = 0
             // r_poly.3 = y^n * s_R
-            r_poly.3[i] = exp_y * sr;
+            r_poly.coeff_mut(3)[i] = exp_y * sr;
 
             exp_y = exp_y * y; // y^i -> y^(i+1)
         }
 
-        let t_poly = util::VecPoly3::special_inner_product(&l_poly, &r_poly);
+        let mut t_poly = util::VecPoly::inner_product(&l_poly, &r_poly);
 
-        let t_1_blinding = C::ScalarField::rand(&mut rng);
-        let t_3_blinding = C::ScalarField::rand(&mut rng);
-        let t_4_blinding = C::ScalarField::rand(&mut rng);
-        let t_5_blinding = C::ScalarField::rand(&mut rng);
-        let t_6_blinding = C::ScalarField::rand(&mut rng);
+        // commit to t-poly
+        let mut t_blinding_poly = util::Poly::zero(t_poly.deg());
+        for d in 1..t_poly.deg() + 1 {
+            if d == op_degree {
+                continue;
+            }
+            t_blinding_poly.coeff()[d] = C::ScalarField::rand(&mut rng);
+            println!("T_{}", d);
+        }
 
-        let T_1 = self.pc_gens.commit(t_poly.t1, t_1_blinding);
-        let T_3 = self.pc_gens.commit(t_poly.t3, t_3_blinding);
-        let T_4 = self.pc_gens.commit(t_poly.t4, t_4_blinding);
-        let T_5 = self.pc_gens.commit(t_poly.t5, t_5_blinding);
-        let T_6 = self.pc_gens.commit(t_poly.t6, t_6_blinding);
+        //
+        let mut T = vec![C::zero(); t_poly.deg() + 1];
+        for d in 1..t_poly.deg() + 1 {
+            if d == op_degree {
+                continue;
+            }
+            T[d] = self
+                .pc_gens
+                .commit(t_poly.coeff()[d], t_blinding_poly.coeff()[d]);
+        }
 
+        // commit to T
         let transcript = self.transcript.borrow_mut();
-        transcript.append_point(b"T_1", &T_1);
-        transcript.append_point(b"T_3", &T_3);
-        transcript.append_point(b"T_4", &T_4);
-        transcript.append_point(b"T_5", &T_5);
-        transcript.append_point(b"T_6", &T_6);
+        for d in 1..t_poly.deg() + 1 {
+            if d == op_degree {
+                continue;
+            }
+            transcript.append_point(T_LABELS[d], &T[d]);
+        }
 
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");
 
-        // t_2_blinding = <z*z^Q, W_V * v_blinding>
-        // in the t_x_blinding calculations, line 76.
-        let t_2_blinding = wV
+        t_blinding_poly.coeff()[op_degree] = wV
             .iter()
             .zip(self.secrets.v_blinding.iter())
             .map(|(c, v_blinding)| *c * v_blinding)
             .sum();
-
-        let t_blinding_poly = util::Poly6 {
-            t1: t_1_blinding,
-            t2: t_2_blinding,
-            t3: t_3_blinding,
-            t4: t_4_blinding,
-            t5: t_5_blinding,
-            t6: t_6_blinding,
-        };
 
         let t_x = t_poly.eval(x);
         let t_x_blinding = t_blinding_poly.eval(x);
@@ -859,11 +883,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             A_I2,
             A_O2,
             S2,
-            T_1,
-            T_3,
-            T_4,
-            T_5,
-            T_6,
+            T,
             t_x,
             t_x_blinding,
             e_blinding,

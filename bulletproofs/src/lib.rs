@@ -26,4 +26,3 @@ pub use crate::generators::{BulletproofGens, BulletproofGensShare, PedersenGens}
 #[cfg(feature = "yoloproofs")]
 #[cfg(feature = "std")]
 pub mod r1cs;
-

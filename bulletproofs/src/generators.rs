@@ -343,7 +343,7 @@ impl<'a, C: AffineCurve> BulletproofGensShare<'a, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use pasta::pallas::*;
 
     #[test]

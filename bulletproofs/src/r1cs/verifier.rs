@@ -287,17 +287,18 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         Variable::Committed(i)
     }
 
-    pub fn commit_vec(
-        &mut self,
-        dimension: usize,
-        commitment: C,
-    ) -> Vec<Variable<C::ScalarField>> {
+    pub fn commit_vec(&mut self, dimension: usize, commitment: C) -> Vec<Variable<C::ScalarField>> {
         // allocate next index for vector commitment
         let comm_idx = self.vec_comms.len();
         self.vec_comms.push(dimension);
 
+        // add the commitment to the transcript.
+        self.transcript.borrow_mut().append_point(b"V", &commitment);
+
         // create variables for all the addressable coordinates
-        (0..dimension).map(|i| Variable::VectorCommit(comm_idx, i) ).collect()
+        (0..dimension)
+            .map(|i| Variable::VectorCommit(comm_idx, i))
+            .collect()
     }
 
     /// Use a challenge, `z`, to flatten the constraints in the
@@ -338,7 +339,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let comm_dim = 32;
         let comm_num = 1;
 
-        let mut wVC = vec![vec![C::ScalarField::zero(); comm_dim];comm_num];
+        let mut wVC = vec![vec![C::ScalarField::zero(); comm_dim]; comm_num];
 
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
@@ -486,14 +487,21 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let y = transcript.challenge_scalar::<C>(b"y");
         let z = transcript.challenge_scalar::<C>(b"z");
 
-        transcript.validate_and_append_point(b"T_1", &proof.T_1)?;
-        transcript.validate_and_append_point(b"T_3", &proof.T_3)?;
-        transcript.validate_and_append_point(b"T_4", &proof.T_4)?;
-        transcript.validate_and_append_point(b"T_5", &proof.T_5)?;
-        transcript.validate_and_append_point(b"T_6", &proof.T_6)?;
+        println!("V A_I2 {}", &proof.A_I2);
+        println!("V A_O2 {}", &proof.A_O2);
+        println!("V S2 {}", &proof.S2);
+        println!("V z {}", z);
+
+        transcript.validate_and_append_point(b"T_1", &proof.T[1])?;
+        transcript.validate_and_append_point(b"T_3", &proof.T[3])?;
+        transcript.validate_and_append_point(b"T_4", &proof.T[4])?;
+        transcript.validate_and_append_point(b"T_5", &proof.T[5])?;
+        transcript.validate_and_append_point(b"T_6", &proof.T[6])?;
 
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");
+
+        println!("V x: {}", x);
 
         transcript.append_scalar::<C>(b"t_x", &proof.t_x);
         transcript.append_scalar::<C>(b"t_x_blinding", &proof.t_x_blinding);
@@ -561,7 +569,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         // group the T_scalars and T_points together
         let T_scalars = [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
-        let T_points = [proof.T_1, proof.T_3, proof.T_4, proof.T_5, proof.T_6];
+        let T_points = [proof.T[1], proof.T[3], proof.T[4], proof.T[5], proof.T[6]];
 
         let proof_points = iter::once(proof.A_I1)
             .chain(iter::once(proof.A_O1))

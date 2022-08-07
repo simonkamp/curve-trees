@@ -19,6 +19,95 @@ pub struct VecPoly1<F: Field>(pub Vec<F>, pub Vec<F>);
 #[cfg(feature = "yoloproofs")]
 pub struct VecPoly3<F: Field>(pub Vec<F>, pub Vec<F>, pub Vec<F>, pub Vec<F>);
 
+/// The general case for Vector CP.
+pub struct VecPoly<F: Field>(Vec<Vec<F>>);
+
+pub struct Poly<F: Field>(Vec<F>);
+
+impl<F: Field> Poly<F> {
+    pub fn zero(deg: usize) -> Self {
+        Poly(vec![F::zero(); deg + 1])
+    }
+
+    pub fn coeff(&mut self) -> &mut [F] {
+        &mut self.0
+    }
+
+    pub fn deg(&self) -> usize {
+        self.0.len() - 1
+    }
+
+    pub fn eval(&self, x: F) -> F {
+        let mut out = F::zero();
+        for v in self.0.iter().rev() {
+            out *= x;
+            out += v;
+        }
+        out
+    }
+}
+
+impl<F: Field> From<Vec<F>> for Poly<F> {
+    fn from(v: Vec<F>) -> Self {
+        Self(v)
+    }
+}
+
+impl<F: Field> VecPoly<F> {
+    pub fn coeff_mut(&mut self, deg: usize) -> &mut [F] {
+        &mut self.0[deg]
+    }
+
+    pub fn deg(&self) -> usize {
+        self.0.len() - 1
+    }
+
+    pub fn coeff(&self, deg: usize) -> &[F] {
+        &self.0[deg]
+    }
+
+    pub fn zero(n: usize, deg: usize) -> Self {
+        VecPoly(vec![vec![F::zero(); n]; deg + 1])
+    }
+
+    pub fn eval(&self, x: F) -> Vec<F> {
+        let n = self.0[0].len();
+        let mut out = vec![F::zero(); n];
+        for i in 0..n {
+            for v in self.0.iter().rev() {
+                out[i] *= x;
+                out[i] += v[i];
+            }
+        }
+        out
+    }
+
+    /// Compute an inner product of `lhs`, `rhs` which have the property that:
+    /// - `lhs.0` is zero;
+    /// - `rhs.2` is zero;
+    /// This is the case in the constraint system proof.
+    pub fn inner_product(lhs: &Self, rhs: &Self) -> Poly<F> {
+        // TODO: make checks that l_poly.0 and r_poly.2 are zero.
+
+        let deg = (lhs.0.len() - 1) + (rhs.0.len() - 1);
+
+        println!("combined degree: {}", deg);
+
+        let mut res = Poly::zero(deg);
+
+        for d in 0..deg + 1 {
+            for l in 0..(d + 1) {
+                let r = d - l;
+                if lhs.deg() >= l && rhs.deg() >= r {
+                    res.coeff()[d] += inner_product(lhs.coeff(l), rhs.coeff(r));
+                }
+            }
+        }
+
+        res
+    }
+}
+
 /// Represents a degree-2 scalar polynomial \\(a + b \cdot x + c \cdot x^2\\)
 pub struct Poly2<F: Field>(pub F, pub F, pub F);
 
@@ -294,7 +383,7 @@ pub fn field_as_bytes<F: Field>(field: &F) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use pasta::pallas::*;
 
     type Scalar = <Affine as AffineCurve>::ScalarField;
