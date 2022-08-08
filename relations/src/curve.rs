@@ -1,6 +1,9 @@
+#[allow(unused)] // todo
 use bulletproofs::r1cs::*;
+use bulletproofs::{BulletproofGens, PedersenGens};
 
 use ark_ec::AffineCurve;
+use merlin::Transcript;
 use std::marker::PhantomData;
 
 fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
@@ -14,7 +17,7 @@ fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
     let (_, _, x3) = cs.multiply(x.clone(), x2.into());
     let (_, _, y2) = cs.multiply(y.clone(), y.clone());
 
-    // x^3 + A*X^2 + B - y^2 = 0
+    // x^3 + A*x^2 + B - y^2 = 0
     cs.constrain(
         LinearCombination::<C::ScalarField>::from(x3)
             + LinearCombination::<C::ScalarField>::from(x2).scalar_mul(a)
@@ -58,7 +61,7 @@ fn checked_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
     y2: LinearCombination<C::ScalarField>,
     x3: LinearCombination<C::ScalarField>,
     y3: LinearCombination<C::ScalarField>,
-    delta: LinearCombination<C::ScalarField>, // free variable
+    delta: LinearCombination<C::ScalarField>,
     x1_minus_x2_inv: LinearCombination<C::ScalarField>,
 ) {
     not_zero(cs, x1.clone() - x2.clone(), x1_minus_x2_inv);
@@ -79,4 +82,102 @@ fn not_zero<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs.constrain(LinearCombination::<C::ScalarField>::from(
         one - Variable::One(PhantomData),
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use ark_ec::ProjectiveCurve;
+    use ark_std::UniformRand;
+    use pasta::{
+        pallas::Affine as PallasA, pallas::Projective as PallasP, vesta::Affine as VestaA,
+        vesta::Projective as VestaP, Fp, Fq,
+    };
+    type PallasScalar = <PallasA as AffineCurve>::ScalarField;
+    type VestaScalar = <VestaA as AffineCurve>::ScalarField;
+
+    #[test]
+    fn add() {
+        let mut rng = rand::thread_rng();
+        let p = <PallasP as UniformRand>::rand(&mut rng);
+        let pa = p.into_affine();
+        let x1: VestaScalar = (pa as PallasA).x;
+        let y1: VestaScalar = (pa as PallasA).y;
+
+        let q = <PallasP as UniformRand>::rand(&mut rng);
+        let qa = q.into_affine();
+        let x2: VestaScalar = (qa as PallasA).x;
+        let y2: VestaScalar = (qa as PallasA).y;
+
+        assert!(x1 != x2); // sanity check, should not happen except with negl. prob.
+
+        let p_plus_q = p + q;
+        let p_plus_qa = p_plus_q.into_affine();
+        let x3: VestaScalar = (p_plus_qa as PallasA).x;
+        let y3: VestaScalar = (p_plus_qa as PallasA).y;
+
+        // sanity checks
+        let delta = (y2 - y1) / (x2 - x1);
+        assert_eq!(delta * (x2 - x1), y2 - y1);
+        assert_eq!(delta * (x3 - x1), -y3 - y1);
+        assert_eq!(delta * delta, x1 + x2 + x3);
+
+        let pc_gens = PedersenGens::<VestaA>::default();
+        let bp_gens = BulletproofGens::<VestaA>::new(128, 1); // todo size
+
+        let mut transcript = Transcript::new(b"CurveAdditionGadget");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+        let (x1_comm, x1_var) = prover.commit(x1, VestaScalar::rand(&mut rng));
+        let (y1_comm, y1_var) = prover.commit(y1, VestaScalar::rand(&mut rng));
+        let (x2_comm, x2_var) = prover.commit(x2, VestaScalar::rand(&mut rng));
+        let (y2_comm, y2_var) = prover.commit(y2, VestaScalar::rand(&mut rng));
+        let (x3_comm, x3_var) = prover.commit(x3, VestaScalar::rand(&mut rng));
+        let (y3_comm, y3_var) = prover.commit(y3, VestaScalar::rand(&mut rng));
+        let (delta_comm, delta_var) = prover.commit(delta, VestaScalar::rand(&mut rng));
+        let (x1_minus_x2_inv_comm, x1_minus_x2_inv_var) = prover.commit(
+            VestaScalar::from(1) / (x1 - x2),
+            VestaScalar::rand(&mut rng),
+        );
+
+        checked_curve_addition(
+            &mut prover,
+            x1_var.into(),
+            y1_var.into(),
+            x2_var.into(),
+            y2_var.into(),
+            x3_var.into(),
+            y3_var.into(),
+            delta_var.into(),
+            x1_minus_x2_inv_var.into(),
+        );
+
+        let proof = prover.prove(&bp_gens).unwrap();
+
+        let mut transcript = Transcript::new(b"CurveAdditionGadget");
+        let mut verifier = Verifier::new(&mut transcript);
+
+        let x1_var = verifier.commit(x1_comm);
+        let y1_var = verifier.commit(y1_comm);
+        let x2_var = verifier.commit(x2_comm);
+        let y2_var = verifier.commit(y2_comm);
+        let x3_var = verifier.commit(x3_comm);
+        let y3_var = verifier.commit(y3_comm);
+        let delta_var = verifier.commit(delta_comm);
+        let x1_minus_x2_inv_var = verifier.commit(x1_minus_x2_inv_comm);
+
+        checked_curve_addition(
+            &mut verifier,
+            x1_var.into(),
+            y1_var.into(),
+            x2_var.into(),
+            y2_var.into(),
+            x3_var.into(),
+            y3_var.into(),
+            delta_var.into(),
+            x1_minus_x2_inv_var.into(),
+        );
+
+        verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
+    }
 }
