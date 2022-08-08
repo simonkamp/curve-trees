@@ -1,13 +1,16 @@
+#[allow(unused)]
+#[allow(unused_imports)]
+
 use bulletproofs::r1cs::*;
 
 use ark_ec::AffineCurve;
 use ark_ff::{Field, One, Zero};
 
 const WINDOW_SIZE: usize = 3;
-const WINDOW_ELEMS: usize = 1 << WINDOW_SIZE;
+pub const WINDOW_ELEMS: usize = 1 << WINDOW_SIZE;
 
 pub struct Lookup3Bit<const N: usize, F: Field> {
-    elems: [[F; WINDOW_ELEMS]; N],
+    pub elems: [[F; WINDOW_ELEMS]; N],
 }
 
 fn b2f<F: Field>(v: bool) -> F {
@@ -98,7 +101,7 @@ impl<const N: usize, F: Field> Lookup3Bit<N, F> {
     }
 }
 
-// The witneness (provided when proving/None when verifying) is the secret index
+// The witness (provided when proving/None when verifying) is the secret index
 pub fn lookup<const N: usize, C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs: &mut Cs,
     table: &Lookup3Bit<N, C::ScalarField>,

@@ -1,8 +1,13 @@
-#[allow(unused)] // todo
+#[allow(unused)]
+#[allow(unused_imports)]
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
 
+use crate::lookup::*;
+
 use ark_ec::AffineCurve;
+use ark_ff::{PrimeField, Field};
+use ark_std::{One, Zero};
 use merlin::Transcript;
 use std::marker::PhantomData;
 
@@ -68,7 +73,6 @@ fn checked_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
     incomplete_curve_addition(cs, x1, y1, x2, y2, x3, y3, delta);
 }
 
-// todo why are other implementations much more complex? Am I missing something?
 /// Enforce v != 0
 /// Takes v and its modular inverse (v_inv) as input
 fn not_zero<C: AffineCurve, Cs: ConstraintSystem<C>>(
@@ -82,6 +86,54 @@ fn not_zero<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs.constrain(LinearCombination::<C::ScalarField>::from(
         one - Variable::One(PhantomData),
     ));
+}
+
+fn re_randomize<C: AffineCurve, C2: AffineCurve<BaseField = C::ScalarField>, Cs: ConstraintSystem<C>>(
+    cs: &mut Cs,
+    commitment_x: C::ScalarField,
+    commitment_y: C::ScalarField,
+    blinding_x: C::ScalarField,
+    blinding_y: C::ScalarField,
+    randomness: Option<C::ScalarField>, // Witness provided by the prover
+) {
+    let lambda = <C::ScalarField as PrimeField>::size_in_bits();
+    let m = lambda / 3 + 1;
+
+    // todo I have mixed up the fields...
+    
+    // Define tables T_0 .. T_m-1
+    let mut tables = Vec::with_capacity(m);
+    let mut m_th_other_term = C::ScalarField::zero();
+    for i in 1..m {
+        let mut table = Lookup3Bit::<2, C::ScalarField> {
+            elems: [[C::ScalarField::one(); WINDOW_ELEMS]; 2],
+        };
+        // 2^(3*i)
+        let j_term = C::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
+        m_th_other_term = m_th_other_term + j_term;
+        // 2^(3*(i+1))
+        let other_term = C::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64]);
+        for j in 0..WINDOW_ELEMS {
+            // j * 2^(3*i) + 2^(3*(i+1))
+            let scalar = (C::ScalarField::from(j as u64) * j_term) + other_term;
+            // Multiply blinding by scalar
+            // todo this requires a point representation of blinding, or implementing point doubling
+        }
+        tables.push(table);
+    }
+    // Define table T_m
+    let mut table = Lookup3Bit::<2, C::ScalarField> {
+        elems: [[C::ScalarField::one(); WINDOW_ELEMS]; 2],
+    };
+    // 2^(3*m)
+    let j_term = C::ScalarField::from(2u8).pow(&[3u64 * m as u64]);
+    for j in 0..WINDOW_ELEMS {
+        // j * 2^(3*i) + 2^(3*(i+1))
+        let scalar = (C::ScalarField::from(j as u64) * j_term) + m_th_other_term;
+        // Multiply blinding by scalar
+        // todo this requires a point representation of blinding, or implementing point doubling
+    }
+    tables.push(table);
 }
 
 #[cfg(test)]
