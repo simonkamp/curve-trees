@@ -8,6 +8,7 @@ rand = { version = "0.8", default-features = false }
 bulletproofs = { path = "../bulletproofs" }
 ark-ff = { version = "0.3.0", features = ["parallel", "asm"] }
 ark-ec = { version = "0.3.0", features = [ "parallel" ] }
+ark-std = { version = "0.3.0", features = [ "parallel" ] }
 merlin = { version = "2", default-features = false }
 
 [dev-dependencies]
