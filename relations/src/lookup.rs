@@ -1,6 +1,5 @@
 #[allow(unused)]
 #[allow(unused_imports)]
-
 use bulletproofs::r1cs::*;
 
 use ark_ec::AffineCurve;

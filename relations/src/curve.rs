@@ -5,18 +5,21 @@ use bulletproofs::{BulletproofGens, PedersenGens};
 
 use crate::lookup::*;
 
-use ark_ec::AffineCurve;
-use ark_ff::{PrimeField, Field};
+use ark_ec::{
+    models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
+    AffineCurve, ModelParameters, SWModelParameters,
+};
+use ark_ff::{BigInteger, Field, PrimeField};
 use ark_std::{One, Zero};
 use merlin::Transcript;
 use std::marker::PhantomData;
 
-fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
+pub fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs: &mut Cs,
     x: LinearCombination<C::ScalarField>,
     y: LinearCombination<C::ScalarField>,
-    a: C::ScalarField,
-    b: C::ScalarField,
+    a: C::ScalarField, // 0 for pallas and vesta
+    b: C::ScalarField, // 5 for pallas and vesta
 ) {
     let (_, _, x2) = cs.multiply(x.clone(), x.clone());
     let (_, _, x3) = cs.multiply(x.clone(), x2.into());
@@ -33,16 +36,15 @@ fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
 
 /// Enforce points over C::ScalarField: (x_3, y_3) = (x_1, y_1) + (x_2, y_2)
 /// Takes the slope (delta) as input
-fn incomplete_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
+pub fn incomplete_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs: &mut Cs,
-    // todo pass points as structs (or single struct with delta?) with conversion from the other curve
     x1: LinearCombination<C::ScalarField>,
     y1: LinearCombination<C::ScalarField>,
     x2: LinearCombination<C::ScalarField>,
     y2: LinearCombination<C::ScalarField>,
     x3: LinearCombination<C::ScalarField>,
     y3: LinearCombination<C::ScalarField>,
-    delta: LinearCombination<C::ScalarField>, // free variable
+    delta: LinearCombination<C::ScalarField>,
 ) {
     // delta * (x_2 - x_1) = y_2 - y_1
     let (_, _, delta_x2_x1) = cs.multiply(delta.clone(), x2.clone() - x1.clone());
@@ -58,7 +60,7 @@ fn incomplete_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
 }
 
 /// Enforce ()
-fn checked_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
+pub fn checked_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs: &mut Cs,
     x1: LinearCombination<C::ScalarField>,
     y1: LinearCombination<C::ScalarField>,
@@ -88,52 +90,73 @@ fn not_zero<C: AffineCurve, Cs: ConstraintSystem<C>>(
     ));
 }
 
-fn re_randomize<C: AffineCurve, C2: AffineCurve<BaseField = C::ScalarField>, Cs: ConstraintSystem<C>>(
+pub fn re_randomize<
+    C: AffineCurve,
+    C2: SWModelParameters<BaseField = C::ScalarField>,
+    Cs: ConstraintSystem<C>,
+>(
     cs: &mut Cs,
+    h: GroupAffine<C2>,
     commitment_x: C::ScalarField,
     commitment_y: C::ScalarField,
-    blinding_x: C::ScalarField,
-    blinding_y: C::ScalarField,
-    randomness: Option<C::ScalarField>, // Witness provided by the prover
+    commitment_x_tilde: C::ScalarField,
+    commitment_y_tilde: C::ScalarField,
+    randomness: Option<C2::ScalarField>, // Witness provided by the prover
 ) {
-    let lambda = <C::ScalarField as PrimeField>::size_in_bits();
+    let lambda = <C2::ScalarField as PrimeField>::size_in_bits();
     let m = lambda / 3 + 1;
 
-    // todo I have mixed up the fields...
-    
-    // Define tables T_0 .. T_m-1
-    let mut tables = Vec::with_capacity(m);
-    let mut m_th_other_term = C::ScalarField::zero();
-    for i in 1..m {
+    let r_bits = match randomness {
+        None => None,
+        Some(r) => {
+            let r: <C2::ScalarField as PrimeField>::BigInt = r.into();
+            Some(r.to_bits_le())
+        }
+    };
+
+    // Define tables T_1 .. T_m
+    let mut m_th_other_term = C2::ScalarField::zero();
+    for i in 1..m + 1 {
         let mut table = Lookup3Bit::<2, C::ScalarField> {
             elems: [[C::ScalarField::one(); WINDOW_ELEMS]; 2],
         };
         // 2^(3*i)
-        let j_term = C::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
-        m_th_other_term = m_th_other_term + j_term;
-        // 2^(3*(i+1))
-        let other_term = C::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64]);
+        let j_term = C2::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
+        let other_term = if i < m {
+            // add j term to the sum in the mth iteration other term
+            m_th_other_term = m_th_other_term + j_term;
+            // 2^(3*(i+1))
+            C2::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64])
+        } else {
+            // sum for i = 1..m-1 { 2^(3* i) }
+            m_th_other_term
+        };
         for j in 0..WINDOW_ELEMS {
-            // j * 2^(3*i) + 2^(3*(i+1))
-            let scalar = (C::ScalarField::from(j as u64) * j_term) + other_term;
-            // Multiply blinding by scalar
-            // todo this requires a point representation of blinding, or implementing point doubling
+            // s = j * 2^(3*i) + other_term
+            let s = (C2::ScalarField::from(j as u64) * j_term) - other_term;
+            // Multiply blinding by s
+            let hs = h.mul(s);
+            table.elems[0][j] = hs.x;
+            table.elems[1][j] = hs.y;
         }
-        tables.push(table);
+
+        let index = match &r_bits {
+            None => None,
+            Some(random_bits) => {
+                let bi = (i - 1) * 3;
+                let mut index = if random_bits[bi] { 1usize } else { 0 };
+                if random_bits[bi + 1] {
+                    index += 2
+                };
+                if random_bits[bi + 2] {
+                    index += 4
+                };
+                Some(index)
+            }
+        };
+
+        let [x_table, y_table] = lookup(cs, &table, index).unwrap();
     }
-    // Define table T_m
-    let mut table = Lookup3Bit::<2, C::ScalarField> {
-        elems: [[C::ScalarField::one(); WINDOW_ELEMS]; 2],
-    };
-    // 2^(3*m)
-    let j_term = C::ScalarField::from(2u8).pow(&[3u64 * m as u64]);
-    for j in 0..WINDOW_ELEMS {
-        // j * 2^(3*i) + 2^(3*(i+1))
-        let scalar = (C::ScalarField::from(j as u64) * j_term) + m_th_other_term;
-        // Multiply blinding by scalar
-        // todo this requires a point representation of blinding, or implementing point doubling
-    }
-    tables.push(table);
 }
 
 #[cfg(test)]
