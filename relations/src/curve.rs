@@ -12,7 +12,7 @@ use ark_ec::{
 use ark_ff::{BigInteger, Field, PrimeField};
 use ark_std::{One, Zero};
 use merlin::Transcript;
-use std::marker::PhantomData;
+use std::{marker::PhantomData, borrow::BorrowMut};
 
 pub fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs: &mut Cs,
@@ -22,8 +22,8 @@ pub fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
     b: C::ScalarField, // 5 for pallas and vesta
 ) {
     let (_, _, x2) = cs.multiply(x.clone(), x.clone());
-    let (_, _, x3) = cs.multiply(x.clone(), x2.into());
-    let (_, _, y2) = cs.multiply(y.clone(), y.clone());
+    let (_, _, x3) = cs.multiply(x, x2.into());
+    let (_, _, y2) = cs.multiply(y.clone(), y);
 
     // x^3 + A*x^2 + B - y^2 = 0
     cs.constrain(
@@ -34,45 +34,53 @@ pub fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
     )
 }
 
+#[derive(Clone, Debug)]
+pub struct curve_addition_prms<F: Field> {
+    x1: LinearCombination<F>,
+    y1: LinearCombination<F>,
+    x2: LinearCombination<F>,
+    y2: LinearCombination<F>,
+    x3: LinearCombination<F>,
+    y3: LinearCombination<F>,
+    delta: LinearCombination<F>,
+}
+
 /// Enforce points over C::ScalarField: (x_3, y_3) = (x_1, y_1) + (x_2, y_2)
 /// Takes the slope (delta) as input
 pub fn incomplete_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs: &mut Cs,
-    x1: LinearCombination<C::ScalarField>,
-    y1: LinearCombination<C::ScalarField>,
-    x2: LinearCombination<C::ScalarField>,
-    y2: LinearCombination<C::ScalarField>,
-    x3: LinearCombination<C::ScalarField>,
-    y3: LinearCombination<C::ScalarField>,
-    delta: LinearCombination<C::ScalarField>,
+    prms: &curve_addition_prms<C::ScalarField>,
 ) {
     // delta * (x_2 - x_1) = y_2 - y_1
-    let (_, _, delta_x2_x1) = cs.multiply(delta.clone(), x2.clone() - x1.clone());
-    cs.constrain(LinearCombination::<C::ScalarField>::from(delta_x2_x1) - (y2 - y1.clone()));
+    let (_, _, delta_x2_x1) = cs.multiply(prms.delta.clone(), prms.x2.clone() - prms.x1.clone()); // todo make borrow parameters?
+    cs.constrain(
+        LinearCombination::<C::ScalarField>::from(delta_x2_x1)
+            - (prms.y2.clone() - prms.y1.clone()),
+    );
 
     // delta * (x_3 - x_1) = - y_3 - y_1
-    let (_, _, delta_x3_x1) = cs.multiply(delta.clone(), x3.clone() - x1.clone());
-    cs.constrain(LinearCombination::<C::ScalarField>::from(delta_x3_x1) - (-y3 - y1));
+    let (_, _, delta_x3_x1) = cs.multiply(prms.delta.clone(), prms.x3.clone() - prms.x1.clone());
+    cs.constrain(
+        LinearCombination::<C::ScalarField>::from(delta_x3_x1)
+            - (-prms.y3.clone() - prms.y1.clone()),
+    );
 
     // delta * delta = x_3 + x_2 + x_1
-    let (_, _, delta2) = cs.multiply(delta.clone(), delta.clone());
-    cs.constrain(x3 + x2 + x1 - LinearCombination::<C::ScalarField>::from(delta2));
+    let (_, _, delta2) = cs.multiply(prms.delta.clone(), prms.delta.clone());
+    cs.constrain(
+        prms.x3.clone() + prms.x2.clone() + prms.x1.clone()
+            - LinearCombination::<C::ScalarField>::from(delta2),
+    );
 }
 
 /// Enforce ()
 pub fn checked_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs: &mut Cs,
-    x1: LinearCombination<C::ScalarField>,
-    y1: LinearCombination<C::ScalarField>,
-    x2: LinearCombination<C::ScalarField>,
-    y2: LinearCombination<C::ScalarField>,
-    x3: LinearCombination<C::ScalarField>,
-    y3: LinearCombination<C::ScalarField>,
-    delta: LinearCombination<C::ScalarField>,
+    prms: &curve_addition_prms<C::ScalarField>,
     x1_minus_x2_inv: LinearCombination<C::ScalarField>,
 ) {
-    not_zero(cs, x1.clone() - x2.clone(), x1_minus_x2_inv);
-    incomplete_curve_addition(cs, x1, y1, x2, y2, x3, y3, delta);
+    not_zero(cs, prms.x1.clone() - prms.x2.clone(), x1_minus_x2_inv);
+    incomplete_curve_addition(cs, prms);
 }
 
 /// Enforce v != 0
@@ -85,9 +93,7 @@ fn not_zero<C: AffineCurve, Cs: ConstraintSystem<C>>(
     // v * v_inv = one
     let (_, _, one) = cs.multiply(v, v_inv);
     // one = 1
-    cs.constrain(LinearCombination::<C::ScalarField>::from(
-        one - Variable::One(PhantomData),
-    ));
+    cs.constrain(one - Variable::One(PhantomData));
 }
 
 pub fn re_randomize<
@@ -124,7 +130,7 @@ pub fn re_randomize<
         let j_term = C2::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
         let other_term = if i < m {
             // add j term to the sum in the mth iteration other term
-            m_th_other_term = m_th_other_term + j_term;
+            m_th_other_term += j_term;
             // 2^(3*(i+1))
             C2::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64])
         } else {
@@ -158,6 +164,10 @@ pub fn re_randomize<
         let [x_table, y_table] = lookup(cs, &table, index).unwrap();
     }
 }
+
+pub fn prove_addition<T: BorrowMut<Transcript>, C: AffineCurve>(
+    prover: &mut Prover<T, C>,
+) {}
 
 #[cfg(test)]
 mod tests {
@@ -215,15 +225,19 @@ mod tests {
             VestaScalar::rand(&mut rng),
         );
 
+        let add_prms = curve_addition_prms {
+            x1: x1_var.into(),
+            y1: y1_var.into(),
+            x2: x2_var.into(),
+            y2: y2_var.into(),
+            x3: x3_var.into(),
+            y3: y3_var.into(),
+            delta: delta_var.into(),
+        };
+
         checked_curve_addition(
             &mut prover,
-            x1_var.into(),
-            y1_var.into(),
-            x2_var.into(),
-            y2_var.into(),
-            x3_var.into(),
-            y3_var.into(),
-            delta_var.into(),
+            &add_prms,
             x1_minus_x2_inv_var.into(),
         );
 
@@ -241,15 +255,19 @@ mod tests {
         let delta_var = verifier.commit(delta_comm);
         let x1_minus_x2_inv_var = verifier.commit(x1_minus_x2_inv_comm);
 
+        let add_prms = curve_addition_prms {
+            x1: x1_var.into(),
+            y1: y1_var.into(),
+            x2: x2_var.into(),
+            y2: y2_var.into(),
+            x3: x3_var.into(),
+            y3: y3_var.into(),
+            delta: delta_var.into(),
+        };
+
         checked_curve_addition(
             &mut verifier,
-            x1_var.into(),
-            y1_var.into(),
-            x2_var.into(),
-            y2_var.into(),
-            x3_var.into(),
-            y3_var.into(),
-            delta_var.into(),
+            &add_prms,
             x1_minus_x2_inv_var.into(),
         );
 

@@ -67,7 +67,7 @@ fn single_membership<C: AffineCurve, Cs: ConstraintSystem<C>>(
         Variable<C::ScalarField>,
         Variable<C::ScalarField>,
         Variable<C::ScalarField>,
-    ) = cs.multiply(s0.clone(), {
+    ) = cs.multiply(s0, {
         let f = -(sa.clone() * u[0]) + (s2.clone() * u[0]) + (s1.clone() * u[0]) - u[0]
             + (sa.clone() * u[2]);
         let f = f - (s1.clone() * u[2]) + (sa.clone() * u[4])
@@ -75,18 +75,13 @@ fn single_membership<C: AffineCurve, Cs: ConstraintSystem<C>>(
             - (sa.clone() * u[6]);
         let f = f + (sa.clone() * u[1]) - (s2.clone() * u[1]) - (s1.clone() * u[1]) + u[1]
             - (sa.clone() * u[3]);
-        let f = f + (s1.clone() * u[3]) - (sa.clone() * u[5])
-            + (s2.clone() * u[5])
-            + (sa.clone() * u[7]);
-        f
+        f + (s1.clone() * u[3]) - (sa.clone() * u[5]) + (s2.clone() * u[5]) + (sa.clone() * u[7])
     });
 
     // right size
     let right = -(sa.clone() * u[0]) + (s2.clone() * u[0]) + (s1.clone() * u[0]) - u[0]
         + (sa.clone() * u[2]);
-    let right = right - (s1.clone() * u[2]) + (sa.clone() * u[4])
-        - (s2.clone() * u[4])
-        - (sa.clone() * u[6]);
+    let right = right - (s1 * u[2]) + (sa.clone() * u[4]) - (s2 * u[4]) - (sa * u[6]);
 
     // sum is the element
     left - right
@@ -95,7 +90,7 @@ fn single_membership<C: AffineCurve, Cs: ConstraintSystem<C>>(
 impl<const N: usize, F: Field> Lookup3Bit<N, F> {
     fn lookup(&self, index: usize) -> [F; N] {
         assert!(index < WINDOW_ELEMS);
-        let val: Vec<_> = (0..N).map(|i| self.elems[i][index].clone()).collect();
+        let val: Vec<_> = (0..N).map(|i| self.elems[i][index]).collect();
         val.try_into().unwrap()
     }
 }
