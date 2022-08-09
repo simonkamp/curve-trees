@@ -12,14 +12,14 @@ use ark_ec::{
 use ark_ff::{BigInteger, Field, PrimeField};
 use ark_std::{One, Zero};
 use merlin::Transcript;
-use std::{marker::PhantomData, borrow::BorrowMut};
+use std::{borrow::BorrowMut, marker::PhantomData};
 
-pub fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
+pub fn curve_check<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    x: LinearCombination<C::ScalarField>,
-    y: LinearCombination<C::ScalarField>,
-    a: C::ScalarField, // 0 for pallas and vesta
-    b: C::ScalarField, // 5 for pallas and vesta
+    x: LinearCombination<F>,
+    y: LinearCombination<F>,
+    a: F, // 0 for pallas and vesta
+    b: F, // 5 for pallas and vesta
 ) {
     let (_, _, x2) = cs.multiply(x.clone(), x.clone());
     let (_, _, x3) = cs.multiply(x, x2.into());
@@ -27,10 +27,7 @@ pub fn curve_check<C: AffineCurve, Cs: ConstraintSystem<C>>(
 
     // x^3 + A*x^2 + B - y^2 = 0
     cs.constrain(
-        LinearCombination::<C::ScalarField>::from(x3)
-            + LinearCombination::<C::ScalarField>::from(x2).scalar_mul(a)
-            + b
-            - y2,
+        LinearCombination::<F>::from(x3) + LinearCombination::<F>::from(x2).scalar_mul(a) + b - y2,
     )
 }
 
@@ -47,37 +44,30 @@ pub struct curve_addition_prms<F: Field> {
 
 /// Enforce points over C::ScalarField: (x_3, y_3) = (x_1, y_1) + (x_2, y_2)
 /// Takes the slope (delta) as input
-pub fn incomplete_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
+pub fn incomplete_curve_addition<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    prms: &curve_addition_prms<C::ScalarField>,
+    prms: &curve_addition_prms<F>,
 ) {
     // delta * (x_2 - x_1) = y_2 - y_1
     let (_, _, delta_x2_x1) = cs.multiply(prms.delta.clone(), prms.x2.clone() - prms.x1.clone()); // todo make borrow parameters?
-    cs.constrain(
-        LinearCombination::<C::ScalarField>::from(delta_x2_x1)
-            - (prms.y2.clone() - prms.y1.clone()),
-    );
+    cs.constrain(LinearCombination::<F>::from(delta_x2_x1) - (prms.y2.clone() - prms.y1.clone()));
 
     // delta * (x_3 - x_1) = - y_3 - y_1
     let (_, _, delta_x3_x1) = cs.multiply(prms.delta.clone(), prms.x3.clone() - prms.x1.clone());
-    cs.constrain(
-        LinearCombination::<C::ScalarField>::from(delta_x3_x1)
-            - (-prms.y3.clone() - prms.y1.clone()),
-    );
+    cs.constrain(LinearCombination::<F>::from(delta_x3_x1) - (-prms.y3.clone() - prms.y1.clone()));
 
     // delta * delta = x_3 + x_2 + x_1
     let (_, _, delta2) = cs.multiply(prms.delta.clone(), prms.delta.clone());
     cs.constrain(
-        prms.x3.clone() + prms.x2.clone() + prms.x1.clone()
-            - LinearCombination::<C::ScalarField>::from(delta2),
+        prms.x3.clone() + prms.x2.clone() + prms.x1.clone() - LinearCombination::<F>::from(delta2),
     );
 }
 
 /// Enforce ()
-pub fn checked_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
+pub fn checked_curve_addition<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    prms: &curve_addition_prms<C::ScalarField>,
-    x1_minus_x2_inv: LinearCombination<C::ScalarField>,
+    prms: &curve_addition_prms<F>,
+    x1_minus_x2_inv: LinearCombination<F>,
 ) {
     not_zero(cs, prms.x1.clone() - prms.x2.clone(), x1_minus_x2_inv);
     incomplete_curve_addition(cs, prms);
@@ -85,10 +75,10 @@ pub fn checked_curve_addition<C: AffineCurve, Cs: ConstraintSystem<C>>(
 
 /// Enforce v != 0
 /// Takes v and its modular inverse (v_inv) as input
-fn not_zero<C: AffineCurve, Cs: ConstraintSystem<C>>(
+fn not_zero<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    v: LinearCombination<C::ScalarField>,
-    v_inv: LinearCombination<C::ScalarField>,
+    v: LinearCombination<F>,
+    v_inv: LinearCombination<F>,
 ) {
     // v * v_inv = one
     let (_, _, one) = cs.multiply(v, v_inv);
@@ -96,17 +86,13 @@ fn not_zero<C: AffineCurve, Cs: ConstraintSystem<C>>(
     cs.constrain(one - Variable::One(PhantomData));
 }
 
-pub fn re_randomize<
-    C: AffineCurve,
-    C2: SWModelParameters<BaseField = C::ScalarField>,
-    Cs: ConstraintSystem<C>,
->(
+pub fn re_randomize<F: Field, C2: SWModelParameters<BaseField = F>, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
     h: GroupAffine<C2>,
-    commitment_x: C::ScalarField,
-    commitment_y: C::ScalarField,
-    commitment_x_tilde: C::ScalarField,
-    commitment_y_tilde: C::ScalarField,
+    commitment_x: F,
+    commitment_y: F,
+    commitment_x_tilde: F,
+    commitment_y_tilde: F,
     randomness: Option<C2::ScalarField>, // Witness provided by the prover
 ) {
     let lambda = <C2::ScalarField as PrimeField>::size_in_bits();
@@ -123,8 +109,8 @@ pub fn re_randomize<
     // Define tables T_1 .. T_m
     let mut m_th_other_term = C2::ScalarField::zero();
     for i in 1..m + 1 {
-        let mut table = Lookup3Bit::<2, C::ScalarField> {
-            elems: [[C::ScalarField::one(); WINDOW_ELEMS]; 2],
+        let mut table = Lookup3Bit::<2, F> {
+            elems: [[F::one(); WINDOW_ELEMS]; 2],
         };
         // 2^(3*i)
         let j_term = C2::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
@@ -165,9 +151,7 @@ pub fn re_randomize<
     }
 }
 
-pub fn prove_addition<T: BorrowMut<Transcript>, C: AffineCurve>(
-    prover: &mut Prover<T, C>,
-) {}
+pub fn prove_addition<T: BorrowMut<Transcript>, C: AffineCurve>(prover: &mut Prover<T, C>) {}
 
 #[cfg(test)]
 mod tests {
@@ -235,11 +219,7 @@ mod tests {
             delta: delta_var.into(),
         };
 
-        checked_curve_addition(
-            &mut prover,
-            &add_prms,
-            x1_minus_x2_inv_var.into(),
-        );
+        checked_curve_addition(&mut prover, &add_prms, x1_minus_x2_inv_var.into());
 
         let proof = prover.prove(&bp_gens).unwrap();
 
@@ -265,11 +245,7 @@ mod tests {
             delta: delta_var.into(),
         };
 
-        checked_curve_addition(
-            &mut verifier,
-            &add_prms,
-            x1_minus_x2_inv_var.into(),
-        );
+        checked_curve_addition(&mut verifier, &add_prms, x1_minus_x2_inv_var.into());
 
         verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
     }

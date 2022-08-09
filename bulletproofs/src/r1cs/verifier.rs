@@ -65,7 +65,7 @@ pub struct RandomizingVerifier<T: BorrowMut<Transcript>, C: AffineCurve> {
     verifier: Verifier<T, C>,
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Verifier<T, C> {
+impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField> for Verifier<T, C> {
     fn transcript(&mut self) -> &mut Transcript {
         self.transcript.borrow_mut()
     }
@@ -153,7 +153,9 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Verifier<
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C> for Verifier<T, C> {
+impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C::ScalarField>
+    for Verifier<T, C>
+{
     type RandomizedCS = RandomizingVerifier<T, C>;
 
     fn specify_randomized_constraints<F>(&mut self, callback: F) -> Result<(), R1CSError>
@@ -165,7 +167,9 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C> f
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for RandomizingVerifier<T, C> {
+impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
+    for RandomizingVerifier<T, C>
+{
     fn transcript(&mut self) -> &mut Transcript {
         self.verifier.transcript.borrow_mut()
     }
@@ -212,7 +216,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Randomizi
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C>
+impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C::ScalarField>
     for RandomizingVerifier<T, C>
 {
     fn challenge_scalar(&mut self, label: &'static [u8]) -> C::ScalarField {
@@ -503,7 +507,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         println!("V z {}", z);
 
         // commit to T
-        
+
         let transcript = self.transcript.borrow_mut();
         for d in 1..t_poly_deg + 1 {
             if d == op_degree {
@@ -556,7 +560,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         // define parameters for P check
         /*
         let mut g_scalars = Vec::with_capacity(padded_n);
-        
+
         {
             let mut yneg_wR = yneg_wR.into_iter();
             let mut s = s.iter().rev().take(padded_n);
@@ -579,7 +583,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .zip(s.iter().take(padded_n))
             .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i));
 
-        // 
+        //
         let mut h_scalars = Vec::with_capacity(padded_n);
         {
             let mut wL = wL.into_iter();
@@ -606,7 +610,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
                 // y^{-n} o (w_L * x^2 + w_O * x + w_Vi)
                 let res = u_or_1 * (y_inv * (comb - b * si) - C::ScalarField::one());
-                
+
                 h_scalars.push(res);
             }
         }
@@ -642,8 +646,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
 
-        let proof_points = 
-            comm_V.into_iter()
+        let proof_points = comm_V
+            .into_iter()
             .chain(iter::once(proof.A_I1))
             .chain(iter::once(proof.A_O1))
             .chain(iter::once(proof.S1))
@@ -656,8 +660,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(proof.ipp_proof.R_vec.iter().cloned())
             .collect();
 
-        let proof_scalars: Vec<C::ScalarField> = 
-            scalar_V.into_iter()
+        let proof_scalars: Vec<C::ScalarField> = scalar_V
+            .into_iter()
             .chain(iter::once(xoff * x)) // A_I1
             .chain(iter::once(xoff * xx)) // A_O1
             .chain(iter::once(xoff * xxx)) // S1

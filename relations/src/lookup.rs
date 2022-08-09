@@ -20,33 +20,26 @@ fn b2f<F: Field>(v: bool) -> F {
     }
 }
 
-fn is_bit<C: AffineCurve, Cs: ConstraintSystem<C>>(
-    cs: &mut Cs,
-    var: LinearCombination<C::ScalarField>,
-) {
-    let (_, _, zero) = cs.multiply(var.clone(), var - C::ScalarField::one());
+fn is_bit<F: Field, Cs: ConstraintSystem<F>>(cs: &mut Cs, var: LinearCombination<F>) {
+    let (_, _, zero) = cs.multiply(var.clone(), var - F::one());
     cs.constrain(zero.into());
 }
 
-fn bit<C: AffineCurve, Cs: ConstraintSystem<C>>(
+fn bit<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
     val: Option<bool>,
-) -> Result<Variable<C::ScalarField>, R1CSError> {
+) -> Result<Variable<F>, R1CSError> {
     // compute assignment (if witness is provided)
     let assignment = val.map(|b| {
-        let s = if b {
-            C::ScalarField::one()
-        } else {
-            C::ScalarField::zero()
-        };
-        (s, s - C::ScalarField::one())
+        let s = if b { F::one() } else { F::zero() };
+        (s, s - F::one())
     });
 
     // alloc multiplication
     let (bit, bit_inv, zero) = cs.allocate_multiplier(assignment)?;
 
     // check bit_inv and bit relation
-    cs.constrain(bit_inv - (bit - C::ScalarField::one()));
+    cs.constrain(bit_inv - (bit - F::one()));
 
     // check that product is zero
     cs.constrain(zero.into());
@@ -54,20 +47,16 @@ fn bit<C: AffineCurve, Cs: ConstraintSystem<C>>(
     Ok(bit)
 }
 
-fn single_membership<C: AffineCurve, Cs: ConstraintSystem<C>>(
+fn single_membership<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    u: &[C::ScalarField; WINDOW_ELEMS],
-    sa: LinearCombination<C::ScalarField>, // product
-    s0: LinearCombination<C::ScalarField>, // bit
-    s1: LinearCombination<C::ScalarField>, // bit
-    s2: LinearCombination<C::ScalarField>, // bit
-) -> LinearCombination<C::ScalarField> {
+    u: &[F; WINDOW_ELEMS],
+    sa: LinearCombination<F>, // product
+    s0: LinearCombination<F>, // bit
+    s1: LinearCombination<F>, // bit
+    s2: LinearCombination<F>, // bit
+) -> LinearCombination<F> {
     // left side
-    let (_, _, left): (
-        Variable<C::ScalarField>,
-        Variable<C::ScalarField>,
-        Variable<C::ScalarField>,
-    ) = cs.multiply(s0, {
+    let (_, _, left): (Variable<F>, Variable<F>, Variable<F>) = cs.multiply(s0, {
         let f = -(sa.clone() * u[0]) + (s2.clone() * u[0]) + (s1.clone() * u[0]) - u[0]
             + (sa.clone() * u[2]);
         let f = f - (s1.clone() * u[2]) + (sa.clone() * u[4])
@@ -96,17 +85,17 @@ impl<const N: usize, F: Field> Lookup3Bit<N, F> {
 }
 
 // The witness (provided when proving/None when verifying) is the secret index
-pub fn lookup<const N: usize, C: AffineCurve, Cs: ConstraintSystem<C>>(
+pub fn lookup<const N: usize, F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    table: &Lookup3Bit<N, C::ScalarField>,
+    table: &Lookup3Bit<N, F>,
     index: Option<usize>,
-) -> Result<[LinearCombination<C::ScalarField>; N], R1CSError> {
+) -> Result<[LinearCombination<F>; N], R1CSError> {
     // compute multiplication of higher bits
     let (b1, b2, ba) =
         cs.allocate_multiplier(index.map(|i| (b2f((i >> 1) & 1 == 1), b2f((i >> 2) & 1 == 1))))?;
 
     // enforce bits
-    let b0 = bit::<C, Cs>(cs, index.map(|i| (i & 1) == 1))?;
+    let b0 = bit::<F, Cs>(cs, index.map(|i| (i & 1) == 1))?;
     is_bit(cs, b1.into());
     is_bit(cs, b2.into());
 

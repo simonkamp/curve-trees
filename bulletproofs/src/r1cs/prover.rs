@@ -98,7 +98,9 @@ impl<F: Field> Drop for Secrets<F> {
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Prover<'g, T, C> {
+impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
+    for Prover<'g, T, C>
+{
     fn transcript(&mut self) -> &mut Transcript {
         self.transcript.borrow_mut()
     }
@@ -201,7 +203,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C> for Prove
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C>
+impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C::ScalarField>
     for Prover<'g, T, C>
 {
     type RandomizedCS = RandomizingProver<'g, T, C>;
@@ -215,7 +217,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C>
+impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
     for RandomizingProver<'g, T, C>
 {
     fn transcript(&mut self) -> &mut Transcript {
@@ -264,7 +266,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C>
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C>
+impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C::ScalarField>
     for RandomizingProver<'g, T, C>
 {
     fn challenge_scalar(&mut self, label: &'static [u8]) -> C::ScalarField {
@@ -365,33 +367,28 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // comm = <v, G> + <v_blinding> B_blinding
         let gens = bp_gens.share(0);
 
-        let generators: Vec<_> = 
-            iter::once(&self.pc_gens.B_blinding)
-                .chain(gens.G(v.len()))
-                .cloned()
-                .collect::<Vec<_>>();
+        let generators: Vec<_> = iter::once(&self.pc_gens.B_blinding)
+            .chain(gens.G(v.len()))
+            .cloned()
+            .collect::<Vec<_>>();
 
-        let scalars: Vec<<C::ScalarField as PrimeField>::BigInt> =
-            iter::once(&v_blinding)
-                .chain(v.iter())
-                .map(|s| {
-                    let s: <C::ScalarField as PrimeField>::BigInt = s.clone().into();
-                    s
-                })
-                .collect();
-        
+        let scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = iter::once(&v_blinding)
+            .chain(v.iter())
+            .map(|s| {
+                let s: <C::ScalarField as PrimeField>::BigInt = s.clone().into();
+                s
+            })
+            .collect();
+
         assert_eq!(generators.len(), scalars.len());
 
-        let comm = VariableBaseMSM::multi_scalar_mul(
-            generators.as_slice(),
-            scalars.as_slice()
-        );
+        let comm = VariableBaseMSM::multi_scalar_mul(generators.as_slice(), scalars.as_slice());
 
         // create variables for all the addressable coordinates
         let vars = (0..v.len())
             .map(|i| Variable::VectorCommit(comm_idx, i))
             .collect();
-        
+
         // add the opening (values || blinding) to the secrets
         self.secrets.vec_open.push((v_blinding, v.to_owned()));
 
@@ -757,16 +754,14 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         let (wL, wR, wO, wV, wVCs) = self.flattened_constraints(&z);
 
-
-        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3+offset);
-        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3+offset);
+        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
+        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
 
         let mut exp_y = C::ScalarField::one(); // y^n starting at n=0
         let y_inv = y.inverse().unwrap();
         let exp_y_inv = util::exp_iter(y_inv).take(padded_n).collect::<Vec<_>>();
 
         println!("vec comm: {}", self.secrets.vec_open.len());
-
 
         //
         let sLsR = s_L1
@@ -780,19 +775,18 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // l_poly.i = a_Vi
             for (j, v) in self.secrets.vec_open.iter().enumerate() {
                 if v.1.len() > j {
-                    l_poly.coeff_mut(1+j)[i] = v.1[i];
+                    l_poly.coeff_mut(1 + j)[i] = v.1[i];
                 }
             }
-            
+
             // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
-            l_poly.coeff_mut(1+offset)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+            l_poly.coeff_mut(1 + offset)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
 
             // l_poly.2 = a_O
-            l_poly.coeff_mut(2+offset)[i] = self.secrets.a_O[i];
+            l_poly.coeff_mut(2 + offset)[i] = self.secrets.a_O[i];
 
             // l_poly.3 = s_L
-            l_poly.coeff_mut(3+offset)[i] = *sl;
-
+            l_poly.coeff_mut(3 + offset)[i] = *sl;
 
             // r_poly.0 = (z * z^Q * W_O) - y^n
             r_poly.coeff_mut(0)[i] = wO[i] - exp_y;
@@ -810,7 +804,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // correct for all the vector commitments
         // l(x) <- l(x) x^d * a_v
         // r(x) <- r(x) * x + w_v
- 
+
         let mut t_poly = util::VecPoly::inner_product(&l_poly, &r_poly);
 
         // commit to t-poly

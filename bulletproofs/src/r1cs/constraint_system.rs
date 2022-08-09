@@ -3,7 +3,7 @@
 // use super::{LinearCombination, R1CSError, Variable};
 use super::linear_combination::{LinearCombination, Variable};
 use super::R1CSError;
-use ark_ec::AffineCurve;
+use ark_ff::Field;
 use merlin::Transcript;
 
 /// The interface for a constraint system, abstracting over the prover
@@ -18,7 +18,7 @@ use merlin::Transcript;
 /// verifier, gadgets for the constraint system should be written
 /// using the `ConstraintSystem` trait, so that the prover and
 /// verifier share the logic for specifying constraints.
-pub trait ConstraintSystem<C: AffineCurve> {
+pub trait ConstraintSystem<F: Field> {
     // type Scalar: Field;
 
     /// Leases the proof transcript to the user, so they can
@@ -42,13 +42,9 @@ pub trait ConstraintSystem<C: AffineCurve> {
     /// Returns `(left, right, out)` for use in further constraints.
     fn multiply(
         &mut self,
-        left: LinearCombination<C::ScalarField>,
-        right: LinearCombination<C::ScalarField>,
-    ) -> (
-        Variable<C::ScalarField>,
-        Variable<C::ScalarField>,
-        Variable<C::ScalarField>,
-    );
+        left: LinearCombination<F>,
+        right: LinearCombination<F>,
+    ) -> (Variable<F>, Variable<F>, Variable<F>);
 
     /// Allocate a single variable.
     ///
@@ -60,10 +56,7 @@ pub trait ConstraintSystem<C: AffineCurve> {
     /// has the `right` assigned to zero and all its variables committed.
     ///
     /// Returns unconstrained `Variable` for use in further constraints.
-    fn allocate(
-        &mut self,
-        assignment: Option<C::ScalarField>,
-    ) -> Result<Variable<C::ScalarField>, R1CSError>;
+    fn allocate(&mut self, assignment: Option<F>) -> Result<Variable<F>, R1CSError>;
 
     /// Allocate variables `left`, `right`, and `out`
     /// with the implicit constraint that
@@ -74,15 +67,8 @@ pub trait ConstraintSystem<C: AffineCurve> {
     /// Returns `(left, right, out)` for use in further constraints.
     fn allocate_multiplier(
         &mut self,
-        input_assignments: Option<(C::ScalarField, C::ScalarField)>,
-    ) -> Result<
-        (
-            Variable<C::ScalarField>,
-            Variable<C::ScalarField>,
-            Variable<C::ScalarField>,
-        ),
-        R1CSError,
-    >;
+        input_assignments: Option<(F, F)>,
+    ) -> Result<(Variable<F>, Variable<F>, Variable<F>), R1CSError>;
 
     /// Counts the amount of constraints in the constraint system.
     fn metrics(&self) -> crate::r1cs::Metrics;
@@ -91,7 +77,7 @@ pub trait ConstraintSystem<C: AffineCurve> {
     /// ```text
     /// lc = 0
     /// ```
-    fn constrain(&mut self, lc: LinearCombination<C::ScalarField>);
+    fn constrain(&mut self, lc: LinearCombination<F>);
 }
 
 /// An extension to the constraint system trait that permits randomized constraints.
@@ -99,9 +85,9 @@ pub trait ConstraintSystem<C: AffineCurve> {
 /// while gadgets that need randomization should use trait bound `CS: RandomizedConstraintSystem`.
 /// Gadgets generally _should not_ use this trait as a bound on the CS argument: it should be used
 /// by the higher-order protocol that composes gadgets together.
-pub trait RandomizableConstraintSystem<C: AffineCurve>: ConstraintSystem<C> {
+pub trait RandomizableConstraintSystem<F: Field>: ConstraintSystem<F> {
     /// Represents a concrete type for the CS in a randomization phase.
-    type RandomizedCS: RandomizedConstraintSystem<C>;
+    type RandomizedCS: RandomizedConstraintSystem<F>;
 
     /// Specify additional variables and constraints randomized using a challenge scalar
     /// bound to the assignments of the non-randomized variables.
@@ -122,9 +108,9 @@ pub trait RandomizableConstraintSystem<C: AffineCurve>: ConstraintSystem<C> {
     ///     // ...
     /// })
     /// ```
-    fn specify_randomized_constraints<F>(&mut self, callback: F) -> Result<(), R1CSError>
+    fn specify_randomized_constraints<F2>(&mut self, callback: F2) -> Result<(), R1CSError>
     where
-        F: 'static + FnOnce(&mut Self::RandomizedCS) -> Result<(), R1CSError>;
+        F2: 'static + FnOnce(&mut Self::RandomizedCS) -> Result<(), R1CSError>;
 }
 
 /// Represents a constraint system in the second phase:
@@ -132,7 +118,7 @@ pub trait RandomizableConstraintSystem<C: AffineCurve>: ConstraintSystem<C> {
 ///
 /// Note: this trait also includes `ConstraintSystem` trait
 /// in order to allow composition of gadgets: e.g. a shuffle gadget can be used in both phases.
-pub trait RandomizedConstraintSystem<C: AffineCurve>: ConstraintSystem<C> {
+pub trait RandomizedConstraintSystem<F: Field>: ConstraintSystem<F> {
     /// Generates a challenge scalar.
     ///
     /// ### Usage
@@ -149,5 +135,5 @@ pub trait RandomizedConstraintSystem<C: AffineCurve>: ConstraintSystem<C> {
     ///     // ...
     /// })
     /// ```
-    fn challenge_scalar(&mut self, label: &'static [u8]) -> C::ScalarField;
+    fn challenge_scalar(&mut self, label: &'static [u8]) -> F;
 }

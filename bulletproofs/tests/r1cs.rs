@@ -5,6 +5,7 @@ extern crate merlin;
 extern crate rand;
 
 use ark_ec::AffineCurve;
+use ark_ff::Field;
 use ark_std::{One, UniformRand};
 
 use pasta::pallas::Affine;
@@ -20,7 +21,7 @@ use rand::seq::SliceRandom;
 struct ShuffleProof<C: AffineCurve>(R1CSProof<C>);
 
 impl<C: AffineCurve> ShuffleProof<C> {
-    fn gadget<CS: RandomizableConstraintSystem<C>>(
+    fn gadget<CS: RandomizableConstraintSystem<C::ScalarField>>(
         cs: &mut CS,
         x: Vec<Variable<C::ScalarField>>,
         y: Vec<Variable<C::ScalarField>>,
@@ -79,13 +80,13 @@ impl<C: AffineCurve> ShuffleProof<C> {
         transcript.append_message(b"dom-sep", b"ShuffleProof");
         transcript.append_u64(b"k", k as u64);
 
-        let mut prover = Prover::new(&pc_gens, transcript);
+        let mut prover: Prover<_, C> = Prover::new(&pc_gens, transcript);
 
         // Construct blinding factors using an RNG.
         // Note: a non-example implementation would want to operate on existing commitments.
         let mut blinding_rng = rand::thread_rng();
 
-        let (input_commitments, input_vars): (Vec<_>, Vec<_>) = input
+        let (input_commitments, input_vars): (Vec<C>, Vec<Variable<C::ScalarField>>) = input
             .into_iter()
             .map(|v| prover.commit(*v, C::ScalarField::rand(&mut blinding_rng)))
             .unzip();
@@ -95,7 +96,7 @@ impl<C: AffineCurve> ShuffleProof<C> {
             .map(|v| prover.commit(*v, C::ScalarField::rand(&mut blinding_rng)))
             .unzip();
 
-        ShuffleProof::gadget(&mut prover, input_vars, output_vars)?;
+        ShuffleProof::<C>::gadget(&mut prover, input_vars, output_vars)?;
 
         let proof = prover.prove(&bp_gens)?;
 
@@ -131,7 +132,7 @@ impl<C: AffineCurve> ShuffleProof<C> {
             .map(|V| verifier.commit(*V))
             .collect();
 
-        ShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
+        ShuffleProof::<C>::gadget(&mut verifier, input_vars, output_vars)?;
 
         verifier.verify(&self.0, &pc_gens, &bp_gens)?;
         Ok(())
@@ -160,7 +161,7 @@ impl<C: AffineCurve> ShuffleProof<C> {
             .map(|V| verifier.commit(*V))
             .collect();
 
-        ShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
+        ShuffleProof::<C>::gadget(&mut verifier, input_vars, output_vars)?;
 
         verifier.verification_scalars_and_points(&self.0)
     }
@@ -295,14 +296,14 @@ fn shuffle_gadget_test_42() {
 }
 
 /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
-fn example_gadget<C: AffineCurve, CS: ConstraintSystem<C>>(
+fn example_gadget<F: Field, CS: ConstraintSystem<F>>(
     cs: &mut CS,
-    a1: LinearCombination<C::ScalarField>,
-    a2: LinearCombination<C::ScalarField>,
-    b1: LinearCombination<C::ScalarField>,
-    b2: LinearCombination<C::ScalarField>,
-    c1: LinearCombination<C::ScalarField>,
-    c2: LinearCombination<C::ScalarField>,
+    a1: LinearCombination<F>,
+    a2: LinearCombination<F>,
+    b1: LinearCombination<F>,
+    b2: LinearCombination<F>,
+    c1: LinearCombination<F>,
+    c2: LinearCombination<F>,
 ) {
     let (_, _, c_var) = cs.multiply(a1 + a2, b1 + b2);
     cs.constrain(c1 + c2 - c_var);
@@ -410,13 +411,13 @@ fn example_gadget_test() {
 // Range Proof gadget
 
 /// Enforces that the quantity of v is in the range [0, 2^n).
-pub fn range_proof<C: AffineCurve, CS: ConstraintSystem<C>>(
+pub fn range_proof<F: Field, CS: ConstraintSystem<F>>(
     cs: &mut CS,
-    mut v: LinearCombination<C::ScalarField>,
+    mut v: LinearCombination<F>,
     v_assignment: Option<u64>,
     n: usize,
 ) -> Result<(), R1CSError> {
-    let mut exp_2 = C::ScalarField::one();
+    let mut exp_2 = F::one();
     for i in 0..n {
         // Create low-level variables and add them to constraints
         let (a, b, o) = cs.allocate_multiplier(v_assignment.map(|q| {
@@ -497,17 +498,15 @@ fn range_proof_helper<C: AffineCurve>(v_val: u64, n: usize) -> Result<(), R1CSEr
     verifier.verify(&proof, &pc_gens, &bp_gens)
 }
 
-
-
 /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
-fn veccom_gadget<C: AffineCurve, CS: ConstraintSystem<C>>(
+fn veccom_gadget<F: Field, CS: ConstraintSystem<F>>(
     cs: &mut CS,
-    a1: LinearCombination<C::ScalarField>,
-    a2: LinearCombination<C::ScalarField>,
-    b1: LinearCombination<C::ScalarField>,
-    b2: LinearCombination<C::ScalarField>,
-    c1: LinearCombination<C::ScalarField>,
-    c2: LinearCombination<C::ScalarField>,
+    a1: LinearCombination<F>,
+    a2: LinearCombination<F>,
+    b1: LinearCombination<F>,
+    b2: LinearCombination<F>,
+    c1: LinearCombination<F>,
+    c2: LinearCombination<F>,
 ) {
     let (_, _, c_var) = cs.multiply(a1 + a2, b1 + b2);
     cs.constrain(c1 + c2 - c_var);
@@ -604,8 +603,7 @@ fn veccom_gadget_roundtrip_helper<C: AffineCurve>(
     let pc_gens = PedersenGens::<C>::default();
     let bp_gens = BulletproofGens::<C>::new(128, 1);
 
-    let (proof, comm) =
-        veccom_gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, b1, b2, c1, c2)?;
+    let (proof, comm) = veccom_gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, b1, b2, c1, c2)?;
 
     veccom_gadget_verify::<C>(&pc_gens, &bp_gens, c2, proof, comm)
 }
