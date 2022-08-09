@@ -86,46 +86,46 @@ fn not_zero<F: Field, Cs: ConstraintSystem<F>>(
     cs.constrain(one - Variable::One(PhantomData));
 }
 
-pub fn re_randomize<F: Field, C2: SWModelParameters<BaseField = F>, Cs: ConstraintSystem<F>>(
+pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    h: GroupAffine<C2>,
+    h: GroupAffine<C>,
     commitment_x: F,
     commitment_y: F,
     commitment_x_tilde: F,
     commitment_y_tilde: F,
-    randomness: Option<C2::ScalarField>, // Witness provided by the prover
+    randomness: Option<C::ScalarField>, // Witness provided by the prover
 ) {
-    let lambda = <C2::ScalarField as PrimeField>::size_in_bits();
+    let lambda = <C::ScalarField as PrimeField>::size_in_bits();
     let m = lambda / 3 + 1;
 
     let r_bits = match randomness {
         None => None,
         Some(r) => {
-            let r: <C2::ScalarField as PrimeField>::BigInt = r.into();
+            let r: <C::ScalarField as PrimeField>::BigInt = r.into();
             Some(r.to_bits_le())
         }
     };
 
     // Define tables T_1 .. T_m
-    let mut m_th_other_term = C2::ScalarField::zero();
+    let mut m_th_other_term = C::ScalarField::zero();
     for i in 1..m + 1 {
         let mut table = Lookup3Bit::<2, F> {
             elems: [[F::one(); WINDOW_ELEMS]; 2],
         };
         // 2^(3*i)
-        let j_term = C2::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
+        let j_term = C::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
         let other_term = if i < m {
             // add j term to the sum in the mth iteration other term
             m_th_other_term += j_term;
             // 2^(3*(i+1))
-            C2::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64])
+            C::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64])
         } else {
             // sum for i = 1..m-1 { 2^(3* i) }
             m_th_other_term
         };
         for j in 0..WINDOW_ELEMS {
             // s = j * 2^(3*i) + other_term
-            let s = (C2::ScalarField::from(j as u64) * j_term) - other_term;
+            let s = (C::ScalarField::from(j as u64) * j_term) - other_term;
             // Multiply blinding by s
             let hs = h.mul(s);
             table.elems[0][j] = hs.x;
@@ -151,7 +151,17 @@ pub fn re_randomize<F: Field, C2: SWModelParameters<BaseField = F>, Cs: Constrai
     }
 }
 
-pub fn prove_addition<T: BorrowMut<Transcript>, C: AffineCurve>(prover: &mut Prover<T, C>) {}
+pub fn prove_addition<
+    T: BorrowMut<Transcript>,
+    C: AffineCurve,
+    C2: SWModelParameters<BaseField = C::ScalarField>,
+>(
+    prover: &mut Prover<T, C>,
+    p: C2,
+    q: C2,
+) {
+    prover.transcript().append_message(b"", b"");
+}
 
 #[cfg(test)]
 mod tests {

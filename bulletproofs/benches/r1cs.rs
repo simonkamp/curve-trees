@@ -34,7 +34,7 @@ type Scalar = <Affine as AffineCurve>::ScalarField;
 struct ShuffleProof(R1CSProof<Affine>);
 
 impl ShuffleProof {
-    fn gadget<CS: RandomizableConstraintSystem<Affine>>(
+    fn gadget<CS: RandomizableConstraintSystem<Scalar>>(
         cs: &mut CS,
         x: Vec<Variable<Scalar>>,
         y: Vec<Variable<Scalar>>,
