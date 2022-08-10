@@ -66,7 +66,7 @@ fn single_membership<F: Field, Cs: ConstraintSystem<F>>(
         f + (s1.clone() * u[3]) - (sa.clone() * u[5]) + (s2.clone() * u[5]) + (sa.clone() * u[7])
     });
 
-    // right size
+    // right side
     let right = -(sa.clone() * u[0]) + (s2.clone() * u[0]) + (s1.clone() * u[0]) - u[0]
         + (sa.clone() * u[2]);
     let right = right - (s1 * u[2]) + (sa.clone() * u[4]) - (s2 * u[4]) - (sa * u[6]);
@@ -118,6 +118,7 @@ pub fn lookup<const N: usize, F: Field, Cs: ConstraintSystem<F>>(
 mod tests {
     use super::*;
 
+    use ark_std::UniformRand;
     use bulletproofs::{BulletproofGens, PedersenGens};
     use merlin::Transcript;
 
@@ -125,32 +126,67 @@ mod tests {
     use rand::Rng;
 
     use pasta;
+    type C = pasta::pallas::Affine;
+    type C2 = pasta::vesta::Affine;
+    type F = <C as AffineCurve>::ScalarField;
 
-    /*
     #[test]
     fn test_lookup() {
-
-
-        let pc_gens = PedersenGens::default();
-        let bp_gens = BulletproofGens::new(128, 1);
-
         let mut rng = thread_rng();
 
         let u: [F; 8] = [
-            Scalar::random(&mut rng),
-            Scalar::random(&mut rng),
-            Scalar::random(&mut rng),
-            Scalar::random(&mut rng),
-            Scalar::random(&mut rng),
-            Scalar::random(&mut rng),
-            Scalar::random(&mut rng),
-            Scalar::random(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+        ];
+        let v: [F; 8] = [
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
         ];
 
-        let b0: bool = rng.gen();
-        let b1: bool = rng.gen();
-        let b2: bool = rng.gen();
+        let l3b = Lookup3Bit { elems: [u, v] };
 
+        assert_eq!(l3b.lookup(0), [u[0], v[0]]);
+        assert_eq!(l3b.lookup(1), [u[1], v[1]]);
+        assert_eq!(l3b.lookup(7), [u[7], v[7]]);
+
+        let pc_gens = PedersenGens::<C>::default();
+        let bp_gens = BulletproofGens::<C>::new(1024, 1);
+
+        let proof = {
+            let mut transcript = Transcript::new(b"RerandGadget");
+            let mut prover = Prover::new(&pc_gens, &mut transcript);
+
+            let index = 7;
+            let [x, y] = l3b.lookup(index);
+            let x_var = prover.allocate(Some(x)).unwrap();
+            let y_var = prover.allocate(Some(y)).unwrap();
+            let [x_lookup_lc, y_lookup_lc] = lookup(&mut prover, &l3b, Some(index)).unwrap();
+            prover.constrain(x_lookup_lc - x_var);
+            prover.constrain(y_lookup_lc - y_var);
+
+            prover.prove(&bp_gens).unwrap()
+        };
+
+        let mut transcript = Transcript::new(b"RerandGadget");
+        let mut verifier = Verifier::new(&mut transcript);
+
+        let x_var = verifier.allocate(None).unwrap();
+        let y_var = verifier.allocate(None).unwrap();
+        let [x_lookup_lc, y_lookup_lc] = lookup(&mut verifier, &l3b, None).unwrap();
+        verifier.constrain(x_lookup_lc - x_var);
+        verifier.constrain(y_lookup_lc - y_var);
+        verifier.verify(&proof, &pc_gens, &bp_gens).unwrap()
     }
-    */
 }
