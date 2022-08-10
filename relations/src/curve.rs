@@ -97,9 +97,45 @@ fn not_zero<F: Field, Cs: ConstraintSystem<F>>(
     cs.constrain(one - Variable::One(PhantomData));
 }
 
+pub fn build_tables<C: SWModelParameters>(h: GroupAffine<C>) -> Vec<Lookup3Bit<2, C::BaseField>> {
+    let lambda = <C::ScalarField as PrimeField>::size_in_bits();
+    let m = lambda / 3 + 1;
+
+    // Define tables T_1 .. T_m, and witnesses
+    let mut tables = Vec::with_capacity(m);
+    let mut m_th_right_term = C::ScalarField::zero();
+    for i in 1..m + 1 {
+        let mut table = Lookup3Bit::<2, C::BaseField> {
+            elems: [[C::BaseField::one(); WINDOW_ELEMS]; 2],
+        };
+        // 2^(3*i)
+        let j_term = C::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
+        let right_term = if i < m {
+            // add j term to the sum in the mth iteration other term
+            m_th_right_term += j_term;
+            // 2^(3*(i+1))
+            C::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64])
+        } else {
+            // subtract sum for i = 1..m-1 { 2^(3* i) }
+            println!("m: {}", i);
+            -m_th_right_term
+        };
+        for j in 0..WINDOW_ELEMS {
+            // s = j * 2^(3*i) + other_term
+            let s = (C::ScalarField::from(j as u64) * j_term) + right_term;
+            // Multiply blinding by s
+            let hs = h.mul(s);
+            table.elems[0][j] = hs.x;
+            table.elems[1][j] = hs.y;
+        }
+        tables.push(table);
+    }
+    tables
+}
+
 pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    h: GroupAffine<C>, // Constant
+    tables: &Vec<Lookup3Bit<2, F>>,
     commitment_x: LinearCombination<F>,
     commitment_y: LinearCombination<F>,
     commitment_x_tilde: LinearCombination<F>,
@@ -125,28 +161,7 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
     let mut acc_i_minus_1_y_lc: LinearCombination<F> = Variable::One(PhantomData).into();
     // Define tables T_1 .. T_m, and witnesses
     for i in 1..m + 1 {
-        let mut table = Lookup3Bit::<2, F> {
-            elems: [[F::one(); WINDOW_ELEMS]; 2],
-        };
-        // 2^(3*i)
-        let j_term = C::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
-        let other_term = if i < m {
-            // add j term to the sum in the mth iteration other term
-            m_th_other_term += j_term;
-            // 2^(3*(i+1))
-            C::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64])
-        } else {
-            // sum for i = 1..m-1 { 2^(3* i) }
-            m_th_other_term
-        };
-        for j in 0..WINDOW_ELEMS {
-            // s = j * 2^(3*i) + other_term
-            let s = (C::ScalarField::from(j as u64) * j_term) - other_term;
-            // Multiply blinding by s
-            let hs = h.mul(s);
-            table.elems[0][j] = hs.x;
-            table.elems[1][j] = hs.y;
-        }
+        let mut table = tables[i - 1];
 
         let (index, x_l_minus_x_r_inv, delta, acc_i_x, acc_i_y) = match &r_bits {
             None => (None, None, None, None, None),
@@ -222,7 +237,6 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
     // constrain (x_tilde, y_tilde) = (x, y) + (R_m) - with checked addition
     let (delta, x_l_minus_x_r_inv) = match (commitment, commitment_tilde) {
         (Some(commitment), Some(commitment_tilde)) => {
-            // assert!();
             // let ct = commitment + blinding_accumulator;
             // assert!(ct == commitment_tilde);
             let x_left = commitment.x;
@@ -347,46 +361,49 @@ mod tests {
         let blinding = h.mul(r).into_affine();
         let c_tilde = c + h;
 
+        let tables = build_tables(h);
+
         let pc_gens = PedersenGens::<VestaA>::default();
         let bp_gens = BulletproofGens::<VestaA>::new(1024, 1);
 
-        let (proof, commitments) = {
+        let proof = {
             let mut transcript = Transcript::new(b"RerandGadget");
             let mut prover = Prover::new(&pc_gens, &mut transcript);
-            let (c_x_comm, c_x_lc) = prover.commit(c.x, VestaScalar::rand(&mut rng));
-            let (c_y_comm, c_y_lc) = prover.commit(c.y, VestaScalar::rand(&mut rng));
-            let (c_tilde_x_comm, c_tilde_x_lc) =
-                prover.commit(c_tilde.x, VestaScalar::rand(&mut rng));
-            let (c_tilde_y_comm, c_tilde_y_lc) =
-                prover.commit(c_tilde.y, VestaScalar::rand(&mut rng));
+            let c_x_var = prover.allocate(Some(c.x)).unwrap();
+            let c_y_var = prover.allocate(Some(c.y)).unwrap();
+            let c_x_tilde_var = prover.allocate(Some(c_tilde.x)).unwrap();
+            let c_y_tilde_var = prover.allocate(Some(c_tilde.y)).unwrap();
 
             re_randomize(
                 &mut prover,
-                h,
-                c_x_lc.into(),
-                c_y_lc.into(),
-                c_tilde_x_lc.into(),
-                c_tilde_y_lc.into(),
+                &tables,
+                c_x_var.into(),
+                c_y_var.into(),
+                c_x_tilde_var.into(),
+                c_y_tilde_var.into(),
                 Some(c),
                 Some(c_tilde),
                 Some(r),
             );
 
             let proof = prover.prove(&bp_gens).unwrap();
-            (proof, [c_x_comm, c_y_comm, c_tilde_x_comm, c_tilde_y_comm])
+            proof
         };
 
         let mut transcript = Transcript::new(b"RerandGadget");
-        let mut verifier = Verifier::new(&mut transcript);
-        let vars = commitments.map(|c| verifier.commit(c));
+        let mut verifier: Verifier<_, VestaA> = Verifier::new(&mut transcript);
+        let c_x_var = verifier.allocate(None).unwrap();
+        let c_y_var = verifier.allocate(None).unwrap();
+        let c_x_tilde_var = verifier.allocate(None).unwrap();
+        let c_y_tilde_var = verifier.allocate(None).unwrap();
 
-        re_randomize(
+        re_randomize::<_, pasta::pallas::PallasParameters, _>(
             &mut verifier,
-            h,
-            vars[0].into(),
-            vars[1].into(),
-            vars[2].into(),
-            vars[3].into(),
+            &tables,
+            c_x_var.into(),
+            c_y_var.into(),
+            c_x_tilde_var.into(),
+            c_y_tilde_var.into(),
             None,
             None,
             None,
@@ -394,5 +411,48 @@ mod tests {
 
         // todo final msm fails
         verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
+    }
+
+    #[test]
+    fn test_tables() {
+        let mut rng = rand::thread_rng();
+        let h = <PallasP as UniformRand>::rand(&mut rng).into_affine();
+        let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
+        let h_r = h.mul(r).into_affine();
+
+        let tables = build_tables(h);
+        let lambda = <PallasScalar as PrimeField>::size_in_bits();
+        let m = lambda / 3 + 1;
+        let r_bigint: <PallasScalar as PrimeField>::BigInt = r.into();
+        let random_bits = r_bigint.to_bits_le();
+        // println!("{:?}", random_bits);
+        let mut h_r_acc = PallasA::zero();
+        let mut r_acc = PallasScalar::zero();
+        for i in 1..m + 1 {
+            // n.b. i is 0 indexed
+            let mut table = tables[i - 1];
+            let bi = (i - 1) * 3;
+            let mut index = if bi < lambda && random_bits[bi] {
+                1usize
+            } else {
+                0
+            };
+            if bi + 1 < lambda && random_bits[bi + 1] {
+                index += 2;
+            };
+            if bi + 2 < lambda && random_bits[bi + 2] {
+                index += 4;
+            };
+            let x_i = table.elems[0][index];
+            let y_i = table.elems[1][index];
+            let t_i = PallasA::new(x_i, y_i, false);
+            h_r_acc += &t_i;
+
+            let j_term = PallasScalar::from(2u8).pow(&[3u64 * (i - 1) as u64]);
+            r_acc = r_acc + j_term * PallasScalar::from(index as u64);
+            // println!("Iteration i = {}, b0 index = {}, index = {}", i, bi, index);
+        }
+        assert_eq!(r, r_acc.into(), "Bit decomposition.");
+        assert_eq!(h_r, h_r_acc, "Table multiplication.");
     }
 }

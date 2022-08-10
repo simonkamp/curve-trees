@@ -7,6 +7,7 @@ use ark_ff::{Field, One, Zero};
 const WINDOW_SIZE: usize = 3;
 pub const WINDOW_ELEMS: usize = 1 << WINDOW_SIZE;
 
+#[derive(Copy, Clone, Debug)]
 pub struct Lookup3Bit<const N: usize, F: Field> {
     pub elems: [[F; WINDOW_ELEMS]; N],
 }
@@ -165,7 +166,7 @@ mod tests {
         let bp_gens = BulletproofGens::<C>::new(1024, 1);
 
         let proof = {
-            let mut transcript = Transcript::new(b"RerandGadget");
+            let mut transcript = Transcript::new(b"Lookup");
             let mut prover = Prover::new(&pc_gens, &mut transcript);
 
             let index = 7;
@@ -179,7 +180,7 @@ mod tests {
             prover.prove(&bp_gens).unwrap()
         };
 
-        let mut transcript = Transcript::new(b"RerandGadget");
+        let mut transcript = Transcript::new(b"Lookup");
         let mut verifier = Verifier::new(&mut transcript);
 
         let x_var = verifier.allocate(None).unwrap();
