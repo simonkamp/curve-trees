@@ -177,7 +177,6 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
     commitment_x_tilde: LinearCombination<F>,
     commitment_y_tilde: LinearCombination<F>,
     commitment: Option<GroupAffine<C>>, // Witness provided by the prover
-    commitment_tilde: Option<GroupAffine<C>>, // todo for testing
     randomness: Option<C::ScalarField>, // Witness provided by the prover
 ) {
     let lambda = <C::ScalarField as PrimeField>::size_in_bits();
@@ -192,7 +191,6 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
     };
 
     let mut blinding_accumulator = GroupAffine::<C>::zero();
-    let mut m_th_other_term = C::ScalarField::zero();
     let mut acc_i_minus_1_x_lc: LinearCombination<F> = Variable::One(PhantomData).into();
     let mut acc_i_minus_1_y_lc: LinearCombination<F> = Variable::One(PhantomData).into();
     // Define tables T_1 .. T_m, and witnesses
@@ -203,11 +201,7 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
             None => (None, None, None, None, None),
             Some(random_bits) => {
                 let bi = (i - 1) * 3;
-                let mut index = if bi < lambda && random_bits[bi] {
-                    1usize
-                } else {
-                    0
-                };
+                let mut index: usize = if bi < lambda && random_bits[bi] { 1 } else { 0 };
                 if bi + 1 < lambda && random_bits[bi + 1] {
                     index += 2;
                 };
@@ -221,7 +215,11 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
                 let x_right = x_i_lookup;
                 let y_right = y_i_lookup;
                 // compute slope delta
-                let delta = Some((y_right - y_left) / (x_right - x_left));
+                let delta = if i != 1 {
+                    Some((y_right - y_left) / (x_right - x_left))
+                } else {
+                    None
+                };
                 let x_left_minus_x_right_inv = if i == m {
                     // compute x_l-x_r inverse for checked addition
                     Some(F::one() / (x_left - x_right))
@@ -271,10 +269,8 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
     }
 
     // constrain (x_tilde, y_tilde) = (x, y) + (R_m) - with checked addition
-    let (delta, x_l_minus_x_r_inv) = match (commitment, commitment_tilde) {
-        (Some(commitment), Some(commitment_tilde)) => {
-            // let ct = commitment + blinding_accumulator;
-            // assert!(ct == commitment_tilde);
+    let (delta, x_l_minus_x_r_inv) = match commitment {
+        Some(commitment) => {
             let x_left = commitment.x;
             let y_left = commitment.y;
             let x_right = blinding_accumulator.x;
@@ -293,8 +289,7 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
         y_o: commitment_y_tilde,
         delta: delta,
     };
-    // todo this last check fails for verifier:
-    // checked_curve_addition(cs, &prms, x_l_minus_x_r_inv);
+    checked_curve_addition(cs, &prms, x_l_minus_x_r_inv);
 }
 
 #[cfg(test)]
@@ -395,7 +390,7 @@ mod tests {
         let c = <PallasP as UniformRand>::rand(&mut rng).into_affine();
         let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
         let blinding = h.mul(r).into_affine();
-        let c_tilde = c + h;
+        let c_tilde = c + blinding;
 
         let tables = build_tables(h);
 
@@ -418,7 +413,6 @@ mod tests {
                 c_x_tilde_var.into(),
                 c_y_tilde_var.into(),
                 Some(c),
-                Some(c_tilde),
                 Some(r),
             );
 
@@ -440,7 +434,6 @@ mod tests {
             c_y_var.into(),
             c_x_tilde_var.into(),
             c_y_tilde_var.into(),
-            None,
             None,
             None,
         );
