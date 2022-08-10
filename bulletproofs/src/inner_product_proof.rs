@@ -267,6 +267,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
             // and this check prevents overflow in 1<<lg_n below.
             return Err(ProofError::VerificationError);
         }
+        
         if n != (1 << lg_n) {
             return Err(ProofError::VerificationError);
         }

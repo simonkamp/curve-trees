@@ -267,6 +267,14 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         }
     }
 
+    pub fn size(&self) -> usize {
+        let mut n = self.num_vars;
+        for (_, dim) in self.vec_comms.iter() {
+            n = std::cmp::max(*dim, n)
+        }
+        n
+    }
+
     /// Creates commitment to a high-level variable and adds it to the transcript.
     ///
     /// # Inputs
@@ -342,21 +350,15 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let mut wV = vec![C::ScalarField::zero(); m];
         let mut wc = C::ScalarField::zero();
 
-        // TODO: compute dynamically
-        let comm_dim = 32;
-        let comm_num = 1;
-
-        let mut wVCs = vec![vec![C::ScalarField::zero(); comm_dim]; comm_num];
+        let mut wVCs = Vec::with_capacity(self.vec_comms.len());
+        for (_, dim) in self.vec_comms.iter() {
+            wVCs.push(vec![C::ScalarField::zero(); *dim]);
+        }
 
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
             for (var, coeff) in &lc.terms {
                 match var {
-                    Variable::VectorCommit(j, i) => {
-                        // j : index of commitment
-                        // i : coordinate with-in commitment
-                        wVCs[*j][*i] += exp_z * coeff;
-                    }
                     Variable::MultiplierLeft(i) => {
                         wL[*i] += exp_z * coeff;
                     }
@@ -368,6 +370,11 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                     }
                     Variable::Committed(i) => {
                         wV[*i] -= exp_z * coeff;
+                    }
+                    Variable::VectorCommit(j, i) => {
+                        // j : index of commitment
+                        // i : coordinate with-in commitment
+                        wVCs[*j][*i] -= exp_z * coeff;
                     }
                     Variable::One(_) => {
                         wc -= exp_z * coeff;
@@ -459,6 +466,13 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         mut self,
         proof: &R1CSProof<C>,
     ) -> Result<(Vec<C>, Vec<C::ScalarField>, Vec<C::ScalarField>, usize), R1CSError> {
+        // pad
+        while self.size() > self.num_vars {
+            self.allocate_multiplier(Some((C::ScalarField::zero(), C::ScalarField::zero())))?;
+        }
+
+        let n1 = self.size();
+
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -473,7 +487,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         assert_eq!(t_poly_deg + 1, proof.T.len());
 
-        let n1 = self.num_vars;
         transcript.validate_and_append_point(b"A_I1", &proof.A_I1)?;
         transcript.validate_and_append_point(b"A_O1", &proof.A_O1)?;
         transcript.validate_and_append_point(b"S1", &proof.S1)?;
@@ -481,13 +494,18 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         // Process the remaining constraints.
         self = self.create_randomized_constraints()?;
 
+        let n = self.size();
+        println!("n = {}", n);
+
         let transcript = self.transcript.borrow_mut();
 
         // If the number of multiplications is not 0 or a power of 2, then pad the circuit.
-        let n = self.num_vars;
+        
         let n2 = n - n1;
-        let padded_n = self.num_vars.next_power_of_two();
+        let padded_n = n.next_power_of_two();
         let pad = padded_n - n;
+
+        println!("padded_n = {}", padded_n);
 
         use crate::inner_product_proof::inner_product;
         use crate::util;
@@ -543,14 +561,17 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let y_inv_vec = util::exp_iter(y_inv)
             .take(padded_n)
             .collect::<Vec<C::ScalarField>>();
+
+        let vars = self.num_vars;
+        
         let yneg_wR = wR
             .into_iter()
             .zip(y_inv_vec.iter())
             .map(|(wRi, exp_y_inv)| wRi * exp_y_inv)
-            .chain(iter::repeat(C::ScalarField::zero()).take(pad))
+            .chain(iter::repeat(C::ScalarField::zero()).take(padded_n - self.num_vars))
             .collect::<Vec<C::ScalarField>>();
 
-        let delta = inner_product(&yneg_wR[0..n], &wL);
+        let delta = inner_product(&yneg_wR[0..self.num_vars], &wL);
 
         let mut u_for_g = iter::repeat(C::ScalarField::one())
             .take(n1)
@@ -590,6 +611,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             let mut wO = wO.into_iter();
             let mut s = s.iter().rev().take(padded_n);
             let mut y_inv_vec = y_inv_vec.into_iter();
+            let mut wVCs: Vec<_> = wVCs.into_iter().map(|wVC| wVC.into_iter()).collect();
 
             for i in 0..padded_n {
                 let y_inv = y_inv_vec.next().unwrap();
@@ -597,15 +619,17 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
                 let wLi = wL.next().unwrap_or_default();
                 let wOi = wO.next().unwrap_or_default();
-
+                
                 let si = s.next().unwrap();
 
                 let mut comb = x * wLi + wOi;
 
-                // add terms for vector commitments
-                for j in 0..self.vec_comms.len() {
+                println!("i = {}", i);
+
+                // add terms for vector commitments (higher degrees)
+                for wVC in wVCs.iter_mut() {
                     comb *= x;
-                    comb += wVCs[j][i];
+                    comb += wVC.next().unwrap_or_default();
                 }
 
                 // y^{-n} o (w_L * x^2 + w_O * x + w_Vi)
@@ -668,14 +692,14 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(iter::once(u * x)) // A_I2
             .chain(iter::once(u * xx)) // A_O2
             .chain(iter::once(u * xxx)) // S2
-            .chain(wV.iter().map(|wVi| *wVi * rxx)) // V
+            .chain(wV.iter().map(|wVi| *wVi * rxx * xoff)) // V
             .chain(T_scalars.iter().cloned()) // T_points
             .chain(u_sq.into_iter()) // ipp_proof.L_vec
             .chain(u_inv_sq.into_iter()) // ipp_proof.R_vec
             .collect::<Vec<_>>();
 
         let fixed_point_scalars: Vec<C::ScalarField> =
-            iter::once(w * (proof.t_x - a * b) + r * (xx * (wc + delta) - proof.t_x)) // B
+            iter::once(w * (proof.t_x - a * b) + xoff * r * (xx * (wc + delta) - proof.t_x)) // B
                 .chain(iter::once(-proof.e_blinding - r * proof.t_x_blinding)) // B_blinding
                 .chain(g_scalars) // G
                 .chain(h_scalars) // H

@@ -428,21 +428,15 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let mut wO = vec![C::ScalarField::zero(); n];
         let mut wV = vec![C::ScalarField::zero(); m];
 
-        // TODO: compute dynamically
-        let comm_dim = 32;
-        let comm_num = 1;
-
-        let mut wVCs = vec![vec![C::ScalarField::zero(); comm_dim]; comm_num];
-
+        let mut wVCs = Vec::with_capacity(self.secrets.vec_open.len());
+        for v in self.secrets.vec_open.iter() {
+            wVCs.push(vec![C::ScalarField::zero(); v.1.len()]);
+        }
+        
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
             for (var, coeff) in &lc.terms {
                 match var {
-                    Variable::VectorCommit(j, i) => {
-                        // j : index of commitment
-                        // i : coordinate with-in commitment
-                        wVCs[*j][*i] += exp_z * coeff;
-                    }
                     Variable::MultiplierLeft(i) => {
                         wL[*i] += exp_z * coeff;
                     }
@@ -454,6 +448,11 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                     }
                     Variable::Committed(i) => {
                         wV[*i] -= exp_z * coeff;
+                    }
+                    Variable::VectorCommit(j, i) => {
+                        // j : index of commitment
+                        // i : coordinate with-in commitment
+                        wVCs[*j][*i] -= exp_z * coeff;
                     }
                     Variable::One(_) => {
                         // The prover doesn't need to handle constant terms
@@ -513,12 +512,24 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             .map(|(proof, _transcript)| proof)
     }
 
+    pub fn size(&self) -> usize {
+        let mut n = self.secrets.a_L.len();
+        for (_, v) in self.secrets.vec_open.iter() {
+            n = std::cmp::max(n, v.len());
+        }
+        n
+    }
+
     /// Consume this `ConstraintSystem` to produce a proof. Returns the proof and the transcript passed in `Prover::new`.
     pub fn prove_and_return_transcript(
         mut self,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(R1CSProof<C>, T), R1CSError> {
-        println!("\n\n");
+
+        // pad
+        while self.size() > self.secrets.a_L.len() {
+            self.allocate_multiplier(Some((C::ScalarField::zero(), C::ScalarField::zero())))?;
+        }
 
         use crate::util;
         use std::iter;
@@ -563,7 +574,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // };
 
         // Commit to the first-phase low-level witness variables.
-        let n1 = self.secrets.a_L.len();
+        let n1 = self.size();
 
         if bp_gens.gens_capacity < n1 {
             return Err(R1CSError::InvalidGeneratorsLength);
@@ -645,9 +656,9 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // Pad zeros to the next power of two (or do that implicitly when creating vectors)
 
         // If the number of multiplications is not 0 or a power of 2, then pad the circuit.
-        let n = self.secrets.a_L.len();
+        let n = self.size();
         let n2 = n - n1;
-        let padded_n = self.secrets.a_L.len().next_power_of_two();
+        let padded_n = n.next_power_of_two();
         let pad = padded_n - n;
 
         if bp_gens.gens_capacity < padded_n {
@@ -763,6 +774,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         println!("vec comm: {}", self.secrets.vec_open.len());
 
+        let vars = self.secrets.a_L.len();
+
         //
         let sLsR = s_L1
             .iter()
@@ -770,6 +783,9 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             .zip(s_R1.iter().chain(s_R2.iter()));
 
         for (i, (sl, sr)) in sLsR.enumerate() {
+
+            // l(X) vector-polynomial
+
             // l_poly.0 = 0
 
             // l_poly.i = a_Vi
@@ -778,25 +794,40 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                     l_poly.coeff_mut(1 + j)[i] = v.1[i];
                 }
             }
-
-            // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
-            l_poly.coeff_mut(1 + offset)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
-
-            // l_poly.2 = a_O
-            l_poly.coeff_mut(2 + offset)[i] = self.secrets.a_O[i];
+            
+            if i < vars {
+                // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
+                l_poly.coeff_mut(1+offset)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+          
+                // l_poly.2 = a_O
+                l_poly.coeff_mut(2+offset)[i] = self.secrets.a_O[i];
+            }
 
             // l_poly.3 = s_L
-            l_poly.coeff_mut(3 + offset)[i] = *sl;
+            l_poly.coeff_mut(3+offset)[i] = *sl;
 
-            // r_poly.0 = (z * z^Q * W_O) - y^n
-            r_poly.coeff_mut(0)[i] = wO[i] - exp_y;
+            // r(X) vector-polynomial
 
-            // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
-            r_poly.coeff_mut(1)[i] = exp_y * self.secrets.a_R[i] + wL[i];
+            if i < vars {
+                // r_poly.0 = (z * z^Q * W_O) - y^n
+                r_poly.coeff_mut(0)[i] = wO[i] - exp_y;
 
-            // r_poly.2 = 0
+                // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
+                r_poly.coeff_mut(1)[i] = exp_y * self.secrets.a_R[i] + wL[i];
+            }
+
+            // r.l_poly.2..
+            for (j, w) in wVCs.iter().enumerate() {
+                if w.len() > j {
+                    r_poly.coeff_mut(2+j)[i] = w[i];
+                }
+            }
+
+            // r_poly.<op_degree> = 0
+            debug_assert_eq!(r_poly.coeff(op_degree)[i], C::ScalarField::zero());
+
             // r_poly.3 = y^n * s_R
-            r_poly.coeff_mut(3)[i] = exp_y * sr;
+            r_poly.coeff_mut(op_degree+1)[i] = exp_y * sr;
 
             exp_y = exp_y * y; // y^i -> y^(i+1)
         }
@@ -864,7 +895,20 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let o_blinding = o_blinding1 + u * o_blinding2;
         let s_blinding = s_blinding1 + u * s_blinding2;
 
-        let e_blinding = x * (i_blinding + x * (o_blinding + x * s_blinding));
+        // compute blinding opening of vector commitments
+        let e_terms = 
+            self.secrets.vec_open.iter().map(|(b, _)| b.clone())
+            .chain(iter::once(i_blinding))
+            .chain(iter::once(o_blinding))
+            .chain(iter::once(s_blinding));
+
+        let mut e_blinding = C::ScalarField::zero();
+        for bnd in e_terms.rev() {
+            e_blinding += bnd;
+            e_blinding *= x;
+        }
+
+        // e_blinding = x * (i_blinding + x * (o_blinding + x * s_blinding));
 
         transcript.append_scalar::<C>(b"t_x", &t_x);
         transcript.append_scalar::<C>(b"t_x_blinding", &t_x_blinding);
