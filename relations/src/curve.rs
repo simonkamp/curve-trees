@@ -6,7 +6,7 @@ use crate::lookup::*;
 
 use ark_ec::{
     models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
-    AffineCurve, ModelParameters, SWModelParameters,
+    AffineCurve, ModelParameters, ProjectiveCurve, SWModelParameters,
 };
 use ark_ff::{BigInteger, Field, PrimeField};
 use ark_std::{One, Zero};
@@ -97,6 +97,33 @@ fn not_zero<F: Field, Cs: ConstraintSystem<F>>(
     cs.constrain(one - Variable::One(PhantomData));
 }
 
+pub fn build_simple_tables<C: SWModelParameters>(
+    h: GroupAffine<C>,
+) -> Vec<Lookup3Bit<2, C::BaseField>> {
+    // build tables as in zcash spec
+    let lambda = <C::ScalarField as PrimeField>::size_in_bits();
+    let m = lambda / 3 + 1;
+
+    // Define tables T_1 .. T_m, and witnesses
+    let mut tables = Vec::with_capacity(m);
+    let mut m_th_right_term = C::ScalarField::zero();
+    for i in 1..m + 1 {
+        let mut table = Lookup3Bit::<2, C::BaseField> {
+            elems: [[C::BaseField::one(); WINDOW_ELEMS]; 2],
+        };
+        for j in 0..WINDOW_ELEMS {
+            let s = C::ScalarField::from(j as u64)
+                * C::ScalarField::from(2u64).pow(&[3u64 * (i - 1) as u64]);
+            // Multiply blinding by s
+            let hs = h.mul(s).into_affine();
+            table.elems[0][j] = hs.x;
+            table.elems[1][j] = hs.y;
+        }
+        tables.push(table);
+    }
+    tables
+}
+
 pub fn build_tables<C: SWModelParameters>(h: GroupAffine<C>) -> Vec<Lookup3Bit<2, C::BaseField>> {
     let lambda = <C::ScalarField as PrimeField>::size_in_bits();
     let m = lambda / 3 + 1;
@@ -109,24 +136,33 @@ pub fn build_tables<C: SWModelParameters>(h: GroupAffine<C>) -> Vec<Lookup3Bit<2
             elems: [[C::BaseField::one(); WINDOW_ELEMS]; 2],
         };
         // 2^(3*i)
-        let j_term = C::ScalarField::from(2u8).pow(&[3u64 * i as u64]);
+        // let j_term = C::ScalarField::from(2u64).pow(&[3u64 * i as u64]); // this is spec
+        let j_term = C::ScalarField::from(2u64).pow(&[3u64 * (i - 1) as u64]); // try lowering index by one
+                                                                               // println!("{}", j_term);
         let right_term = if i < m {
             // add j term to the sum in the mth iteration other term
-            m_th_right_term += j_term;
             // 2^(3*(i+1))
-            C::ScalarField::from(2u8).pow(&[3u64 * (i + 1) as u64])
+            // let right_term = C::ScalarField::from(2u64).pow(&[3u64 * (i + 1) as u64]); // this is spec
+            let right_term = C::ScalarField::from(2u64).pow(&[3u64 * (i) as u64]); // try lowering index by one
+                                                                                   // m_th_right_term += j_term; // this is spec
+            m_th_right_term += right_term;
+            right_term
         } else {
             // subtract sum for i = 1..m-1 { 2^(3* i) }
-            println!("m: {}", i);
             -m_th_right_term
         };
         for j in 0..WINDOW_ELEMS {
             // s = j * 2^(3*i) + other_term
             let s = (C::ScalarField::from(j as u64) * j_term) + right_term;
             // Multiply blinding by s
-            let hs = h.mul(s);
+            let hs = h.mul(s).into_affine();
+            if hs.infinity {
+                // todo account for this or make sure that it can never happen.
+                assert!(false, "handle infinity");
+            }
             table.elems[0][j] = hs.x;
             table.elems[1][j] = hs.y;
+            // assert_eq!(hs, GroupAffine::new(hs.x, hs.y, false)); //todo can these be point at inf?
         }
         tables.push(table);
     }
@@ -414,10 +450,60 @@ mod tests {
     }
 
     #[test]
+    fn test_simple_tables() {
+        // testing a simplified fixed base table multiplication using the 3bit tables described in Zcash spec
+        let mut rng = rand::thread_rng();
+        let h = <PallasP as UniformRand>::rand(&mut rng).into_affine();
+        let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
+        let h_r = h.mul(r).into_affine();
+
+        let tables = build_simple_tables(h);
+        let lambda = <PallasScalar as PrimeField>::size_in_bits();
+        let m = lambda / 3 + 1;
+        let r_bigint: <PallasScalar as PrimeField>::BigInt = r.into();
+        let random_bits = r_bigint.to_bits_le();
+        let mut h_r_acc = PallasA::zero();
+        let mut r_acc = PallasScalar::zero();
+        for i in 1..m + 1 {
+            // n.b. i is 0 indexed
+            let mut table = tables[i - 1];
+            let bi = (i - 1) * 3;
+            let mut index = if bi < lambda && random_bits[bi] {
+                1usize
+            } else {
+                0
+            };
+            if bi + 1 < lambda && random_bits[bi + 1] {
+                index += 2;
+            };
+            if bi + 2 < lambda && random_bits[bi + 2] {
+                index += 4;
+            };
+            let t_i = if index == 0 {
+                // handle the infinity point explicitly
+                PallasA::zero()
+            } else {
+                // otherwise the field elements in the table form a point
+                let x_i = table.elems[0][index];
+                let y_i = table.elems[1][index];
+                PallasA::new(x_i, y_i, false)
+            };
+            h_r_acc += &t_i;
+
+            r_acc = r_acc
+                + PallasScalar::from(2u8).pow(&[3u64 * (i - 1) as u64])
+                    * PallasScalar::from(index as u64);
+        }
+        assert_eq!(r, r_acc.into(), "Bit decomposition.");
+        assert_eq!(h_r, h_r_acc, "Table multiplication.");
+    }
+
+    #[test]
     fn test_tables() {
         let mut rng = rand::thread_rng();
         let h = <PallasP as UniformRand>::rand(&mut rng).into_affine();
         let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
+        // let r = PallasScalar::from(1u8);
         let h_r = h.mul(r).into_affine();
 
         let tables = build_tables(h);
@@ -425,9 +511,7 @@ mod tests {
         let m = lambda / 3 + 1;
         let r_bigint: <PallasScalar as PrimeField>::BigInt = r.into();
         let random_bits = r_bigint.to_bits_le();
-        // println!("{:?}", random_bits);
         let mut h_r_acc = PallasA::zero();
-        let mut r_acc = PallasScalar::zero();
         for i in 1..m + 1 {
             // n.b. i is 0 indexed
             let mut table = tables[i - 1];
@@ -447,12 +531,7 @@ mod tests {
             let y_i = table.elems[1][index];
             let t_i = PallasA::new(x_i, y_i, false);
             h_r_acc += &t_i;
-
-            let j_term = PallasScalar::from(2u8).pow(&[3u64 * (i - 1) as u64]);
-            r_acc = r_acc + j_term * PallasScalar::from(index as u64);
-            // println!("Iteration i = {}, b0 index = {}, index = {}", i, bi, index);
         }
-        assert_eq!(r, r_acc.into(), "Bit decomposition.");
-        assert_eq!(h_r, h_r_acc, "Table multiplication.");
+        assert_eq!(h_r, h_r_acc);
     }
 }
