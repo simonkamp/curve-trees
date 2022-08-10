@@ -837,6 +837,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // r(x) <- r(x) * x + w_v
 
         let mut t_poly = util::VecPoly::inner_product(&l_poly, &r_poly);
+        assert_eq!(t_poly.deg(), 6 + 2 * self.secrets.vec_open.len());
 
         // commit to t-poly
         let mut t_blinding_poly = util::Poly::zero(t_poly.deg());
@@ -897,10 +898,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // compute blinding opening of vector commitments
         let e_terms = 
-            self.secrets.vec_open.iter().map(|(b, _)| b.clone())
-            .chain(iter::once(i_blinding))
-            .chain(iter::once(o_blinding))
-            .chain(iter::once(s_blinding));
+            self.secrets.vec_open.iter().map(|(b, _)| b.clone()) // lowest powers
+            .chain(iter::once(i_blinding))  // xoff * x
+            .chain(iter::once(o_blinding))  // xoff * x^2
+            .chain(iter::once(s_blinding)); // xoff * x^3
 
         let mut e_blinding = C::ScalarField::zero();
         for bnd in e_terms.rev() {
