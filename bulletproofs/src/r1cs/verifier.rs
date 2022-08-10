@@ -473,6 +473,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         let n1 = self.size();
 
+
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -538,6 +539,18 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");
 
+        // compute powers for vector commitments 
+        // they are assigned the lowest powers and therefore the coefficients 
+        // in the combination are correspondingly assigned the highest powers
+        let mut xoff = C::ScalarField::one();
+        let mut comm_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
+        let mut scalar_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
+        for (comm, _dim) in self.vec_comms.iter() {
+            xoff *= x;
+            comm_V.push(comm.clone());
+            scalar_V.push(xoff);
+        }
+
         println!("V x: {}", x);
 
         transcript.append_scalar::<C>(b"t_x", &proof.t_x);
@@ -602,9 +615,9 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .iter()
             .zip(u_for_g.clone())
             .zip(s.iter().take(padded_n))
-            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i));
+            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * xoff * (x * yneg_wRi - a * s_i));
 
-        //
+        // r(x)
         let mut h_scalars = Vec::with_capacity(padded_n);
         {
             let mut wL = wL.into_iter();
@@ -627,9 +640,10 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 println!("i = {}", i);
 
                 // add terms for vector commitments (higher degrees)
+                let mut xn = x * x;
                 for wVC in wVCs.iter_mut() {
-                    comb *= x;
-                    comb += wVC.next().unwrap_or_default();
+                    comb += xn * wVC.next().unwrap_or_default();
+                    xn = xn * x;
                 }
 
                 // y^{-n} o (w_L * x^2 + w_O * x + w_Vi)
@@ -658,15 +672,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             T_scalars.push(rxn);
         }
 
-        let mut xoff = C::ScalarField::one();
-
-        let mut comm_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
-        let mut scalar_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
-        for (comm, _dim) in self.vec_comms.iter() {
-            xoff *= x;
-            comm_V.push(comm.clone());
-            scalar_V.push(xoff);
-        }
+    
 
         println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
 
@@ -699,7 +705,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .collect::<Vec<_>>();
 
         let fixed_point_scalars: Vec<C::ScalarField> =
-            iter::once(w * (proof.t_x - a * b) + xoff * r * (xx * (wc + delta) - proof.t_x)) // B
+            iter::once(w * (proof.t_x - a * b) + r * (xx * xoff * (wc + delta) - proof.t_x)) // B
                 .chain(iter::once(-proof.e_blinding - r * proof.t_x_blinding)) // B_blinding
                 .chain(g_scalars) // G
                 .chain(h_scalars) // H
