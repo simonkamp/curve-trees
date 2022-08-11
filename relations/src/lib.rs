@@ -3,3 +3,6 @@ mod lookup;
 
 // curve operations
 mod curve;
+
+// rerandomize commitments
+mod rerandomize;
