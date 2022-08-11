@@ -6,3 +6,6 @@ mod curve;
 
 // rerandomize commitments
 mod rerandomize;
+
+// select an entry from a vector commitment
+mod select;

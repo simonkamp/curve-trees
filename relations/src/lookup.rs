@@ -20,7 +20,7 @@ fn b2f<F: Field>(v: bool) -> F {
     }
 }
 
-fn is_bit<F: Field, Cs: ConstraintSystem<F>>(cs: &mut Cs, var: LinearCombination<F>) {
+pub fn is_bit<F: Field, Cs: ConstraintSystem<F>>(cs: &mut Cs, var: LinearCombination<F>) {
     let (_, _, zero) = cs.multiply(var.clone(), var - F::one());
     cs.constrain(zero.into());
 }
