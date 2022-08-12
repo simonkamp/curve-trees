@@ -217,8 +217,8 @@ mod tests {
     #[test]
     fn test_re_randomize() {
         let mut rng = rand::thread_rng();
-        let h = <PallasP as UniformRand>::rand(&mut rng).into_affine();
-        let c = <PallasP as UniformRand>::rand(&mut rng).into_affine();
+        let h = PallasP::rand(&mut rng).into_affine();
+        let c = PallasP::rand(&mut rng).into_affine();
         let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
         let blinding = h.mul(r).into_affine();
         let c_tilde = c + blinding;
@@ -277,7 +277,7 @@ mod tests {
     fn test_simple_tables() {
         // testing a simplified fixed base table multiplication using the 3bit tables described in Zcash spec
         let mut rng = rand::thread_rng();
-        let h = <PallasP as UniformRand>::rand(&mut rng).into_affine();
+        let h = PallasP::rand(&mut rng).into_affine();
         let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
         let h_r = h.mul(r).into_affine();
 
@@ -325,7 +325,7 @@ mod tests {
     #[test]
     fn test_tables() {
         let mut rng = rand::thread_rng();
-        let h = <PallasP as UniformRand>::rand(&mut rng).into_affine();
+        let h = PallasP::rand(&mut rng).into_affine();
         let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
         // let r = PallasScalar::from(1u8);
         let h_r = h.mul(r).into_affine();

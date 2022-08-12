@@ -83,6 +83,7 @@ pub fn checked_curve_addition<F: Field, Cs: ConstraintSystem<F>>(
         x_l_minus_x_r_inv_lc,
     );
     incomplete_curve_addition(cs, prms);
+    // todo check on curve?
 }
 
 /// Enforce v != 0

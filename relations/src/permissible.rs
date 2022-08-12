@@ -10,16 +10,23 @@ use ark_ec::{
     AffineCurve, ModelParameters, ProjectiveCurve, SWModelParameters,
 };
 use ark_ff::{BigInteger, Field, PrimeField, SquareRootField};
-use ark_std::{One, UniformRand, Zero};
+use ark_std::{rand::Rng, One, UniformRand, Zero};
 use merlin::Transcript;
 use std::{borrow::BorrowMut, iter, marker::PhantomData};
 
-struct UniversalHash<F: SquareRootField> {
+#[derive(Clone, Copy, Debug)]
+pub struct UniversalHash<F: SquareRootField> {
     alpha: F,
     beta: F,
 }
 
 impl<F: SquareRootField> UniversalHash<F> {
+    pub fn new<R: Rng>(rng: &mut R) -> Self {
+        Self {
+            alpha: F::rand(rng),
+            beta: F::rand(rng),
+        }
+    }
     /// Given a commitment c, blinded using h, returns c' and r s.t. c' = c+h*r and c' is a permissible point
     pub fn permissible_commitment<C: SWModelParameters<BaseField = F>>(
         &self,
@@ -35,6 +42,12 @@ impl<F: SquareRootField> UniversalHash<F> {
         (c_prime, C::ScalarField::from(r))
     }
 
+    pub fn witness<C: SWModelParameters<BaseField = F>>(&self, point: GroupAffine<C>) -> F {
+        self.universal_hash(point.y)
+            .sqrt()
+            .expect("point must be permissible")
+    }
+
     pub fn is_permissible<C: SWModelParameters<BaseField = F>>(
         &self,
         point: GroupAffine<C>,
@@ -47,8 +60,28 @@ impl<F: SquareRootField> UniversalHash<F> {
 
     /// returns true iff v*alpha+beta is a quadratic residue
     pub fn universal_hash_to_bit(&self, v: F) -> bool {
-        let u = v * self.alpha + self.beta;
-        u.legendre().is_qr()
+        self.universal_hash(v).legendre().is_qr()
+    }
+
+    fn universal_hash(&self, v: F) -> F {
+        v * self.alpha + self.beta
+    }
+
+    pub fn permissible<Cs: ConstraintSystem<F>>(
+        &self,
+        cs: &mut Cs,
+        x: LinearCombination<F>,
+        y: LinearCombination<F>,
+        sqrt_witness: Option<F>,
+        a: F,
+        b: F,
+    ) {
+        curve_check(cs, x, y.clone(), a, b);
+        let (_, _, w2) = cs
+            .allocate_multiplier(sqrt_witness.map(|w| (w, w)))
+            .expect("Prover must supply witness");
+        let hash: LinearCombination<F> = y.clone().scalar_mul(self.alpha) + self.beta;
+        cs.constrain(w2 - hash);
     }
 }
 
@@ -65,6 +98,7 @@ mod tests {
 
     use pasta;
     type PallasA = pasta::pallas::Affine;
+    type PallasP = pasta::pallas::Projective;
     type PallasScalar = <PallasA as AffineCurve>::ScalarField;
     type PallasBase = <PallasA as AffineCurve>::BaseField;
     type VestaA = pasta::vesta::Affine;
@@ -72,5 +106,50 @@ mod tests {
     type VestaBase = <VestaA as AffineCurve>::BaseField;
 
     #[test]
-    fn test_permissible() {}
+    fn test_permissible() {
+        let mut rng = rand::thread_rng();
+        let c = PallasP::rand(&mut rng).into_affine();
+        let h = PallasP::rand(&mut rng).into_affine();
+        let uh = UniversalHash::<PallasBase>::new(&mut rng);
+        let (c2, r) = uh.permissible_commitment(&c, &h);
+        let w = uh.witness(c2);
+
+        let pc_gens = PedersenGens::<VestaA>::default();
+        let bp_gens = BulletproofGens::<VestaA>::new(8, 1);
+
+        let (proof, x_comm) = {
+            let mut transcript = Transcript::new(b"Permissible");
+            let mut prover = Prover::new(&pc_gens, &mut transcript);
+            let (x_comm, x_var) = prover.commit(c2.x, VestaScalar::rand(&mut rng));
+            let y_var = prover.allocate(Some(c2.y)).unwrap();
+
+            uh.permissible(
+                &mut prover,
+                x_var.into(),
+                y_var.into(),
+                Some(uh.witness(c2)),
+                pasta::pallas::PallasParameters::COEFF_A,
+                pasta::pallas::PallasParameters::COEFF_B,
+            );
+
+            let proof = prover.prove(&bp_gens).unwrap();
+            (proof, x_comm)
+        };
+
+        let mut transcript = Transcript::new(b"Permissible");
+        let mut verifier = Verifier::new(&mut transcript);
+        let x_var = verifier.commit(x_comm);
+        let y_var = verifier.allocate(None).unwrap();
+
+        uh.permissible(
+            &mut verifier,
+            x_var.into(),
+            y_var.into(),
+            None,
+            pasta::pallas::PallasParameters::COEFF_A,
+            pasta::pallas::PallasParameters::COEFF_B,
+        );
+
+        verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
+    }
 }
