@@ -1,16 +1,16 @@
 // 3-bit lookups
-mod lookup;
+pub mod lookup;
 
 // curve operations
-mod curve;
+pub mod curve;
 
 // rerandomize commitments
-mod rerandomize;
+pub mod rerandomize;
 
 // select an entry from a vector commitment
-mod select;
+pub mod select;
 
 // prove that a commitment to x defines a canonical point (x,y)
-mod permissible;
+pub mod permissible;
 
-mod select_rerandomize;
+pub mod select_rerandomize;

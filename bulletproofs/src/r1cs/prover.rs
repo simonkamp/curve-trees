@@ -359,7 +359,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
     ) -> (C, Vec<Variable<C::ScalarField>>) {
         use std::iter;
 
-        let v_blinding = C::ScalarField::zero(); // for simplicity: TODO change
+        // let v_blinding = C::ScalarField::zero(); // for simplicity: TODO change
 
         let comm_idx = self.secrets.vec_open.len();
 
@@ -432,7 +432,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         for v in self.secrets.vec_open.iter() {
             wVCs.push(vec![C::ScalarField::zero(); v.1.len()]);
         }
-        
+
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
             for (var, coeff) in &lc.terms {
@@ -525,7 +525,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         mut self,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(R1CSProof<C>, T), R1CSError> {
-
         // pad
         while self.size() > self.secrets.a_L.len() {
             self.allocate_multiplier(Some((C::ScalarField::zero(), C::ScalarField::zero())))?;
@@ -783,7 +782,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             .zip(s_R1.iter().chain(s_R2.iter()));
 
         for (i, (sl, sr)) in sLsR.enumerate() {
-
             // l(X) vector-polynomial
 
             // l_poly.0 = 0
@@ -791,20 +789,24 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // l_poly.i = a_Vi
             for (j, v) in self.secrets.vec_open.iter().enumerate() {
                 if v.1.len() > j {
-                    l_poly.coeff_mut(1 + j)[i] = v.1[i];
+                    // todo out of bounds error in test_select_vec_commit
+                    // should v.1 be indexed by j instead or should the check be for i? Something else?
+                    // l_poly.coeff_mut(1 + j)[i] = v.1[i]; // this was the original line
+                    // println!("{}", i);
+                    l_poly.coeff_mut(1 + j)[i] = v.1[j]; // try indexing by j
                 }
             }
-            
+
             if i < vars {
                 // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
-                l_poly.coeff_mut(1+offset)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
-          
+                l_poly.coeff_mut(1 + offset)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+
                 // l_poly.2 = a_O
-                l_poly.coeff_mut(2+offset)[i] = self.secrets.a_O[i];
+                l_poly.coeff_mut(2 + offset)[i] = self.secrets.a_O[i];
             }
 
             // l_poly.3 = s_L
-            l_poly.coeff_mut(3+offset)[i] = *sl;
+            l_poly.coeff_mut(3 + offset)[i] = *sl;
 
             // r(X) vector-polynomial
 
@@ -819,7 +821,9 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // r.l_poly.2..
             for (j, w) in wVCs.iter().enumerate() {
                 if w.len() > j {
-                    r_poly.coeff_mut(2+j)[i] = w[i];
+                    // todo this is also out of bounds, trying indexing by j
+                    // r_poly.coeff_mut(2 + j)[i] = w[i]; // orig. line
+                    r_poly.coeff_mut(2 + j)[i] = w[j];
                 }
             }
 
@@ -827,7 +831,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             debug_assert_eq!(r_poly.coeff(op_degree)[i], C::ScalarField::zero());
 
             // r_poly.3 = y^n * s_R
-            r_poly.coeff_mut(op_degree+1)[i] = exp_y * sr;
+            r_poly.coeff_mut(op_degree + 1)[i] = exp_y * sr;
 
             exp_y = exp_y * y; // y^i -> y^(i+1)
         }
@@ -897,10 +901,13 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let s_blinding = s_blinding1 + u * s_blinding2;
 
         // compute blinding opening of vector commitments
-        let e_terms = 
-            self.secrets.vec_open.iter().map(|(b, _)| b.clone()) // lowest powers
-            .chain(iter::once(i_blinding))  // xoff * x
-            .chain(iter::once(o_blinding))  // xoff * x^2
+        let e_terms = self
+            .secrets
+            .vec_open
+            .iter()
+            .map(|(b, _)| b.clone()) // lowest powers
+            .chain(iter::once(i_blinding)) // xoff * x
+            .chain(iter::once(o_blinding)) // xoff * x^2
             .chain(iter::once(s_blinding)); // xoff * x^3
 
         let mut e_blinding = C::ScalarField::zero();

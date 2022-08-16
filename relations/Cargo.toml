@@ -12,4 +12,9 @@ ark-std = { version = "0.3.0", features = [ "parallel" ] }
 merlin = { version = "2", default-features = false }
 
 [dev-dependencies]
+criterion = "0.3"
 pasta = { path = "../pasta" }
+
+[[bench]]
+name = "select_rerandomize"
+harness = false
