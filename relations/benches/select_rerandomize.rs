@@ -4,6 +4,9 @@
 extern crate criterion;
 use criterion::Criterion;
 
+extern crate bulletproofs;
+use bulletproofs::r1cs::batch_verify;
+
 extern crate relations;
 use relations::select_rerandomize::*;
 
@@ -20,7 +23,30 @@ type PallasBase = <PallasAffine as AffineCurve>::BaseField;
 type VestaScalar = <VestaAffine as AffineCurve>::ScalarField;
 type VestaBase = <VestaAffine as AffineCurve>::BaseField;
 
-fn bench_select_and_rerandomize_verify_single(c: &mut Criterion) {
+fn bench_select_and_rerandomize_prove(c: &mut Criterion) {
+    let mut rng = rand::thread_rng();
+    let generators_length = 2 << 11; // minimum sufficient power of 2
+
+    let sr_params =
+        SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
+
+    c.bench_function("prove", |b| {
+        b.iter(|| {
+            let sr_proof = prove_from_mock_curve_tree(&sr_params);
+        })
+    });
+}
+
+criterion_group! {
+    name = select_and_rerandomize_prove;
+    config = Criterion::default().sample_size(10);
+    targets =
+    bench_select_and_rerandomize_prove,
+}
+
+fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Verification of select and randomize proofs");
+
     let mut rng = rand::thread_rng();
     let generators_length = 2 << 11; // minimum sufficient power of 2
 
@@ -28,7 +54,7 @@ fn bench_select_and_rerandomize_verify_single(c: &mut Criterion) {
         SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
     let sr_proof = prove_from_mock_curve_tree(&sr_params);
 
-    c.bench_function("verify_single", |b| {
+    group.bench_function("verify_single", |b| {
         b.iter(|| {
             // benchmarks all of the verification steps, except:
             // 1) checking if both msms return zero
@@ -46,13 +72,58 @@ fn bench_select_and_rerandomize_verify_single(c: &mut Criterion) {
             );
         })
     });
+    use std::iter;
+
+    for n in [
+        1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99, 100, 150, 199, 200,
+    ] {
+        group.bench_with_input(
+            format!("Batch verification of {} proofs.", n),
+            &iter::repeat(&sr_proof).take(n).collect::<Vec<_>>(),
+            |b, proofs| {
+                b.iter(|| {
+                    // proofs.map(|sr_proof| verification_circuit(&sr_params, sr_proof));
+                    let mut pallas_verification_scalars_and_points =
+                        Vec::with_capacity(proofs.len());
+                    let mut vesta_verification_scalars_and_points =
+                        Vec::with_capacity(proofs.len());
+                    for sr_proof in proofs {
+                        let (pallas_verifier, vesta_verifier) =
+                            verification_circuit(&sr_params, &sr_proof);
+                        pallas_verification_scalars_and_points.push(
+                            pallas_verifier
+                                .verification_scalars_and_points(&sr_proof.pallas_proof)
+                                .unwrap(),
+                        );
+                        vesta_verification_scalars_and_points.push(
+                            vesta_verifier
+                                .verification_scalars_and_points(&sr_proof.vesta_proof)
+                                .unwrap(),
+                        );
+                    }
+                    let p_res = batch_verify(
+                        pallas_verification_scalars_and_points,
+                        &sr_params.c1_pc_gens,
+                        &sr_params.c1_bp_gens,
+                    );
+                    let v_res = batch_verify(
+                        vesta_verification_scalars_and_points,
+                        &sr_params.c2_pc_gens,
+                        &sr_params.c2_bp_gens,
+                    );
+                    // should assert that the result is Ok
+                })
+            },
+        );
+    }
 }
 
 criterion_group! {
-    name = select_and_rerandomize_verify_single;
+    name = select_and_rerandomize_verify;
     config = Criterion::default();
     targets =
-    bench_select_and_rerandomize_verify_single,
+    bench_select_and_rerandomize_verify,
 }
 
-criterion_main!(select_and_rerandomize_verify_single);
+// The benckmark for prove is ignored as it is very slow.
+criterion_main!(select_and_rerandomize_verify);
