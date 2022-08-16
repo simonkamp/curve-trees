@@ -816,13 +816,15 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
             // r.l_poly.2..
             for (j, w) in wVCs.iter().enumerate() {
-                if w.len() > j {
-                    r_poly.coeff_mut(2 + j)[i] = w[i];
+                if w.len() > i {
+                    println!("w[{}] = {}", i, w[i]);
+                    r_poly.coeff_mut(2+j)[i] = w[i];
                 }
             }
 
             // r_poly.<op_degree> = 0
             debug_assert_eq!(r_poly.coeff(op_degree)[i], C::ScalarField::zero());
+            debug_assert_eq!(r_poly.coeff(op_degree+1)[i], C::ScalarField::zero());
 
             // r_poly.3 = y^n * s_R
             r_poly.coeff_mut(op_degree + 1)[i] = exp_y * sr;
@@ -890,6 +892,53 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             exp_y = exp_y * y; // y^i -> y^(i+1)
         }
 
+        
+        // sanity check
+        #[cfg(debug_assertions)]
+        {
+            use crate::inner_product_proof::inner_product;
+
+            let y_inv = y.inverse().unwrap();
+            let y_inv_vec = util::exp_iter(y_inv)
+                .take(padded_n)
+                .collect::<Vec<C::ScalarField>>();
+            
+            let yneg_wR = wR
+                .iter()
+                .zip(y_inv_vec.iter())
+                .map(|(wRi, exp_y_inv)| (*wRi) * exp_y_inv)
+                .chain(iter::repeat(C::ScalarField::zero()).take(padded_n - n))
+                .collect::<Vec<C::ScalarField>>();
+
+            let delta = inner_product(&yneg_wR[0..n], &wL);
+
+            let yn: Vec<_> = util::exp_iter(y).take(n).collect();
+            let mut aRyn = vec![C::ScalarField::zero(); n];
+            for i in 0..n {
+                aRyn[i] = self.secrets.a_R[i] * yn[i];
+            }
+
+            let mut t2 = C::ScalarField::zero();
+            
+            // linear term
+            t2 += inner_product(&wL, &self.secrets.a_L);
+            t2 += inner_product(&wR, &self.secrets.a_R);
+            t2 += inner_product(&wO, &self.secrets.a_O);
+
+            for i in 0..self.secrets.vec_open.len() {
+                t2 += inner_product(&wVCs[i], &self.secrets.vec_open[i].1);
+            }  
+
+            // product
+            t2 += inner_product(&self.secrets.a_L, &aRyn);
+            t2 -= inner_product(&self.secrets.a_O, &yn);
+
+            // publicly computable correction
+            t2 += delta;
+
+            assert_eq!(t_poly.coeff()[op_degree], t2, "t_poly term check failed");
+        }
+
         let i_blinding = i_blinding1 + u * i_blinding2;
         let o_blinding = o_blinding1 + u * o_blinding2;
         let s_blinding = s_blinding1 + u * s_blinding2;
@@ -952,6 +1001,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         {
             scalar.clear();
         }
+
         let proof = R1CSProof {
             A_I1,
             A_O1,

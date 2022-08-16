@@ -615,7 +615,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .iter()
             .zip(u_for_g.clone())
             .zip(s.iter().take(padded_n))
-            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * xoff * (x * yneg_wRi - a * s_i));
+            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (xoff * x * yneg_wRi - a * s_i));
 
         // r(x)
         let mut h_scalars = Vec::with_capacity(padded_n);
@@ -666,13 +666,12 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         for d in 1..t_poly_deg + 1 {
             rxn *= x;
             if d == op_degree {
+                println!("skip op_degree = {}", op_degree);
                 continue;
             }
             T_points.push(proof.T[d].clone());
             T_scalars.push(rxn);
         }
-
-    
 
         println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
 
