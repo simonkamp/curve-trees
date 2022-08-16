@@ -14,33 +14,6 @@ use ark_std::{One, Zero};
 use merlin::Transcript;
 use std::{borrow::BorrowMut, marker::PhantomData};
 
-pub fn build_simple_tables<C: SWModelParameters>(
-    h: GroupAffine<C>,
-) -> Vec<Lookup3Bit<2, C::BaseField>> {
-    // build tables as in zcash spec
-    let lambda = <C::ScalarField as PrimeField>::size_in_bits();
-    let m = lambda / 3 + 1;
-
-    // Define tables T_1 .. T_m, and witnesses
-    let mut tables = Vec::with_capacity(m);
-    let mut m_th_right_term = C::ScalarField::zero();
-    for i in 1..m + 1 {
-        let mut table = Lookup3Bit::<2, C::BaseField> {
-            elems: [[C::BaseField::one(); WINDOW_ELEMS]; 2],
-        };
-        for j in 0..WINDOW_ELEMS {
-            let s = C::ScalarField::from(j as u64)
-                * C::ScalarField::from(2u64).pow(&[3u64 * (i - 1) as u64]);
-            // Multiply blinding by s
-            let hs = h.mul(s).into_affine();
-            table.elems[0][j] = hs.x;
-            table.elems[1][j] = hs.y;
-        }
-        tables.push(table);
-    }
-    tables
-}
-
 pub fn build_tables<C: SWModelParameters>(h: GroupAffine<C>) -> Vec<Lookup3Bit<2, C::BaseField>> {
     let lambda = <C::ScalarField as PrimeField>::size_in_bits();
     let m = lambda / 3 + 1;
@@ -271,55 +244,6 @@ mod tests {
 
         // todo final msm fails
         verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
-    }
-
-    #[test]
-    fn test_simple_tables() {
-        // testing a simplified fixed base table multiplication using the 3bit tables described in Zcash spec
-        let mut rng = rand::thread_rng();
-        let h = PallasP::rand(&mut rng).into_affine();
-        let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
-        let h_r = h.mul(r).into_affine();
-
-        let tables = build_simple_tables(h);
-        let lambda = <PallasScalar as PrimeField>::size_in_bits();
-        let m = lambda / 3 + 1;
-        let r_bigint: <PallasScalar as PrimeField>::BigInt = r.into();
-        let random_bits = r_bigint.to_bits_le();
-        let mut h_r_acc = PallasA::zero();
-        let mut r_acc = PallasScalar::zero();
-        for i in 1..m + 1 {
-            // n.b. i is 0 indexed
-            let mut table = tables[i - 1];
-            let bi = (i - 1) * 3;
-            let mut index = if bi < lambda && random_bits[bi] {
-                1usize
-            } else {
-                0
-            };
-            if bi + 1 < lambda && random_bits[bi + 1] {
-                index += 2;
-            };
-            if bi + 2 < lambda && random_bits[bi + 2] {
-                index += 4;
-            };
-            let t_i = if index == 0 {
-                // handle the infinity point explicitly
-                PallasA::zero()
-            } else {
-                // otherwise the field elements in the table form a point
-                let x_i = table.elems[0][index];
-                let y_i = table.elems[1][index];
-                PallasA::new(x_i, y_i, false)
-            };
-            h_r_acc += &t_i;
-
-            r_acc = r_acc
-                + PallasScalar::from(2u8).pow(&[3u64 * (i - 1) as u64])
-                    * PallasScalar::from(index as u64);
-        }
-        assert_eq!(r, r_acc.into(), "Bit decomposition.");
-        assert_eq!(h_r, h_r_acc, "Table multiplication.");
     }
 
     #[test]

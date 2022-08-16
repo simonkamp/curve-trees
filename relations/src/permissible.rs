@@ -18,13 +18,18 @@ use std::{borrow::BorrowMut, iter, marker::PhantomData};
 pub struct UniversalHash<F: SquareRootField> {
     alpha: F,
     beta: F,
+    // coefficients in curve equation
+    a: F,
+    b: F,
 }
 
 impl<F: SquareRootField> UniversalHash<F> {
-    pub fn new<R: Rng>(rng: &mut R) -> Self {
+    pub fn new<R: Rng>(rng: &mut R, a: F, b: F) -> Self {
         Self {
             alpha: F::rand(rng),
             beta: F::rand(rng),
+            a: a,
+            b: b,
         }
     }
     /// Given a commitment c, blinded using h, returns c' and r s.t. c' = c+h*r and c' is a permissible point
@@ -42,8 +47,8 @@ impl<F: SquareRootField> UniversalHash<F> {
         (c_prime, C::ScalarField::from(r))
     }
 
-    pub fn witness<C: SWModelParameters<BaseField = F>>(&self, point: GroupAffine<C>) -> F {
-        self.universal_hash(point.y)
+    pub fn witness(&self, y: F) -> F {
+        self.universal_hash(y)
             .sqrt()
             .expect("point must be permissible")
     }
@@ -71,16 +76,17 @@ impl<F: SquareRootField> UniversalHash<F> {
         &self,
         cs: &mut Cs,
         x: LinearCombination<F>,
-        y: LinearCombination<F>,
-        sqrt_witness: Option<F>,
-        a: F,
-        b: F,
+        y: Option<F>,
     ) {
-        curve_check(cs, x, y.clone(), a, b);
+        let y_var = cs.allocate(y).expect("Prover must supply witness");
+        curve_check(cs, x, y_var.into(), self.a, self.b);
         let (_, _, w2) = cs
-            .allocate_multiplier(sqrt_witness.map(|w| (w, w)))
+            .allocate_multiplier(y.map(|y| {
+                let w = self.witness(y);
+                (w, w)
+            }))
             .expect("Prover must supply witness");
-        let hash: LinearCombination<F> = y.clone().scalar_mul(self.alpha) + self.beta;
+        let hash: LinearCombination<F> = y_var * self.alpha + self.beta;
         cs.constrain(w2 - hash);
     }
 }
@@ -110,9 +116,12 @@ mod tests {
         let mut rng = rand::thread_rng();
         let c = PallasP::rand(&mut rng).into_affine();
         let h = PallasP::rand(&mut rng).into_affine();
-        let uh = UniversalHash::<PallasBase>::new(&mut rng);
+        let uh = UniversalHash::<PallasBase>::new(
+            &mut rng,
+            pasta::pallas::PallasParameters::COEFF_A,
+            pasta::pallas::PallasParameters::COEFF_B,
+        );
         let (c2, r) = uh.permissible_commitment(&c, &h);
-        let w = uh.witness(c2);
 
         let pc_gens = PedersenGens::<VestaA>::default();
         let bp_gens = BulletproofGens::<VestaA>::new(8, 1);
@@ -121,16 +130,8 @@ mod tests {
             let mut transcript = Transcript::new(b"Permissible");
             let mut prover = Prover::new(&pc_gens, &mut transcript);
             let (x_comm, x_var) = prover.commit(c2.x, VestaScalar::rand(&mut rng));
-            let y_var = prover.allocate(Some(c2.y)).unwrap();
 
-            uh.permissible(
-                &mut prover,
-                x_var.into(),
-                y_var.into(),
-                Some(uh.witness(c2)),
-                pasta::pallas::PallasParameters::COEFF_A,
-                pasta::pallas::PallasParameters::COEFF_B,
-            );
+            uh.permissible(&mut prover, x_var.into(), Some(c2.y));
 
             let proof = prover.prove(&bp_gens).unwrap();
             (proof, x_comm)
@@ -139,16 +140,8 @@ mod tests {
         let mut transcript = Transcript::new(b"Permissible");
         let mut verifier = Verifier::new(&mut transcript);
         let x_var = verifier.commit(x_comm);
-        let y_var = verifier.allocate(None).unwrap();
 
-        uh.permissible(
-            &mut verifier,
-            x_var.into(),
-            y_var.into(),
-            None,
-            pasta::pallas::PallasParameters::COEFF_A,
-            pasta::pallas::PallasParameters::COEFF_B,
-        );
+        uh.permissible(&mut verifier, x_var.into(), None);
 
         verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
     }

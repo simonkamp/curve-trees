@@ -12,3 +12,5 @@ mod select;
 
 // prove that a commitment to x defines a canonical point (x,y)
 mod permissible;
+
+mod select_rerandomize;

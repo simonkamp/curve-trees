@@ -14,28 +14,40 @@ use ark_std::{One, UniformRand, Zero};
 use merlin::Transcript;
 use std::{borrow::BorrowMut, iter, marker::PhantomData};
 
+/// Prove that a commitment x is one of the values commited to in vector commitment xs.
+/// The prover must provide the index of x in xs as witness.
 pub fn select<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
     x: LinearCombination<F>,
     xs: Vec<LinearCombination<F>>,
-    is: Vec<LinearCombination<F>>,
+    index: Option<usize>,
 ) {
     assert!(xs.len() > 0);
-    assert!(xs.len() == is.len());
-    // constrain is to bits
-    is.iter().map(|i| is_bit(cs, i.clone()));
+    // allocate vector of index bits, and constrain them to be bits
+    let mut is = Vec::with_capacity(xs.len());
+    for i in 0..xs.len() {
+        // Allocate variable for ith index.
+        // If i == index witness prover allocates 1, otherwise 0.
+        let ith_var = cs
+            .allocate(index.map(|index| if index == i { F::one() } else { F::zero() }))
+            .expect("Prover must have witness");
+        // Constrain ith var to be a bit
+        is_bit(cs, ith_var.into());
 
-    // constrain sum of is to 1
-    let mut is_sum = is[0].clone();
+        is.push(ith_var);
+    }
+
+    // Constrain sum of the index bits to 1.
+    let mut is_sum: LinearCombination<F> = is[0].into();
     for i in 1..is.len() {
-        is_sum = is_sum + is[i].clone();
+        is_sum = is_sum + is[i];
     }
     cs.constrain(is_sum - F::one());
 
     // x = inner product of is and xs
     let mut inner_product: LinearCombination<F> = F::zero().into();
     for i in 0..is.len() {
-        let (_, _, product) = cs.multiply(xs[i].clone(), is[i].clone());
+        let (_, _, product) = cs.multiply(xs[i].clone(), is[i].into());
         inner_product = inner_product + product;
     }
     cs.constrain(inner_product - x);
@@ -64,14 +76,14 @@ mod tests {
     fn test_select() {
         let mut rng = rand::thread_rng();
         let pg = PedersenGens::default();
-        let bpg = BulletproofGens::new(512, 1);
-        let (proof, xs_comms, is_comms, x_comm) = {
+        let bpg = BulletproofGens::new(1024, 1);
+        let (proof, xs_comms, x_comm) = {
             // have a prover commit to a vector of random elements in Pallas base field
             // (will be x-coordinates of permissible points in the end)
-            let xs: Vec<_> = iter::repeat(PallasBase::rand(&mut rng)).take(256).collect();
-            let mut is: Vec<_> = iter::repeat(PallasBase::zero()).take(256).collect();
+            let xs: Vec<_> = iter::from_fn(|| Some(VestaScalar::rand(&mut rng)))
+                .take(256)
+                .collect();
             let index = 42;
-            is[index] = PallasBase::one();
             let x = xs[index];
 
             let mut transcript = Transcript::new(b"select");
@@ -83,36 +95,25 @@ mod tests {
                 xs_comms.push(c);
                 xs_vars.push(v);
             }
-            let mut is_comms = Vec::with_capacity(256);
-            let mut is_vars = Vec::with_capacity(256);
-            for i in 0..256 {
-                let (c, v) = prover.commit(is[i], PallasBase::rand(&mut rng));
-                is_comms.push(c);
-                is_vars.push(v);
-            }
             let (x_comm, x_var) = prover.commit(x, PallasBase::rand(&mut rng));
 
             select(
                 &mut prover,
                 x_var.into(),
                 xs_vars.into_iter().map(|v| v.into()).collect(),
-                is_vars.into_iter().map(|v| v.into()).collect(),
+                Some(index),
             );
 
             let proof = prover.prove(&bpg).unwrap();
-            (proof, xs_comms, is_comms, x_comm)
+            (proof, xs_comms, x_comm)
         };
 
         let mut transcript = Transcript::new(b"select");
         let mut verifier = Verifier::new(&mut transcript);
 
         let mut xs_vars = Vec::with_capacity(256);
-        let mut is_vars = Vec::with_capacity(256);
         for i in 0..256 {
             xs_vars.push(verifier.commit(xs_comms[i]));
-        }
-        for i in 0..256 {
-            is_vars.push(verifier.commit(is_comms[i]));
         }
         let x_var = verifier.commit(x_comm);
 
@@ -120,7 +121,7 @@ mod tests {
             &mut verifier,
             x_var.into(),
             xs_vars.into_iter().map(|v| v.into()).collect(),
-            is_vars.into_iter().map(|v| v.into()).collect(),
+            None,
         );
 
         verifier.verify(&proof, &pg, &bpg).unwrap();
@@ -130,22 +131,20 @@ mod tests {
     fn test_select_vec_commit() {
         let mut rng = rand::thread_rng();
         let pg = PedersenGens::default();
-        let bpg = BulletproofGens::new(512, 1);
-        let (proof, xs_comm, is_comm, x_comm) = {
+        let bpg = BulletproofGens::new(1024, 1);
+        let (proof, xs_comm, x_comm) = {
             // have a prover commit to a vector of random elements in Pallas base field
             // (will be x-coordinates of permissible points in the end)
-            let xs: Vec<_> = iter::repeat(PallasBase::rand(&mut rng)).take(256).collect();
-            let mut is: Vec<_> = iter::repeat(PallasBase::zero()).take(256).collect();
+            let xs: Vec<_> = iter::from_fn(|| Some(VestaScalar::rand(&mut rng)))
+                .take(256)
+                .collect();
             let index = 42;
-            is[index] = PallasBase::one();
             let x = xs[index];
 
             let mut transcript = Transcript::new(b"select");
             let mut prover: Prover<_, VestaA> = Prover::new(&pg, &mut transcript);
             let blinding_xs = PallasBase::rand(&mut rng);
             let (xs_comm, xs_vars) = prover.commit_vec(xs.as_slice(), blinding_xs, &bpg);
-            let blinding_is = PallasBase::rand(&mut rng);
-            let (is_comm, is_vars) = prover.commit_vec(xs.as_slice(), blinding_is, &bpg);
             let blinding_x = PallasBase::rand(&mut rng);
             let (x_comm, x_var) = prover.commit(x, blinding_x);
 
@@ -153,28 +152,28 @@ mod tests {
                 &mut prover,
                 x_var.into(),
                 xs_vars.into_iter().map(|v| v.into()).collect(),
-                is_vars.into_iter().map(|v| v.into()).collect(),
+                Some(index),
             );
 
             let proof = prover.prove(&bpg).unwrap();
-            (proof, xs_comm, is_comm, x_comm)
+            (proof, xs_comm, x_comm)
         };
 
         let mut transcript = Transcript::new(b"select");
         let mut verifier = Verifier::new(&mut transcript);
 
         let xs_vars = verifier.commit_vec(256, xs_comm);
-        let is_vars = verifier.commit_vec(256, is_comm);
         let x_var = verifier.commit(x_comm);
 
         select(
             &mut verifier,
             x_var.into(),
             xs_vars.into_iter().map(|v| v.into()).collect(),
-            is_vars.into_iter().map(|v| v.into()).collect(),
+            None,
         );
 
+        let res = verifier.verify(&proof, &pg, &bpg);
         // todo awaits vector commitment fix
-        // verifier.verify(&proof, &pg, &bpg).unwrap();
+        // assert_eq!(res, Ok(()))
     }
 }
