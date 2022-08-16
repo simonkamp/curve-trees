@@ -359,7 +359,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
     ) -> (C, Vec<Variable<C::ScalarField>>) {
         use std::iter;
 
-        // let v_blinding = C::ScalarField::zero(); // for simplicity: TODO change
+        let v_blinding = C::ScalarField::zero(); // for simplicity: TODO change
 
         let comm_idx = self.secrets.vec_open.len();
 
@@ -789,11 +789,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // l_poly.i = a_Vi
             for (j, v) in self.secrets.vec_open.iter().enumerate() {
                 if v.1.len() > j {
-                    // todo out of bounds error in test_select_vec_commit
-                    // should v.1 be indexed by j instead or should the check be for i? Something else?
-                    // l_poly.coeff_mut(1 + j)[i] = v.1[i]; // this was the original line
-                    // println!("{}", i);
-                    l_poly.coeff_mut(1 + j)[i] = v.1[j]; // try indexing by j
+                    l_poly.coeff_mut(1 + j)[i] = v.1[i];
                 }
             }
 
@@ -821,9 +817,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // r.l_poly.2..
             for (j, w) in wVCs.iter().enumerate() {
                 if w.len() > j {
-                    // todo this is also out of bounds, trying indexing by j
-                    // r_poly.coeff_mut(2 + j)[i] = w[i]; // orig. line
-                    r_poly.coeff_mut(2 + j)[i] = w[j];
+                    r_poly.coeff_mut(2 + j)[i] = w[i];
                 }
             }
 
