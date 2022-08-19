@@ -120,29 +120,18 @@ impl<C: AffineCurve> CanonicalSerialize for R1CSProof<C> {
 
 impl<C: AffineCurve> CanonicalDeserialize for R1CSProof<C> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        let A_I1 = C::deserialize(&mut reader)?;
-        let A_O1 = C::deserialize(&mut reader)?;
-        let S1 = C::deserialize(&mut reader)?;
-        let A_I2 = C::deserialize(&mut reader)?;
-        let A_O2 = C::deserialize(&mut reader)?;
-        let S2 = C::deserialize(&mut reader)?;
-        let T = Vec::<C>::deserialize(&mut reader)?;
-        let t_x = C::ScalarField::deserialize(&mut reader)?;
-        let t_x_blinding = C::ScalarField::deserialize(&mut reader)?;
-        let e_blinding = C::ScalarField::deserialize(&mut reader)?;
-        let ipp_proof = InnerProductProof::<C>::deserialize(&mut reader)?;
         Ok(Self {
-            A_I1: A_I1,
-            A_O1: A_O1,
-            S1: S1,
-            A_I2: A_I2,
-            A_O2: A_O2,
-            S2: S2,
-            T: T,
-            t_x: t_x,
-            t_x_blinding: t_x_blinding,
-            e_blinding: e_blinding,
-            ipp_proof: ipp_proof,
+            A_I1: C::deserialize(&mut reader)?,
+            A_O1: C::deserialize(&mut reader)?,
+            S1: C::deserialize(&mut reader)?,
+            A_I2: C::deserialize(&mut reader)?,
+            A_O2: C::deserialize(&mut reader)?,
+            S2: C::deserialize(&mut reader)?,
+            T: Vec::<C>::deserialize(&mut reader)?,
+            t_x: C::ScalarField::deserialize(&mut reader)?,
+            t_x_blinding: C::ScalarField::deserialize(&mut reader)?,
+            e_blinding: C::ScalarField::deserialize(&mut reader)?,
+            ipp_proof: InnerProductProof::<C>::deserialize(&mut reader)?,
         })
     }
 }

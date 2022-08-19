@@ -422,15 +422,11 @@ impl<C: AffineCurve> InnerProductProof<C> {
 
 impl<C: AffineCurve> CanonicalDeserialize for InnerProductProof<C> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        let l_vec = Vec::<C>::deserialize(&mut reader)?;
-        let r_vec = Vec::<C>::deserialize(&mut reader)?;
-        let a = C::ScalarField::deserialize(&mut reader)?;
-        let b = C::ScalarField::deserialize(&mut reader)?;
         Ok(Self {
-            a: a,
-            b: b,
-            L_vec: l_vec,
-            R_vec: r_vec,
+            L_vec: Vec::<C>::deserialize(&mut reader)?,
+            R_vec: Vec::<C>::deserialize(&mut reader)?,
+            a: C::ScalarField::deserialize(&mut reader)?,
+            b: C::ScalarField::deserialize(&mut reader)?,
         })
     }
 }

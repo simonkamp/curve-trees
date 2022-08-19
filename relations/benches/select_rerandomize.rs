@@ -17,6 +17,7 @@ use pasta::{
 };
 
 use ark_ec::AffineCurve;
+use ark_serialize::CanonicalSerialize;
 
 type PallasScalar = <PallasAffine as AffineCurve>::ScalarField;
 type PallasBase = <PallasAffine as AffineCurve>::BaseField;
@@ -25,7 +26,7 @@ type VestaBase = <VestaAffine as AffineCurve>::BaseField;
 
 fn bench_select_and_rerandomize_prove(c: &mut Criterion) {
     let mut rng = rand::thread_rng();
-    let generators_length = 2 << 11; // minimum sufficient power of 2
+    let generators_length = 1 << 12; // minimum sufficient power of 2
 
     let sr_params =
         SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
@@ -48,11 +49,13 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
     let mut group = c.benchmark_group("Verification of select and randomize proofs");
 
     let mut rng = rand::thread_rng();
-    let generators_length = 2 << 11; // minimum sufficient power of 2
+    let generators_length = 1 << 12; // minimum sufficient power of 2
 
     let sr_params =
         SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
     let sr_proof = prove_from_mock_curve_tree(&sr_params);
+
+    println!("Proof size in bytes {}", sr_proof.serialized_size());
 
     group.bench_function("verify_single", |b| {
         b.iter(|| {
@@ -72,11 +75,10 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
             );
         })
     });
+
     use std::iter;
 
-    for n in [
-        1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 99, 100, 150, 199, 200,
-    ] {
+    for n in [1, 10, 50, 99, 100, 199, 200] {
         group.bench_with_input(
             format!("Batch verification of {} proofs.", n),
             &iter::repeat(&sr_proof).take(n).collect::<Vec<_>>(),

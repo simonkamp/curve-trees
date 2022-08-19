@@ -174,6 +174,6 @@ mod tests {
 
         let res = verifier.verify(&proof, &pg, &bpg);
         // todo awaits vector commitment fix
-        // assert_eq!(res, Ok(()))
+        assert_eq!(res, Ok(()))
     }
 }

@@ -14,6 +14,7 @@ use ark_ec::{
     AffineCurve, ModelParameters, ProjectiveCurve, SWModelParameters,
 };
 use ark_ff::{BigInteger, Field, PrimeField, SquareRootField};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::{One, UniformRand, Zero};
 use merlin::Transcript;
 use rand::Rng;
@@ -61,9 +62,39 @@ fn single_level_select_and_rerandomize<
 pub struct SelRerandProof<P1: SWModelParameters, P2: SWModelParameters> {
     pub result: GroupAffine<P1>,
     pub pallas_proof: R1CSProof<GroupAffine<P1>>,
-    pub pallas_commitments: [GroupAffine<P1>; 2],
+    pub pallas_commitments: Vec<GroupAffine<P1>>,
     pub vesta_proof: R1CSProof<GroupAffine<P2>>,
-    pub vesta_commitments: [GroupAffine<P2>; 2],
+    pub vesta_commitments: Vec<GroupAffine<P2>>,
+}
+
+impl<P1: SWModelParameters, P2: SWModelParameters> CanonicalSerialize for SelRerandProof<P1, P2> {
+    fn serialized_size(&self) -> usize {
+        let r1cs_proofs_size = self.pallas_proof.serialized_size() + self.vesta_proof.serialized_size();
+        let commitments_size = self.result.serialized_size() + 
+        self.pallas_commitments.serialized_size() + self.vesta_commitments.serialized_size();
+        r1cs_proofs_size + commitments_size
+    }
+
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.result.serialize(&mut writer)?;
+        self.pallas_proof.serialize(&mut writer)?;
+        self.pallas_commitments.serialize(&mut writer)?;
+        self.vesta_proof.serialize(&mut writer)?;
+        self.vesta_commitments.serialize(&mut writer)?;
+        Ok(())
+    }
+}
+
+impl<P1: SWModelParameters, P2: SWModelParameters> CanonicalDeserialize for SelRerandProof<P1, P2> {
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        Ok(Self {
+            result: GroupAffine::<P1>::deserialize(&mut reader)?,
+            pallas_proof: R1CSProof::<GroupAffine<P1>>::deserialize(&mut reader)?,
+            pallas_commitments: Vec::<GroupAffine<P1>>::deserialize(&mut reader)?,
+            vesta_proof: R1CSProof::<GroupAffine<P2>>::deserialize(&mut reader)?,
+            vesta_commitments: Vec::<GroupAffine<P2>>::deserialize(&mut reader)?,
+        })
+    }
 }
 
 fn vector_commitment<C: AffineCurve>(
@@ -314,9 +345,9 @@ pub fn prove_from_mock_curve_tree<
     SelRerandProof {
         result: leaf_rerand,
         pallas_proof: pallas_prover.prove(&pallas_bp_gens).unwrap(),
-        pallas_commitments: [c1_rerand, c3],
+        pallas_commitments: vec![c1_rerand, c3],
         vesta_proof: vesta_prover.prove(&vesta_bp_gens).unwrap(),
-        vesta_commitments: [c0_rerand, c2_rerand],
+        vesta_commitments: vec![c0_rerand, c2_rerand],
     }
 }
 
@@ -412,7 +443,7 @@ mod tests {
     #[test]
     fn test_select_and_rerandomize_single() {
         let mut rng = rand::thread_rng();
-        let generators_length = 2 << 11; // minimum sufficient power of 2
+        let generators_length = 1 << 12; // minimum sufficient power of 2
 
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
