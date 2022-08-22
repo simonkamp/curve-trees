@@ -20,6 +20,81 @@ use merlin::Transcript;
 use rand::Rng;
 use std::{borrow::BorrowMut, iter, marker::PhantomData};
 
+pub struct CurveTree<const L: usize, P0: SWModelParameters, P1: SWModelParameters> {
+    commitment: GroupAffine<P0>,
+    randomness: <GroupAffine<P0> as AffineCurve>::ScalarField,
+    children: Option<Box<[Option<CurveTree<L, P1, P0>>; L]>>,
+    height: usize,
+}
+
+impl<const L: usize, P0: SWModelParameters, P1: SWModelParameters> std::fmt::Debug
+    for CurveTree<L, P0, P1>
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(fmt, "")
+    }
+}
+
+impl<const L: usize, P0: SWModelParameters, P1: SWModelParameters<BaseField = P0::ScalarField>>
+    CurveTree<L, P0, P1>
+{
+    // Combine up to L nodes of level d into a single level d+1 node.
+    // The children are assumed to be of appropriate identical height.
+    fn combine(
+        children: Vec<CurveTree<L, P1, P0>>,
+        bp_gens: &BulletproofGens<GroupAffine<P0>>,
+        pc_gens: &PedersenGens<GroupAffine<P0>>,
+        uh: &UniversalHash<P0::BaseField>,
+    ) -> Self {
+        if children.len() > L {
+            panic!(
+                "Cannot combine more than the branching factor: {} into one node.",
+                L
+            )
+        };
+
+        let mut cs: Vec<Option<CurveTree<L, P1, P0>>> = Vec::with_capacity(L);
+        for c in children {
+            cs.push(Some(c));
+        }
+        // Let the rest of the children be dummy elements.
+        while cs.len() < L {
+            cs.push(None)
+        }
+        let children: [Option<CurveTree<L, P1, P0>>; L] = cs.try_into().unwrap();
+        let height = if let Some(c) = &children[0] {
+            c.height + 1
+        } else {
+            1
+        };
+        // commit to the childrens x-coordinates with randomness zero, then increment randomness to find permissible point.
+        let children_commitments = children
+            .iter()
+            .map(|c| {
+                if let Some(c) = c {
+                    c.commitment.x
+                } else {
+                    P1::BaseField::zero()
+                }
+            })
+            .collect::<Vec<_>>();
+        let c_init = vector_commitment(
+            children_commitments.as_slice(),
+            P0::ScalarField::zero(),
+            bp_gens,
+            pc_gens,
+        );
+        let (c, r) = uh.permissible_commitment(&c_init, &pc_gens.B_blinding);
+
+        Self {
+            commitment: c,
+            randomness: r,
+            children: Some(Box::new(children)),
+            height: height,
+        }
+    }
+}
+
 fn single_level_select_and_rerandomize<
     Fb: SquareRootField,
     Fs: SquareRootField,
@@ -69,13 +144,18 @@ pub struct SelRerandProof<P1: SWModelParameters, P2: SWModelParameters> {
 
 impl<P1: SWModelParameters, P2: SWModelParameters> CanonicalSerialize for SelRerandProof<P1, P2> {
     fn serialized_size(&self) -> usize {
-        let r1cs_proofs_size = self.pallas_proof.serialized_size() + self.vesta_proof.serialized_size();
-        let commitments_size = self.result.serialized_size() + 
-        self.pallas_commitments.serialized_size() + self.vesta_commitments.serialized_size();
+        let r1cs_proofs_size =
+            self.pallas_proof.serialized_size() + self.vesta_proof.serialized_size();
+        let commitments_size = self.result.serialized_size()
+            + self.pallas_commitments.serialized_size()
+            + self.vesta_commitments.serialized_size();
         r1cs_proofs_size + commitments_size
     }
 
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        // This serialization uses 8 bytes to encode the length of each vector.
+        // There are two point vectors in each proof, and two commitment vectors.
+        // I.e. 48 superfluous bytes for the entire proof.
         self.result.serialize(&mut writer)?;
         self.pallas_proof.serialize(&mut writer)?;
         self.pallas_commitments.serialize(&mut writer)?;
