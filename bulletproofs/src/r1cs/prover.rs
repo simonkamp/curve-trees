@@ -818,13 +818,13 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             for (j, w) in wVCs.iter().enumerate() {
                 if w.len() > i {
                     println!("w[{}] = {}", i, w[i]);
-                    r_poly.coeff_mut(2+j)[i] = w[i];
+                    r_poly.coeff_mut(2 + j)[i] = w[i];
                 }
             }
 
             // r_poly.<op_degree> = 0
             debug_assert_eq!(r_poly.coeff(op_degree)[i], C::ScalarField::zero());
-            debug_assert_eq!(r_poly.coeff(op_degree+1)[i], C::ScalarField::zero());
+            debug_assert_eq!(r_poly.coeff(op_degree + 1)[i], C::ScalarField::zero());
 
             // r_poly.3 = y^n * s_R
             r_poly.coeff_mut(op_degree + 1)[i] = exp_y * sr;
@@ -892,7 +892,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             exp_y = exp_y * y; // y^i -> y^(i+1)
         }
 
-        
         // sanity check
         #[cfg(debug_assertions)]
         {
@@ -902,7 +901,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             let y_inv_vec = util::exp_iter(y_inv)
                 .take(padded_n)
                 .collect::<Vec<C::ScalarField>>();
-            
+
             let yneg_wR = wR
                 .iter()
                 .zip(y_inv_vec.iter())
@@ -919,7 +918,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             }
 
             let mut t2 = C::ScalarField::zero();
-            
+
             // linear term
             t2 += inner_product(&wL, &self.secrets.a_L);
             t2 += inner_product(&wR, &self.secrets.a_R);
@@ -927,7 +926,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
             for i in 0..self.secrets.vec_open.len() {
                 t2 += inner_product(&wVCs[i], &self.secrets.vec_open[i].1);
-            }  
+            }
 
             // product
             t2 += inner_product(&self.secrets.a_L, &aRyn);

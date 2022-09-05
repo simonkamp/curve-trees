@@ -20,31 +20,194 @@ use merlin::Transcript;
 use rand::Rng;
 use std::{borrow::BorrowMut, iter, marker::PhantomData};
 
-pub struct CurveTree<const L: usize, P0: SWModelParameters, P1: SWModelParameters> {
+pub struct SingleLayerParameters<P: SWModelParameters> {
+    pub bp_gens: BulletproofGens<GroupAffine<P>>,
+    pub pc_gens: PedersenGens<GroupAffine<P>>,
+    pub uh: UniversalHash<P::BaseField>,
+}
+
+pub enum CurveTree<const L: usize, P0: SWModelParameters, P1: SWModelParameters> {
+    Even(CurveTreeNode<L, P0, P1>),
+    Odd(CurveTreeNode<L, P1, P0>),
+}
+
+impl<
+        const L: usize,
+        P0: SWModelParameters + Clone,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    > CurveTree<L, P0, P1>
+{
+    /// Build a curve tree from a set of commitments assumed to be permissible
+    pub fn from_Set(
+        set: &[GroupAffine<P0>],
+        even_parameters: &SingleLayerParameters<P0>,
+        odd_parameters: &SingleLayerParameters<P1>,
+    ) -> Self {
+        if set.len() == 0 {
+            panic!("")
+        }
+        // Convert each commitment to a leaf.
+        let mut even_forest: Vec<_> = set
+            .iter()
+            .map(|comm| CurveTreeNode::<L, P0, P1>::leaf(*comm))
+            .collect();
+        let mut number_of_trees = even_forest.len();
+        while number_of_trees > 1 {
+            // Combine forest of trees with even roots, into a forest of trees with odd roots.
+            let odd_forest: Vec<_> = even_forest
+                .chunks(L)
+                .map(|chunk| CurveTreeNode::<L, P1, P0>::combine(chunk, odd_parameters))
+                .collect();
+
+            if odd_forest.len() == 1 {
+                return Self::Odd(odd_forest[0].clone());
+            }
+
+            // Combine forest of trees with odd roots, into a forest of trees with even roots.
+            even_forest = odd_forest
+                .chunks(L)
+                .map(|chunk| CurveTreeNode::<L, P0, P1>::combine(chunk, even_parameters))
+                .collect();
+        }
+        Self::Even(even_forest[0].clone())
+    }
+
+    pub fn get_path(
+        &self,
+        index: usize,
+    ) -> (Vec<SingleLayerWitness<P0>>, Vec<SingleLayerWitness<P1>>) {
+        match self {
+            Self::Even(ct) => ct.get_path(index),
+            Self::Odd(ct) => {
+                let (odd_commitments, even_commitments) = ct.get_path(index);
+                (even_commitments, odd_commitments)
+            }
+        }
+    }
+
+    // todo add a function to increase capacity/height
+
+    //todo add a function to add a single/several commitments
+}
+
+#[derive(Clone)]
+pub struct CurveTreeNode<const L: usize, P0: SWModelParameters, P1: SWModelParameters> {
     commitment: GroupAffine<P0>,
     randomness: <GroupAffine<P0> as AffineCurve>::ScalarField,
-    children: Option<Box<[Option<CurveTree<L, P1, P0>>; L]>>,
+    children: Option<Box<[Option<CurveTreeNode<L, P1, P0>>; L]>>,
     height: usize,
+    elements: usize,
 }
 
 impl<const L: usize, P0: SWModelParameters, P1: SWModelParameters> std::fmt::Debug
-    for CurveTree<L, P0, P1>
+    for CurveTreeNode<L, P0, P1>
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(fmt, "")
     }
 }
 
-impl<const L: usize, P0: SWModelParameters, P1: SWModelParameters<BaseField = P0::ScalarField>>
-    CurveTree<L, P0, P1>
+pub struct SingleLayerWitness<P: SWModelParameters> {
+    commitment: GroupAffine<P>,
+    randomness: P::ScalarField,
+    index: usize,
+}
+
+impl<
+        const L: usize,
+        P0: SWModelParameters + Clone,
+        P1: SWModelParameters<BaseField = P0::ScalarField> + Clone,
+    > CurveTreeNode<L, P0, P1>
 {
+    // The commitment is assumed to be permissible
+    pub fn leaf(commitment: GroupAffine<P0>) -> Self {
+        Self {
+            commitment: commitment,
+            randomness: P0::ScalarField::zero(),
+            children: None,
+            height: 0,
+            elements: 1,
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        L.pow(self.height as u32)
+    }
+
+    // Gets the commitments on the path from the root to the leaf
+    pub fn get_path(
+        &self,
+        leaf_index: usize,
+    ) -> (Vec<SingleLayerWitness<P0>>, Vec<SingleLayerWitness<P1>>) {
+        if leaf_index > self.capacity() {
+            panic!("Out of bounds")
+        };
+
+        // path_indeces contain at index i the index of the height i node in the set of children of the height i+1 node.
+        let mut path_indeces = Vec::with_capacity(self.height);
+        let mut leafs_per_d_layer_node = L;
+        for d in 0..self.height {
+            let layer_d_index = leaf_index / leafs_per_d_layer_node;
+            path_indeces.push(layer_d_index);
+            leafs_per_d_layer_node *= L;
+        }
+
+        let mut self_commitments = Vec::new();
+        let mut other_commitments = Vec::new();
+        self_commitments.push(SingleLayerWitness {
+            commitment: self.commitment,
+            randomness: self.randomness,
+            index: 0, // the root does not have a meaningful index
+        });
+        let mut tree = self;
+        let mut d = self.height;
+        while d > 0 {
+            d -= 1; // d is at least 0
+
+            let child = if let Some(children) = &tree.children {
+                if let Some(child) = &children[path_indeces[d]] {
+                    child
+                } else {
+                    panic!("Out of bounds")
+                }
+            } else {
+                panic!("Out of bounds")
+            };
+            other_commitments.push(SingleLayerWitness {
+                commitment: child.commitment,
+                randomness: child.randomness,
+                index: path_indeces[d],
+            });
+
+            if d == 0 {
+                break;
+            }
+            d -= 1; // d is at least 0
+            let grandchild = if let Some(children) = &child.children {
+                if let Some(gc) = &children[path_indeces[d]] {
+                    gc
+                } else {
+                    panic!("Out of bounds")
+                }
+            } else {
+                panic!("Out of bounds")
+            };
+            self_commitments.push(SingleLayerWitness {
+                commitment: grandchild.commitment,
+                randomness: grandchild.randomness,
+                index: path_indeces[d],
+            });
+            tree = grandchild;
+        }
+        (self_commitments, other_commitments)
+    }
+
     // Combine up to L nodes of level d into a single level d+1 node.
     // The children are assumed to be of appropriate identical height.
+    // All but the last should be full.
     fn combine(
-        children: Vec<CurveTree<L, P1, P0>>,
-        bp_gens: &BulletproofGens<GroupAffine<P0>>,
-        pc_gens: &PedersenGens<GroupAffine<P0>>,
-        uh: &UniversalHash<P0::BaseField>,
+        children: &[CurveTreeNode<L, P1, P0>],
+        parameters: &SingleLayerParameters<P0>,
     ) -> Self {
         if children.len() > L {
             panic!(
@@ -53,15 +216,17 @@ impl<const L: usize, P0: SWModelParameters, P1: SWModelParameters<BaseField = P0
             )
         };
 
-        let mut cs: Vec<Option<CurveTree<L, P1, P0>>> = Vec::with_capacity(L);
+        let mut elements = 0;
+        let mut cs: Vec<Option<CurveTreeNode<L, P1, P0>>> = Vec::with_capacity(L);
         for c in children {
-            cs.push(Some(c));
+            elements += c.elements;
+            cs.push(Some(c.clone()));
         }
         // Let the rest of the children be dummy elements.
         while cs.len() < L {
             cs.push(None)
         }
-        let children: [Option<CurveTree<L, P1, P0>>; L] = cs.try_into().unwrap();
+        let children: [Option<CurveTreeNode<L, P1, P0>>; L] = cs.try_into().unwrap();
         let height = if let Some(c) = &children[0] {
             c.height + 1
         } else {
@@ -81,16 +246,19 @@ impl<const L: usize, P0: SWModelParameters, P1: SWModelParameters<BaseField = P0
         let c_init = vector_commitment(
             children_commitments.as_slice(),
             P0::ScalarField::zero(),
-            bp_gens,
-            pc_gens,
+            &parameters.bp_gens,
+            &parameters.pc_gens,
         );
-        let (c, r) = uh.permissible_commitment(&c_init, &pc_gens.B_blinding);
+        let (c, r) = parameters
+            .uh
+            .permissible_commitment(&c_init, &parameters.pc_gens.B_blinding);
 
         Self {
             commitment: c,
             randomness: r,
             children: Some(Box::new(children)),
             height: height,
+            elements: elements,
         }
     }
 }
@@ -207,16 +375,18 @@ fn vector_commitment<C: AffineCurve>(
 }
 
 pub struct SelRerandParameters<P1: SWModelParameters, P2: SWModelParameters> {
-    pub c1_pc_gens: PedersenGens<GroupAffine<P1>>,
-    pub c1_bp_gens: BulletproofGens<GroupAffine<P1>>,
-    pub c1_uh: UniversalHash<P1::BaseField>,
-    pub c1_blinding: GroupAffine<P1>, // todo is in pc_gens
+    // pub c1_pc_gens: PedersenGens<GroupAffine<P1>>,
+    // pub c1_bp_gens: BulletproofGens<GroupAffine<P1>>,
+    // pub c1_uh: UniversalHash<P1::BaseField>,
+    // pub c1_blinding: GroupAffine<P1>, // todo is in pc_gens
     pub c1_tables: Vec<Lookup3Bit<2, P1::BaseField>>,
-    pub c2_pc_gens: PedersenGens<GroupAffine<P2>>,
-    pub c2_bp_gens: BulletproofGens<GroupAffine<P2>>,
-    pub c2_uh: UniversalHash<P2::BaseField>,
-    pub c2_blinding: GroupAffine<P2>, // todo is in pc_gens
+    pub c1_parameters: SingleLayerParameters<P1>,
+    // pub c2_pc_gens: PedersenGens<GroupAffine<P2>>,
+    // pub c2_bp_gens: BulletproofGens<GroupAffine<P2>>,
+    // pub c2_uh: UniversalHash<P2::BaseField>,
+    // pub c2_blinding: GroupAffine<P2>, // todo is in pc_gens
     pub c2_tables: Vec<Lookup3Bit<2, P2::BaseField>>,
+    pub c2_parameters: SingleLayerParameters<P2>,
 }
 
 impl<P1: SWModelParameters, P2: SWModelParameters> SelRerandParameters<P1, P2> {
@@ -224,6 +394,16 @@ impl<P1: SWModelParameters, P2: SWModelParameters> SelRerandParameters<P1, P2> {
         let c1_pc_gens = PedersenGens::<GroupAffine<P1>>::default();
         let c1_bp_gens = BulletproofGens::<GroupAffine<P1>>::new(generators_length, 1);
         let c1_uh = UniversalHash::new(rng, P1::COEFF_A, P1::COEFF_B);
+        let c1_parameters = SingleLayerParameters {
+            bp_gens: BulletproofGens::<GroupAffine<P1>>::new(generators_length, 1),
+            pc_gens: PedersenGens::<GroupAffine<P1>>::default(),
+            uh: UniversalHash::new(rng, P1::COEFF_A, P1::COEFF_B),
+        };
+        let c2_parameters = SingleLayerParameters {
+            bp_gens: BulletproofGens::<GroupAffine<P2>>::new(generators_length, 1),
+            pc_gens: PedersenGens::<GroupAffine<P2>>::default(),
+            uh: UniversalHash::new(rng, P2::COEFF_A, P2::COEFF_B),
+        };
         let c1_blinding = c1_pc_gens.B_blinding;
         let c1_scalar_tables = build_tables(c1_blinding);
         let c2_pc_gens = PedersenGens::<GroupAffine<P2>>::default();
@@ -232,15 +412,17 @@ impl<P1: SWModelParameters, P2: SWModelParameters> SelRerandParameters<P1, P2> {
         let c2_blinding = c2_pc_gens.B_blinding;
         let c2_scalar_tables = build_tables(c2_blinding);
         SelRerandParameters {
-            c1_pc_gens: c1_pc_gens,
-            c1_bp_gens: c1_bp_gens,
-            c1_uh: c1_uh,
-            c1_blinding: c1_blinding,
+            // c1_pc_gens: c1_pc_gens,
+            // c1_bp_gens: c1_bp_gens,
+            // c1_uh: c1_uh,
+            c1_parameters: c1_parameters,
+            // c1_blinding: c1_blinding,
             c1_tables: c1_scalar_tables,
-            c2_pc_gens: c2_pc_gens,
-            c2_bp_gens: c2_bp_gens,
-            c2_uh: c2_uh,
-            c2_blinding: c2_blinding,
+            // c2_pc_gens: c2_pc_gens,
+            // c2_bp_gens: c2_bp_gens,
+            // c2_uh: c2_uh,
+            c2_parameters: c2_parameters,
+            // c2_blinding: c2_blinding,
             c2_tables: c2_scalar_tables,
         }
     }
@@ -255,16 +437,16 @@ pub fn prove_from_mock_curve_tree<
 ) -> (SelRerandProof<P1, P2>) {
     let mut rng = rand::thread_rng();
 
-    let pallas_pc_gens = &srp.c1_pc_gens;
-    let pallas_bp_gens = &srp.c1_bp_gens;
-    let pallas_uh = srp.c1_uh;
-    let pallas_blinding = srp.c1_blinding;
+    let pallas_pc_gens = &srp.c1_parameters.pc_gens;
+    let pallas_bp_gens = &srp.c1_parameters.bp_gens;
+    let pallas_uh = srp.c1_parameters.uh;
+    let pallas_blinding = srp.c1_parameters.pc_gens.B_blinding;
     let pallas_scalar_tables = &srp.c1_tables;
 
-    let vesta_pc_gens = &srp.c2_pc_gens;
-    let vesta_bp_gens = &srp.c2_bp_gens;
-    let vesta_uh = srp.c2_uh;
-    let vesta_blinding = srp.c2_blinding;
+    let vesta_pc_gens = &srp.c2_parameters.pc_gens;
+    let vesta_bp_gens = &srp.c2_parameters.bp_gens;
+    let vesta_uh = srp.c2_parameters.uh;
+    let vesta_blinding = srp.c2_parameters.pc_gens.B_blinding;
     let vesta_scalar_tables = &srp.c2_tables;
 
     let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -448,7 +630,7 @@ pub fn verification_circuit<
         let c0_rerand_vars = verifier.commit_vec(256, sr_proof.vesta_commitments[0]);
         single_level_select_and_rerandomize(
             &mut verifier,
-            &sr_params.c1_uh,
+            &sr_params.c1_parameters.uh,
             &sr_params.c1_tables,
             sr_proof.result,
             c0_rerand_vars,
@@ -459,7 +641,7 @@ pub fn verification_circuit<
         let c2_rerand_vars = verifier.commit_vec(256, sr_proof.vesta_commitments[1]);
         single_level_select_and_rerandomize(
             &mut verifier,
-            &sr_params.c1_uh,
+            &sr_params.c1_parameters.uh,
             &sr_params.c1_tables,
             sr_proof.pallas_commitments[0],
             c2_rerand_vars,
@@ -475,7 +657,7 @@ pub fn verification_circuit<
         let c1_rerand_vars = verifier.commit_vec(256, sr_proof.pallas_commitments[0]);
         single_level_select_and_rerandomize(
             &mut verifier,
-            &sr_params.c2_uh,
+            &sr_params.c2_parameters.uh,
             &sr_params.c2_tables,
             sr_proof.vesta_commitments[0],
             c1_rerand_vars,
@@ -486,7 +668,7 @@ pub fn verification_circuit<
         let c3_vars = verifier.commit_vec(256, sr_proof.pallas_commitments[1]);
         single_level_select_and_rerandomize(
             &mut verifier,
-            &sr_params.c2_uh,
+            &sr_params.c2_parameters.uh,
             &sr_params.c2_tables,
             sr_proof.vesta_commitments[1],
             c3_vars,
@@ -535,13 +717,13 @@ mod tests {
         let (pallas_verifier, vesta_verifier) = verification_circuit(&sr_params, &sr_proof);
         let p_res = pallas_verifier.verify(
             &sr_proof.pallas_proof,
-            &sr_params.c1_pc_gens,
-            &sr_params.c1_bp_gens,
+            &sr_params.c1_parameters.pc_gens,
+            &sr_params.c1_parameters.bp_gens,
         );
         let v_res = vesta_verifier.verify(
             &sr_proof.vesta_proof,
-            &sr_params.c2_pc_gens,
-            &sr_params.c2_bp_gens,
+            &sr_params.c2_parameters.pc_gens,
+            &sr_params.c2_parameters.bp_gens,
         );
         assert_eq!(p_res, Ok(()));
         assert_eq!(v_res, Ok(()));
@@ -581,16 +763,16 @@ mod tests {
                 pallas_verification_scalars_and_points,
                 pallas_verification_scalars_and_points2,
             ],
-            &sr_params.c1_pc_gens,
-            &sr_params.c1_bp_gens,
+            &sr_params.c1_parameters.pc_gens,
+            &sr_params.c1_parameters.bp_gens,
         );
         let v_res = batch_verify(
             vec![
                 vesta_verification_scalars_and_points,
                 vesta_verification_scalars_and_points2,
             ],
-            &sr_params.c2_pc_gens,
-            &sr_params.c2_bp_gens,
+            &sr_params.c2_parameters.pc_gens,
+            &sr_params.c2_parameters.bp_gens,
         );
         assert_eq!(p_res, Ok(()));
         assert_eq!(v_res, Ok(()));

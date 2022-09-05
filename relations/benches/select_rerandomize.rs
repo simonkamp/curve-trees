@@ -65,13 +65,13 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
             let (pallas_verifier, vesta_verifier) = verification_circuit(&sr_params, &sr_proof);
             let p_res = pallas_verifier.verify(
                 &sr_proof.pallas_proof,
-                &sr_params.c1_pc_gens,
-                &sr_params.c1_bp_gens,
+                &sr_params.c1_parameters.pc_gens,
+                &sr_params.c1_parameters.bp_gens,
             );
             let v_res = vesta_verifier.verify(
                 &sr_proof.vesta_proof,
-                &sr_params.c2_pc_gens,
-                &sr_params.c2_bp_gens,
+                &sr_params.c2_parameters.pc_gens,
+                &sr_params.c2_parameters.bp_gens,
             );
         })
     });
@@ -105,13 +105,13 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
                     }
                     let p_res = batch_verify(
                         pallas_verification_scalars_and_points,
-                        &sr_params.c1_pc_gens,
-                        &sr_params.c1_bp_gens,
+                        &sr_params.c1_parameters.pc_gens,
+                        &sr_params.c1_parameters.bp_gens,
                     );
                     let v_res = batch_verify(
                         vesta_verification_scalars_and_points,
-                        &sr_params.c2_pc_gens,
-                        &sr_params.c2_bp_gens,
+                        &sr_params.c2_parameters.pc_gens,
+                        &sr_params.c2_parameters.bp_gens,
                     );
                     // should assert that the result is Ok
                 })

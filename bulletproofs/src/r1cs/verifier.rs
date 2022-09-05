@@ -473,7 +473,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         let n1 = self.size();
 
-
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -501,7 +500,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let transcript = self.transcript.borrow_mut();
 
         // If the number of multiplications is not 0 or a power of 2, then pad the circuit.
-        
+
         let n2 = n - n1;
         let padded_n = n.next_power_of_two();
         let pad = padded_n - n;
@@ -539,8 +538,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");
 
-        // compute powers for vector commitments 
-        // they are assigned the lowest powers and therefore the coefficients 
+        // compute powers for vector commitments
+        // they are assigned the lowest powers and therefore the coefficients
         // in the combination are correspondingly assigned the highest powers
         let mut xoff = C::ScalarField::one();
         let mut comm_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
@@ -576,7 +575,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .collect::<Vec<C::ScalarField>>();
 
         let vars = self.num_vars;
-        
+
         let yneg_wR = wR
             .into_iter()
             .zip(y_inv_vec.iter())
@@ -632,7 +631,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
                 let wLi = wL.next().unwrap_or_default();
                 let wOi = wO.next().unwrap_or_default();
-                
+
                 let si = s.next().unwrap();
 
                 let mut comb = x * wLi + wOi;
