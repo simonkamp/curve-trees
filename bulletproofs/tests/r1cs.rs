@@ -507,10 +507,16 @@ fn veccom_gadget<F: Field, CS: ConstraintSystem<F>>(
     b2: LinearCombination<F>,
     c1: LinearCombination<F>,
     c2: LinearCombination<F>,
+    d1: LinearCombination<F>,
+    d2: LinearCombination<F>,
 ) {
+    /*
     let (_, _, c_var) = cs.multiply(a1 + a2, b1 + b2);
     cs.constrain(c1 + c2 - c_var);
-}
+    */
+
+    cs.constrain(d1 - d2);
+} 
 
 // Prover's scope
 fn veccom_gadget_proof<C: AffineCurve>(
@@ -522,7 +528,9 @@ fn veccom_gadget_proof<C: AffineCurve>(
     b2: u64,
     c1: u64,
     c2: u64,
-) -> Result<(R1CSProof<C>, C), R1CSError> {
+    d1: u64,
+    d2: u64,
+) -> Result<(R1CSProof<C>, C, C, C), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
 
     // 1. Create a prover
@@ -538,6 +546,13 @@ fn veccom_gadget_proof<C: AffineCurve>(
         C::ScalarField::from(b2),
         C::ScalarField::from(c1),
     ];
+
+    let h = C::ScalarField::rand(&mut rng);
+    let (d1_comm, d1) = prover.commit(C::ScalarField::from(d1), h);
+
+    let h = C::ScalarField::rand(&mut rng);
+    let (d2_comm, d2) = prover.commit(C::ScalarField::from(d2), h);
+
     let h = C::ScalarField::rand(&mut rng);
     let (comm, vars) = prover.commit_vec(&v, h, bp_gens);
 
@@ -549,13 +564,15 @@ fn veccom_gadget_proof<C: AffineCurve>(
         vars[2].into(),
         vars[3].into(),
         vars[4].into(),
+        d1.into(),
+        d2.into(),
         C::ScalarField::from(c2).into(),
     );
 
     // 4. Make a proof
     let proof = prover.prove(bp_gens)?;
 
-    Ok((proof, comm))
+    Ok((proof, d1_comm, d2_comm, comm))
 }
 
 // Verifier logic
@@ -564,12 +581,18 @@ fn veccom_gadget_verify<C: AffineCurve>(
     bp_gens: &BulletproofGens<C>,
     c2: u64,
     proof: R1CSProof<C>,
+    d1_comm: C,
+    d2_comm: C,
     comm: C,
 ) -> Result<(), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
 
     // 1. Create a verifier
     let mut verifier = Verifier::new(&mut transcript);
+
+    // 3. Regular commitments
+    let d1 = verifier.commit(d1_comm);
+    let d2 = verifier.commit(d2_comm);
 
     // 2. Commit high-level variables
     let vars: Vec<_> = verifier.commit_vec(5, comm);
@@ -582,6 +605,8 @@ fn veccom_gadget_verify<C: AffineCurve>(
         vars[2].into(),
         vars[3].into(),
         vars[4].into(),
+        d1.into(),
+        d2.into(),
         C::ScalarField::from(c2).into(),
     );
 
@@ -598,20 +623,22 @@ fn veccom_gadget_roundtrip_helper<C: AffineCurve>(
     b2: u64,
     c1: u64,
     c2: u64,
+    d1: u64,
+    d2: u64,
 ) -> Result<(), R1CSError> {
     // Common
     let pc_gens = PedersenGens::<C>::default();
     let bp_gens = BulletproofGens::<C>::new(128, 1);
 
-    let (proof, comm) = veccom_gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, b1, b2, c1, c2)?;
+    let (proof, d1_comm, d2_comm, comm) = veccom_gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, b1, b2, c1, c2, d1, d2)?;
 
-    veccom_gadget_verify::<C>(&pc_gens, &bp_gens, c2, proof, comm)
+    veccom_gadget_verify::<C>(&pc_gens, &bp_gens, c2, proof, d1_comm, d2_comm, comm)
 }
 
 #[test]
 fn veccom_gadget_test() {
     // (3 + 4) * (6 + 1) = (40 + 9)
-    assert!(veccom_gadget_roundtrip_helper::<Affine>(3, 4, 6, 1, 40, 9).is_ok());
+    assert!(veccom_gadget_roundtrip_helper::<Affine>(3, 4, 6, 1, 40, 9, 4, 4).is_ok());
     // (3 + 4) * (6 + 1) != (40 + 10)
-    assert!(veccom_gadget_roundtrip_helper::<Affine>(3, 4, 6, 1, 40, 10).is_err());
+    assert!(veccom_gadget_roundtrip_helper::<Affine>(3, 4, 6, 1, 40, 10, 4, 4).is_err());
 }
