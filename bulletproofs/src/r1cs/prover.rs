@@ -361,7 +361,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         let v_blinding = C::ScalarField::zero(); // for simplicity: TODO change
 
-        let comm_idx = self.secrets.vec_open.len();
 
         // compute the commitment:
         // comm = <v, G> + <v_blinding> B_blinding
@@ -385,6 +384,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let comm = VariableBaseMSM::multi_scalar_mul(generators.as_slice(), scalars.as_slice());
 
         // create variables for all the addressable coordinates
+        let comm_idx = self.secrets.vec_open.len();
         let vars = (0..v.len())
             .map(|i| Variable::VectorCommit(comm_idx, i))
             .collect();
@@ -452,7 +452,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                     Variable::VectorCommit(j, i) => {
                         // j : index of commitment
                         // i : coordinate with-in commitment
-                        wVCs[*j][*i] -= exp_z * coeff;
+                        wVCs[*j][*i] += exp_z * coeff;
                     }
                     Variable::One(_) => {
                         // The prover doesn't need to handle constant terms
@@ -764,6 +764,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         let (wL, wR, wO, wV, wVCs) = self.flattened_constraints(&z);
 
+        println!("prover wVCs = {:?}", &wVCs);
+
         let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
         let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
 
@@ -937,6 +939,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             t2 += delta;
 
             assert_eq!(t_poly.coeff()[op_degree], t2, "t_poly term check failed");
+            assert_eq!(t_poly.deg(), 6 + 2 * self.secrets.vec_open.len());
+            println!("sanity check passed");
         }
 
         let i_blinding = i_blinding1 + u * i_blinding2;
@@ -967,6 +971,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // Get a challenge value to combine statements for the IPP
         let w = transcript.challenge_scalar::<C>(b"w");
+        println!("prover: w = {}", w);
         let Q = self.pc_gens.B[0].mul(w).into();
 
         let G_factors = iter::repeat(C::ScalarField::one())
