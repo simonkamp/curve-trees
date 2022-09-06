@@ -143,12 +143,12 @@ impl<
             panic!("Out of bounds")
         };
 
-        // path_indeces contain at index i the index of the height i node in the set of children of the height i+1 node.
-        let mut path_indeces = Vec::with_capacity(self.height);
+        // path_indices contain at index i the index of the height i node in the set of children of the height i+1 node.
+        let mut path_indices = Vec::with_capacity(self.height);
         let mut leafs_per_d_layer_node = L;
         for d in 0..self.height {
             let layer_d_index = leaf_index / leafs_per_d_layer_node;
-            path_indeces.push(layer_d_index);
+            path_indices.push(layer_d_index);
             leafs_per_d_layer_node *= L;
         }
 
@@ -165,7 +165,7 @@ impl<
             d -= 1; // d is at least 0
 
             let child = if let Some(children) = &tree.children {
-                if let Some(child) = &children[path_indeces[d]] {
+                if let Some(child) = &children[path_indices[d]] {
                     child
                 } else {
                     panic!("Out of bounds")
@@ -176,7 +176,7 @@ impl<
             other_commitments.push(SingleLayerWitness {
                 commitment: child.commitment,
                 randomness: child.randomness,
-                index: path_indeces[d],
+                index: path_indices[d],
             });
 
             if d == 0 {
@@ -184,7 +184,7 @@ impl<
             }
             d -= 1; // d is at least 0
             let grandchild = if let Some(children) = &child.children {
-                if let Some(gc) = &children[path_indeces[d]] {
+                if let Some(gc) = &children[path_indices[d]] {
                     gc
                 } else {
                     panic!("Out of bounds")
@@ -195,7 +195,7 @@ impl<
             self_commitments.push(SingleLayerWitness {
                 commitment: grandchild.commitment,
                 randomness: grandchild.randomness,
-                index: path_indeces[d],
+                index: path_indices[d],
             });
             tree = grandchild;
         }
@@ -302,15 +302,15 @@ fn single_level_select_and_rerandomize<
     );
 }
 
-pub struct SelRerandProof<P1: SWModelParameters, P2: SWModelParameters> {
-    pub result: GroupAffine<P1>,
-    pub pallas_proof: R1CSProof<GroupAffine<P1>>,
-    pub pallas_commitments: Vec<GroupAffine<P1>>,
-    pub vesta_proof: R1CSProof<GroupAffine<P2>>,
-    pub vesta_commitments: Vec<GroupAffine<P2>>,
+pub struct SelRerandProof<P0: SWModelParameters, P1: SWModelParameters> {
+    pub result: GroupAffine<P0>,
+    pub pallas_proof: R1CSProof<GroupAffine<P0>>,
+    pub pallas_commitments: Vec<GroupAffine<P0>>,
+    pub vesta_proof: R1CSProof<GroupAffine<P1>>,
+    pub vesta_commitments: Vec<GroupAffine<P1>>,
 }
 
-impl<P1: SWModelParameters, P2: SWModelParameters> CanonicalSerialize for SelRerandProof<P1, P2> {
+impl<P0: SWModelParameters, P1: SWModelParameters> CanonicalSerialize for SelRerandProof<P0, P1> {
     fn serialized_size(&self) -> usize {
         let r1cs_proofs_size =
             self.pallas_proof.serialized_size() + self.vesta_proof.serialized_size();
@@ -322,8 +322,8 @@ impl<P1: SWModelParameters, P2: SWModelParameters> CanonicalSerialize for SelRer
 
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         // This serialization uses 8 bytes to encode the length of each vector.
-        // There are two point vectors in each proof, and two commitment vectors.
-        // I.e. 48 superfluous bytes for the entire proof.
+        // There are three point vectors in each proof, and two commitment vectors.
+        // I.e. 64 superfluous bytes for the entire proof.
         self.result.serialize(&mut writer)?;
         self.pallas_proof.serialize(&mut writer)?;
         self.pallas_commitments.serialize(&mut writer)?;
@@ -333,14 +333,14 @@ impl<P1: SWModelParameters, P2: SWModelParameters> CanonicalSerialize for SelRer
     }
 }
 
-impl<P1: SWModelParameters, P2: SWModelParameters> CanonicalDeserialize for SelRerandProof<P1, P2> {
+impl<P0: SWModelParameters, P1: SWModelParameters> CanonicalDeserialize for SelRerandProof<P0, P1> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         Ok(Self {
-            result: GroupAffine::<P1>::deserialize(&mut reader)?,
-            pallas_proof: R1CSProof::<GroupAffine<P1>>::deserialize(&mut reader)?,
-            pallas_commitments: Vec::<GroupAffine<P1>>::deserialize(&mut reader)?,
-            vesta_proof: R1CSProof::<GroupAffine<P2>>::deserialize(&mut reader)?,
-            vesta_commitments: Vec::<GroupAffine<P2>>::deserialize(&mut reader)?,
+            result: GroupAffine::<P0>::deserialize(&mut reader)?,
+            pallas_proof: R1CSProof::<GroupAffine<P0>>::deserialize(&mut reader)?,
+            pallas_commitments: Vec::<GroupAffine<P0>>::deserialize(&mut reader)?,
+            vesta_proof: R1CSProof::<GroupAffine<P1>>::deserialize(&mut reader)?,
+            vesta_commitments: Vec::<GroupAffine<P1>>::deserialize(&mut reader)?,
         })
     }
 }
@@ -374,127 +374,99 @@ fn vector_commitment<C: AffineCurve>(
     comm.into_affine()
 }
 
-pub struct SelRerandParameters<P1: SWModelParameters, P2: SWModelParameters> {
-    // pub c1_pc_gens: PedersenGens<GroupAffine<P1>>,
-    // pub c1_bp_gens: BulletproofGens<GroupAffine<P1>>,
-    // pub c1_uh: UniversalHash<P1::BaseField>,
-    // pub c1_blinding: GroupAffine<P1>, // todo is in pc_gens
+pub struct SelRerandParameters<P0: SWModelParameters, P1: SWModelParameters> {
+    pub c0_tables: Vec<Lookup3Bit<2, P0::BaseField>>,
+    pub c0_parameters: SingleLayerParameters<P0>,
     pub c1_tables: Vec<Lookup3Bit<2, P1::BaseField>>,
     pub c1_parameters: SingleLayerParameters<P1>,
-    // pub c2_pc_gens: PedersenGens<GroupAffine<P2>>,
-    // pub c2_bp_gens: BulletproofGens<GroupAffine<P2>>,
-    // pub c2_uh: UniversalHash<P2::BaseField>,
-    // pub c2_blinding: GroupAffine<P2>, // todo is in pc_gens
-    pub c2_tables: Vec<Lookup3Bit<2, P2::BaseField>>,
-    pub c2_parameters: SingleLayerParameters<P2>,
 }
 
-impl<P1: SWModelParameters, P2: SWModelParameters> SelRerandParameters<P1, P2> {
+impl<P0: SWModelParameters, P1: SWModelParameters> SelRerandParameters<P0, P1> {
     pub fn new<R: Rng>(generators_length: usize, rng: &mut R) -> Self {
-        let c1_pc_gens = PedersenGens::<GroupAffine<P1>>::default();
-        let c1_bp_gens = BulletproofGens::<GroupAffine<P1>>::new(generators_length, 1);
-        let c1_uh = UniversalHash::new(rng, P1::COEFF_A, P1::COEFF_B);
+        let c0_pc_gens = PedersenGens::<GroupAffine<P0>>::default();
+        let c0_bp_gens = BulletproofGens::<GroupAffine<P0>>::new(generators_length, 1);
+        let c0_uh = UniversalHash::new(rng, P0::COEFF_A, P0::COEFF_B);
+        let c0_parameters = SingleLayerParameters {
+            bp_gens: BulletproofGens::<GroupAffine<P0>>::new(generators_length, 1),
+            pc_gens: PedersenGens::<GroupAffine<P0>>::default(),
+            uh: UniversalHash::new(rng, P0::COEFF_A, P0::COEFF_B),
+        };
         let c1_parameters = SingleLayerParameters {
             bp_gens: BulletproofGens::<GroupAffine<P1>>::new(generators_length, 1),
             pc_gens: PedersenGens::<GroupAffine<P1>>::default(),
             uh: UniversalHash::new(rng, P1::COEFF_A, P1::COEFF_B),
         };
-        let c2_parameters = SingleLayerParameters {
-            bp_gens: BulletproofGens::<GroupAffine<P2>>::new(generators_length, 1),
-            pc_gens: PedersenGens::<GroupAffine<P2>>::default(),
-            uh: UniversalHash::new(rng, P2::COEFF_A, P2::COEFF_B),
-        };
-        let c1_blinding = c1_pc_gens.B_blinding;
-        let c1_scalar_tables = build_tables(c1_blinding);
-        let c2_pc_gens = PedersenGens::<GroupAffine<P2>>::default();
-        let c2_bp_gens = BulletproofGens::<GroupAffine<P2>>::new(generators_length, 1);
-        let c2_uh = UniversalHash::new(rng, P2::COEFF_A, P2::COEFF_B);
-        let c2_blinding = c2_pc_gens.B_blinding;
-        let c2_scalar_tables = build_tables(c2_blinding);
+        let c0_scalar_tables = build_tables(c0_pc_gens.B_blinding);
+        let c2_pc_gens = PedersenGens::<GroupAffine<P1>>::default();
+        let c2_bp_gens = BulletproofGens::<GroupAffine<P1>>::new(generators_length, 1);
+        let c2_uh = UniversalHash::new(rng, P1::COEFF_A, P1::COEFF_B);
+
+        let c1_scalar_tables = build_tables(c2_pc_gens.B_blinding);
         SelRerandParameters {
-            // c1_pc_gens: c1_pc_gens,
-            // c1_bp_gens: c1_bp_gens,
-            // c1_uh: c1_uh,
+            c0_parameters:c0_parameters,
+            c0_tables: c0_scalar_tables,
             c1_parameters: c1_parameters,
-            // c1_blinding: c1_blinding,
             c1_tables: c1_scalar_tables,
-            // c2_pc_gens: c2_pc_gens,
-            // c2_bp_gens: c2_bp_gens,
-            // c2_uh: c2_uh,
-            c2_parameters: c2_parameters,
-            // c2_blinding: c2_blinding,
-            c2_tables: c2_scalar_tables,
         }
     }
 }
 
 // todo should only compile for benchmarks and tests
 pub fn prove_from_mock_curve_tree<
-    P1: SWModelParameters,
-    P2: SWModelParameters<BaseField = P1::ScalarField, ScalarField = P1::BaseField>,
+    P0: SWModelParameters,
+    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField>,
 >(
-    srp: &SelRerandParameters<P1, P2>,
-) -> (SelRerandProof<P1, P2>) {
+    srp: &SelRerandParameters<P0, P1>,
+) -> (SelRerandProof<P0, P1>) {
     let mut rng = rand::thread_rng();
 
-    let pallas_pc_gens = &srp.c1_parameters.pc_gens;
-    let pallas_bp_gens = &srp.c1_parameters.bp_gens;
-    let pallas_uh = srp.c1_parameters.uh;
-    let pallas_blinding = srp.c1_parameters.pc_gens.B_blinding;
-    let pallas_scalar_tables = &srp.c1_tables;
-
-    let vesta_pc_gens = &srp.c2_parameters.pc_gens;
-    let vesta_bp_gens = &srp.c2_parameters.bp_gens;
-    let vesta_uh = srp.c2_parameters.uh;
-    let vesta_blinding = srp.c2_parameters.pc_gens.B_blinding;
-    let vesta_scalar_tables = &srp.c2_tables;
-
     let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut pallas_prover: Prover<_, GroupAffine<P1>> =
-        Prover::new(pallas_pc_gens, &mut pallas_transcript);
+    let mut pallas_prover: Prover<_, GroupAffine<P0>> =
+        Prover::new(&srp.c0_parameters.pc_gens, &mut pallas_transcript);
 
     let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut vesta_prover: Prover<_, GroupAffine<P2>> =
-        Prover::new(vesta_pc_gens, &mut vesta_transcript);
+    let mut vesta_prover: Prover<_, GroupAffine<P1>> =
+        Prover::new(&srp.c1_parameters.pc_gens, &mut vesta_transcript);
+
     let (leaf, leaf_rerand, leaf_rerandomization_offset) = {
         // Let leaf be a random dummy commitment for which we want to prove the select and randomize relation.
-        let leaf_val = P1::ScalarField::rand(&mut rng);
-        let leaf_randomness = P1::ScalarField::rand(&mut rng);
-        let leaf = pallas_pc_gens.commit(leaf_val, leaf_randomness);
-        let (leaf, r) = pallas_uh.permissible_commitment(&leaf, &pallas_blinding);
+        let leaf_val = P0::ScalarField::rand(&mut rng);
+        let leaf_randomness = P0::ScalarField::rand(&mut rng);
+        let leaf = srp.c0_parameters.pc_gens.commit(leaf_val, leaf_randomness);
+        let (leaf, r) = srp.c0_parameters.uh.permissible_commitment(&leaf, &srp.c0_parameters.pc_gens.B_blinding);
         let leaf_randomness = leaf_randomness + r;
-        assert_eq!(leaf, pallas_pc_gens.commit(leaf_val, leaf_randomness));
-        let leaf_rerandomization_offset = P1::ScalarField::rand(&mut rng);
+        assert_eq!(leaf, srp.c0_parameters.pc_gens.commit(leaf_val, leaf_randomness));
+        let leaf_rerandomization_offset = P0::ScalarField::rand(&mut rng);
         // The rerandomization of the commitment to leaf is public.
         let leaf_rerand =
-            pallas_pc_gens.commit(leaf_val, leaf_randomness + leaf_rerandomization_offset);
+        srp.c0_parameters.pc_gens.commit(leaf_val, leaf_randomness + leaf_rerandomization_offset);
         (leaf, leaf_rerand, leaf_rerandomization_offset)
     };
 
     let (c0, c0_rerand, c0_rerandomization_offset, c0_rerand_vars) = {
         // Make a bunch of dummy commitments (random points) for the remaining leafs.
         let leaves: Vec<_> = iter::once(leaf.x)
-            .chain(iter::from_fn(|| Some(P2::ScalarField::rand(&mut rng))).take(255))
+            .chain(iter::from_fn(|| Some(P1::ScalarField::rand(&mut rng))).take(255))
             .collect();
         // Build the first internal node: a vector commitment to the leaves.
-        let c0_r = P2::ScalarField::rand(&mut rng);
-        let c0 = vector_commitment(leaves.as_slice(), c0_r, &vesta_bp_gens, &vesta_pc_gens);
+        let c0_r = P1::ScalarField::rand(&mut rng);
+        let c0 = vector_commitment(leaves.as_slice(), c0_r, &srp.c1_parameters.bp_gens, &srp.c1_parameters.pc_gens);
         // The internal node must also be a permissable commitment.
-        let (c0, r) = vesta_uh.permissible_commitment(&c0, &vesta_blinding);
+        let (c0, r) = srp.c1_parameters.uh.permissible_commitment(&c0, &srp.c1_parameters.pc_gens.B_blinding);
         let c0_r = c0_r + r;
-        let c0_rerandomization_offset = P2::ScalarField::rand(&mut rng);
+        let c0_rerandomization_offset = P1::ScalarField::rand(&mut rng);
         let (c0_rerand, c0_rerand_vars) = vesta_prover.commit_vec(
             leaves.as_slice(),
             c0_r + c0_rerandomization_offset,
-            &vesta_bp_gens,
+            &srp.c1_parameters.bp_gens,
         );
 
         (c0, c0_rerand, c0_rerandomization_offset, c0_rerand_vars)
     };
     single_level_select_and_rerandomize(
         &mut vesta_prover,
-        &pallas_uh,
-        &pallas_scalar_tables,
+        &srp.c0_parameters.uh,
+        &srp.c0_tables,
         leaf_rerand,
         c0_rerand_vars,
         Some(0),
@@ -504,32 +476,32 @@ pub fn prove_from_mock_curve_tree<
     let (c1, c1_rerand, c1_rerandomization_offset, c1_rerand_vars) = {
         // Make a bunch of dummy commitments (random points) for the remaining children.
         let rt1: Vec<_> = iter::once(c0.x)
-            .chain(iter::from_fn(|| Some(P1::ScalarField::rand(&mut rng))).take(255))
+            .chain(iter::from_fn(|| Some(P0::ScalarField::rand(&mut rng))).take(255))
             .collect();
         // Build the internal node: a vector commitment to the children.
-        let c1_init_randomness = P1::ScalarField::rand(&mut rng);
+        let c1_init_randomness = P0::ScalarField::rand(&mut rng);
         let c1 = vector_commitment(
             rt1.as_slice(),
             c1_init_randomness,
-            &pallas_bp_gens,
-            &pallas_pc_gens,
+            &srp.c0_parameters.bp_gens,
+            &srp.c0_parameters.pc_gens,
         );
         // Rerandomize the internal node to get a permissable point.
-        let (c1, r) = pallas_uh.permissible_commitment(&c1, &pallas_blinding);
+        let (c1, r) = srp.c0_parameters.uh.permissible_commitment(&c1, &srp.c0_parameters.pc_gens.B_blinding);
         let c1_permissable_randomness = c1_init_randomness + r;
         // Rerandomize the commitment so we can show membership without revealing the branch we are in.
-        let c1_rerandomization_offset = P1::ScalarField::rand(&mut rng);
+        let c1_rerandomization_offset = P0::ScalarField::rand(&mut rng);
         let (c1_rerand, c1_rerand_vars) = pallas_prover.commit_vec(
             rt1.as_slice(),
             c1_permissable_randomness + c1_rerandomization_offset,
-            &pallas_bp_gens,
+            &srp.c0_parameters.bp_gens,
         );
         (c1, c1_rerand, c1_rerandomization_offset, c1_rerand_vars)
     };
     single_level_select_and_rerandomize(
         &mut pallas_prover,
-        &vesta_uh,
-        &vesta_scalar_tables,
+        &srp.c1_parameters.uh,
+        &srp.c1_tables,
         c0_rerand,
         c1_rerand_vars,
         Some(0),
@@ -539,32 +511,32 @@ pub fn prove_from_mock_curve_tree<
     let (c2, c2_rerand, c2_rerandomization_offset, c2_rerand_vars) = {
         // Make a bunch of dummy commitments (random points) for the remaining children.
         let rt2: Vec<_> = iter::once(c1.x)
-            .chain(iter::from_fn(|| Some(P2::ScalarField::rand(&mut rng))).take(255))
+            .chain(iter::from_fn(|| Some(P1::ScalarField::rand(&mut rng))).take(255))
             .collect();
         // Build the internal node: a vector commitment to the children.
-        let c2_init_randomness = P2::ScalarField::rand(&mut rng);
+        let c2_init_randomness = P1::ScalarField::rand(&mut rng);
         let c2 = vector_commitment(
             rt2.as_slice(),
             c2_init_randomness,
-            &vesta_bp_gens,
-            &vesta_pc_gens,
+            &srp.c1_parameters.bp_gens,
+            &srp.c1_parameters.pc_gens,
         );
         // Rerandomize the internal node to get a permissable point.
-        let (c2, r) = vesta_uh.permissible_commitment(&c2, &vesta_blinding);
+        let (c2, r) = srp.c1_parameters.uh.permissible_commitment(&c2, &srp.c1_parameters.pc_gens.B_blinding);
         let c2_permissable_randomness = c2_init_randomness + r;
         // Rerandomize the commitment so we can show membership without revealing the branch we are in.
-        let c2_rerandomization_offset = P2::ScalarField::rand(&mut rng);
+        let c2_rerandomization_offset = P1::ScalarField::rand(&mut rng);
         let (c2_rerand, c2_rerand_vars) = vesta_prover.commit_vec(
             rt2.as_slice(),
             c2_permissable_randomness + c2_rerandomization_offset,
-            &vesta_bp_gens,
+            &srp.c1_parameters.bp_gens,
         );
         (c2, c2_rerand, c2_rerandomization_offset, c2_rerand_vars)
     };
     single_level_select_and_rerandomize(
         &mut vesta_prover,
-        &pallas_uh,
-        &pallas_scalar_tables,
+        &srp.c0_parameters.uh,
+        &srp.c0_tables,
         c1_rerand,
         c2_rerand_vars,
         Some(0),
@@ -575,29 +547,29 @@ pub fn prove_from_mock_curve_tree<
     let (c3, c3_vars) = {
         // Make a bunch of dummy commitments (random points) for the remaining children.
         let rt3: Vec<_> = iter::once(c2.x)
-            .chain(iter::from_fn(|| Some(P1::ScalarField::rand(&mut rng))).take(255))
+            .chain(iter::from_fn(|| Some(P0::ScalarField::rand(&mut rng))).take(255))
             .collect();
         // Build the internal node: a vector commitment to the children.
-        let c3_init_randomness = P1::ScalarField::rand(&mut rng);
+        let c3_init_randomness = P0::ScalarField::rand(&mut rng);
         let c3 = vector_commitment(
             rt3.as_slice(),
             c3_init_randomness,
-            &pallas_bp_gens,
-            &pallas_pc_gens,
+            &srp.c0_parameters.bp_gens,
+            &srp.c0_parameters.pc_gens,
         );
         // Rerandomize the internal node to get a permissable point.
-        let (c3, r) = pallas_uh.permissible_commitment(&c3, &pallas_blinding);
+        let (c3, r) = srp.c0_parameters.uh.permissible_commitment(&c3, &srp.c0_parameters.pc_gens.B_blinding);
         let c3_permissable_randomness = c3_init_randomness + r;
         // c3 is the root, and does not need to be hidden.
         let (c3_r, c3_vars) =
-            pallas_prover.commit_vec(rt3.as_slice(), c3_permissable_randomness, &pallas_bp_gens);
-        assert_eq!(c3, c3_r);
+            pallas_prover.commit_vec(rt3.as_slice(), c3_permissable_randomness, &srp.c0_parameters.bp_gens);
+        // assert_eq!(c3, c3_r);
         (c3, c3_vars)
     };
     single_level_select_and_rerandomize(
         &mut pallas_prover,
-        &vesta_uh,
-        &vesta_scalar_tables,
+        &srp.c1_parameters.uh,
+        &srp.c1_tables,
         c2_rerand,
         c3_vars,
         Some(0),
@@ -606,22 +578,22 @@ pub fn prove_from_mock_curve_tree<
     );
     SelRerandProof {
         result: leaf_rerand,
-        pallas_proof: pallas_prover.prove(&pallas_bp_gens).unwrap(),
+        pallas_proof: pallas_prover.prove(&srp.c0_parameters.bp_gens).unwrap(),
         pallas_commitments: vec![c1_rerand, c3],
-        vesta_proof: vesta_prover.prove(&vesta_bp_gens).unwrap(),
+        vesta_proof: vesta_prover.prove(&srp.c1_parameters.bp_gens).unwrap(),
         vesta_commitments: vec![c0_rerand, c2_rerand],
     }
 }
 
 pub fn verification_circuit<
-    P1: SWModelParameters,
-    P2: SWModelParameters<BaseField = P1::ScalarField, ScalarField = P1::BaseField>,
+    P0: SWModelParameters,
+    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField>,
 >(
-    sr_params: &SelRerandParameters<P1, P2>,
-    sr_proof: &SelRerandProof<P1, P2>,
+    sr_params: &SelRerandParameters<P0, P1>,
+    sr_proof: &SelRerandProof<P0, P1>,
 ) -> (
+    Verifier<Transcript, GroupAffine<P0>>,
     Verifier<Transcript, GroupAffine<P1>>,
-    Verifier<Transcript, GroupAffine<P2>>,
 ) {
     let vesta_verifier = {
         // Verify the vesta proof
@@ -630,8 +602,8 @@ pub fn verification_circuit<
         let c0_rerand_vars = verifier.commit_vec(256, sr_proof.vesta_commitments[0]);
         single_level_select_and_rerandomize(
             &mut verifier,
-            &sr_params.c1_parameters.uh,
-            &sr_params.c1_tables,
+            &sr_params.c0_parameters.uh,
+            &sr_params.c0_tables,
             sr_proof.result,
             c0_rerand_vars,
             None,
@@ -641,8 +613,8 @@ pub fn verification_circuit<
         let c2_rerand_vars = verifier.commit_vec(256, sr_proof.vesta_commitments[1]);
         single_level_select_and_rerandomize(
             &mut verifier,
-            &sr_params.c1_parameters.uh,
-            &sr_params.c1_tables,
+            &sr_params.c0_parameters.uh,
+            &sr_params.c0_tables,
             sr_proof.pallas_commitments[0],
             c2_rerand_vars,
             None,
@@ -657,8 +629,8 @@ pub fn verification_circuit<
         let c1_rerand_vars = verifier.commit_vec(256, sr_proof.pallas_commitments[0]);
         single_level_select_and_rerandomize(
             &mut verifier,
-            &sr_params.c2_parameters.uh,
-            &sr_params.c2_tables,
+            &sr_params.c1_parameters.uh,
+            &sr_params.c1_tables,
             sr_proof.vesta_commitments[0],
             c1_rerand_vars,
             None,
@@ -668,8 +640,8 @@ pub fn verification_circuit<
         let c3_vars = verifier.commit_vec(256, sr_proof.pallas_commitments[1]);
         single_level_select_and_rerandomize(
             &mut verifier,
-            &sr_params.c2_parameters.uh,
-            &sr_params.c2_tables,
+            &sr_params.c1_parameters.uh,
+            &sr_params.c1_tables,
             sr_proof.vesta_commitments[1],
             c3_vars,
             None,
@@ -717,13 +689,13 @@ mod tests {
         let (pallas_verifier, vesta_verifier) = verification_circuit(&sr_params, &sr_proof);
         let p_res = pallas_verifier.verify(
             &sr_proof.pallas_proof,
-            &sr_params.c1_parameters.pc_gens,
-            &sr_params.c1_parameters.bp_gens,
+            &sr_params.c0_parameters.pc_gens,
+            &sr_params.c0_parameters.bp_gens,
         );
         let v_res = vesta_verifier.verify(
             &sr_proof.vesta_proof,
-            &sr_params.c2_parameters.pc_gens,
-            &sr_params.c2_parameters.bp_gens,
+            &sr_params.c1_parameters.pc_gens,
+            &sr_params.c1_parameters.bp_gens,
         );
         assert_eq!(p_res, Ok(()));
         assert_eq!(v_res, Ok(()));
@@ -763,20 +735,20 @@ mod tests {
                 pallas_verification_scalars_and_points,
                 pallas_verification_scalars_and_points2,
             ],
-            &sr_params.c1_parameters.pc_gens,
-            &sr_params.c1_parameters.bp_gens,
+            &sr_params.c0_parameters.pc_gens,
+            &sr_params.c0_parameters.bp_gens,
         );
         let v_res = batch_verify(
             vec![
                 vesta_verification_scalars_and_points,
                 vesta_verification_scalars_and_points2,
             ],
-            &sr_params.c2_parameters.pc_gens,
-            &sr_params.c2_parameters.bp_gens,
+            &sr_params.c1_parameters.pc_gens,
+            &sr_params.c1_parameters.bp_gens,
         );
         assert_eq!(p_res, Ok(()));
         assert_eq!(v_res, Ok(()));
     }
 
-    // todo could add a test with branching facter 1 to test correctness w.o. vector commitments.
+    // todo could add a test with branching factor 1 to test correctness w.o. vector commitments.
 }
