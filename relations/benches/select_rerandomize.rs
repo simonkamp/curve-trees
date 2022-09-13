@@ -55,9 +55,12 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
         SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
     let sr_proof = prove_from_mock_curve_tree(&sr_params);
 
-    println!("Proof result (a point) in bytes {}", sr_proof.result.serialized_size());
+    println!(
+        "Proof result (a point) in bytes {}",
+        sr_proof.result.serialized_size()
+    );
     println!("Proof size in bytes {}", sr_proof.serialized_size());
-    
+
     group.bench_function("verify_single", |b| {
         b.iter(|| {
             // benchmarks all of the verification steps, except:
@@ -123,7 +126,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
 
 criterion_group! {
     name = select_and_rerandomize_verify;
-    config = Criterion::default();
+    config = Criterion::default().sample_size(10);
     targets =
     bench_select_and_rerandomize_verify,
 }

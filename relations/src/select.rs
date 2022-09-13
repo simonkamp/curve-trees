@@ -14,43 +14,21 @@ use ark_std::{One, UniformRand, Zero};
 use merlin::Transcript;
 use std::{borrow::BorrowMut, iter, marker::PhantomData};
 
-/// Prove that a commitment x is one of the values commited to in vector commitment xs.
-/// The prover must provide the index of x in xs as witness.
+/// Prove that a commitment x is one of the values committed to in vector commitment xs.
 pub fn select<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
     x: LinearCombination<F>,
     xs: Vec<LinearCombination<F>>,
-    index: Option<usize>,
 ) {
     assert!(xs.len() > 0);
-    // allocate vector of index bits, and constrain them to be bits
-    let mut is = Vec::with_capacity(xs.len());
+
+    // (x_1 - x) * (x_2 - x) * ... * (x_n - x) = 0
+    let mut product: LinearCombination<F> = xs[0].clone();
     for i in 0..xs.len() {
-        // Allocate variable for ith index.
-        // If i == index witness prover allocates 1, otherwise 0.
-        let ith_var = cs
-            .allocate(index.map(|index| if index == i { F::one() } else { F::zero() }))
-            .expect("Prover must have witness");
-        // Constrain ith var to be a bit
-        is_bit(cs, ith_var.into());
-
-        is.push(ith_var);
+        let (_, _, next_product) = cs.multiply(product, (xs[i].clone() - x.clone()));
+        product = next_product.into();
     }
-
-    // Constrain sum of the index bits to 1.
-    let mut is_sum: LinearCombination<F> = is[0].into();
-    for i in 1..is.len() {
-        is_sum = is_sum + is[i];
-    }
-    cs.constrain(is_sum - F::one());
-
-    // x = inner product of is and xs
-    let mut inner_product: LinearCombination<F> = F::zero().into();
-    for i in 0..is.len() {
-        let (_, _, product) = cs.multiply(xs[i].clone(), is[i].into());
-        inner_product = inner_product + product;
-    }
-    cs.constrain(inner_product - x);
+    cs.constrain(product);
 }
 
 #[cfg(test)]
@@ -101,7 +79,6 @@ mod tests {
                 &mut prover,
                 x_var.into(),
                 xs_vars.into_iter().map(|v| v.into()).collect(),
-                Some(index),
             );
 
             let proof = prover.prove(&bpg).unwrap();
@@ -121,7 +98,6 @@ mod tests {
             &mut verifier,
             x_var.into(),
             xs_vars.into_iter().map(|v| v.into()).collect(),
-            None,
         );
 
         verifier.verify(&proof, &pg, &bpg).unwrap();
@@ -152,7 +128,6 @@ mod tests {
                 &mut prover,
                 x_var.into(),
                 xs_vars.into_iter().map(|v| v.into()).collect(),
-                Some(index),
             );
 
             let proof = prover.prove(&bpg).unwrap();
@@ -169,7 +144,6 @@ mod tests {
             &mut verifier,
             x_var.into(),
             xs_vars.into_iter().map(|v| v.into()).collect(),
-            None,
         );
 
         let res = verifier.verify(&proof, &pg, &bpg);
