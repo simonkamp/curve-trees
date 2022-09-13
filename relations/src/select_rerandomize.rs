@@ -55,6 +55,7 @@ impl<
         let mut current_height = 0;
         // todo should it be depth instead of height? Leaf has depth 0, but what height?
         while even_forest.len() > 1 || height.map_or(false, |h| current_height < h) {
+            current_height += 1;
             // Combine forest of trees with even roots, into a forest of trees with odd roots.
             let odd_forest: Vec<_> = even_forest
                 .chunks(L)
@@ -65,6 +66,7 @@ impl<
                 return Self::Odd(odd_forest[0].clone());
             }
 
+            current_height += 1;
             // Combine forest of trees with odd roots, into a forest of trees with even roots.
             even_forest = odd_forest
                 .chunks(L)
@@ -130,6 +132,13 @@ impl<
 
         // return the commitments and the rerandomization scalar of the leaf.
         (even_commitments, odd_commitments, rerandomization_scalar)
+    }
+
+    pub fn height(&self) -> usize {
+        match self {
+            Self::Even(ct) => ct.height,
+            Self::Odd(ct) => ct.height,
+        }
     }
 
     // todo add a function to increase capacity/height
@@ -810,7 +819,12 @@ mod tests {
         );
 
         let set = vec![PallasA::zero()];
-        // let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4)); // todo stack overflow
+        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+            &set,
+            &sr_params,
+            Some(4),
+        );
+        assert_eq!(curve_tree.height(), 4);
     }
 
     // todo could add a test with branching factor 1 to test correctness w.o. vector commitments.
