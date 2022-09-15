@@ -483,7 +483,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let op_degree = 2 + self.vec_comms.len();
         let t_poly_deg = 6 + 2 * self.vec_comms.len();
 
-        println!("{}", t_poly_deg);
+        // println!("{}", t_poly_deg);
 
         assert_eq!(t_poly_deg + 1, proof.T.len());
 
@@ -495,7 +495,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         self = self.create_randomized_constraints()?;
 
         let n = self.size();
-        println!("n = {}", n);
+        // println!("n = {}", n);
 
         let transcript = self.transcript.borrow_mut();
 
@@ -505,7 +505,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let padded_n = n.next_power_of_two();
         let pad = padded_n - n;
 
-        println!("padded_n = {}", padded_n);
+        // println!("padded_n = {}", padded_n);
 
         use crate::inner_product_proof::inner_product;
         use crate::util;
@@ -519,10 +519,10 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let y = transcript.challenge_scalar::<C>(b"y");
         let z = transcript.challenge_scalar::<C>(b"z");
 
-        println!("V A_I2 {}", &proof.A_I2);
-        println!("V A_O2 {}", &proof.A_O2);
-        println!("V S2 {}", &proof.S2);
-        println!("V z {}", z);
+        // println!("V A_I2 {}", &proof.A_I2);
+        // println!("V A_O2 {}", &proof.A_O2);
+        // println!("V S2 {}", &proof.S2);
+        // println!("V z {}", z);
 
         // commit to T
 
@@ -531,7 +531,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             if d == op_degree {
                 continue;
             }
-            println!("{}", &proof.T[d]);
+            // println!("{}", &proof.T[d]);
             transcript.validate_and_append_point(util::T_LABELS[d], &proof.T[d])?;
         }
 
@@ -550,7 +550,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             scalar_V.push(xoff);
         }
 
-        println!("V x: {}", x);
+        // println!("V x: {}", x);
 
         transcript.append_scalar::<C>(b"t_x", &proof.t_x);
         transcript.append_scalar::<C>(b"t_x_blinding", &proof.t_x_blinding);
@@ -636,7 +636,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
                 let mut comb = x * wLi + wOi;
 
-                println!("i = {}", i);
+                // println!("i = {}", i);
 
                 // add terms for vector commitments (higher degrees)
                 let mut xn = x * x;
@@ -665,14 +665,14 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         for d in 1..t_poly_deg + 1 {
             rxn *= x;
             if d == op_degree {
-                println!("skip op_degree = {}", op_degree);
+                // println!("skip op_degree = {}", op_degree);
                 continue;
             }
             T_points.push(proof.T[d].clone());
             T_scalars.push(rxn);
         }
 
-        println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
+        // println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
 
         let proof_points = comm_V
             .into_iter()

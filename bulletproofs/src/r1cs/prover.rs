@@ -537,7 +537,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // however the degree increases linearly with the number of vec-comm
         let offset = self.secrets.vec_open.len();
         let op_degree = 2 + offset;
-        println!("op_degree: {}", op_degree);
+        // println!("op_degree: {}", op_degree);
 
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
@@ -757,11 +757,12 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let y = transcript.challenge_scalar::<C>(b"y");
         let z = transcript.challenge_scalar::<C>(b"z");
 
-        println!("P A_I2 {}", &A_I2);
-        println!("P A_O2 {}", &A_O2);
-        println!("P S2 {}", &S2);
-        println!("P z {}", z);
+        // println!("P A_I2 {}", &A_I2);
+        // println!("P A_O2 {}", &A_O2);
+        // println!("P S2 {}", &S2);
+        // println!("P z {}", z);
 
+        println!("Length of constraints vector: {}", self.constraints.len());
         let (wL, wR, wO, wV, wVCs) = self.flattened_constraints(&z);
 
         let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
@@ -771,9 +772,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let y_inv = y.inverse().unwrap();
         let exp_y_inv = util::exp_iter(y_inv).take(padded_n).collect::<Vec<_>>();
 
-        println!("vec comm: {}", self.secrets.vec_open.len());
+        // println!("vec comm: {}", self.secrets.vec_open.len());
 
         let vars = self.secrets.a_L.len();
+        println!("Length of secrets.a_L: {}", vars);
 
         //
         let sLsR = s_L1
@@ -788,7 +790,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
             // l_poly.i = a_Vi
             for (j, v) in self.secrets.vec_open.iter().enumerate() {
-                if v.1.len() > j {
+                if v.1.len() > i {
+                    //todo I changed this to check if `i` is out of bounds instead of `j`
                     l_poly.coeff_mut(1 + j)[i] = v.1[i];
                 }
             }
@@ -817,7 +820,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // r.l_poly.2..
             for (j, w) in wVCs.iter().enumerate() {
                 if w.len() > i {
-                    println!("w[{}] = {}", i, w[i]);
+                    // println!("w[{}] = {}", i, w[i]);
                     r_poly.coeff_mut(2 + j)[i] = w[i];
                 }
             }
@@ -846,7 +849,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                 continue;
             }
             t_blinding_poly.coeff()[d] = C::ScalarField::rand(&mut rng);
-            println!("T_{}", d);
+            // println!("T_{}", d);
         }
 
         //
@@ -988,6 +991,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             l_vec,
             r_vec,
         );
+        println!("ipp proof l vec len: {}", ipp_proof.L_vec.len());
 
         // We do not yet have a ClearOnDrop wrapper for Vec<Scalar>.
         // When PR 202 [1] is merged, we can simply wrap s_L and s_R at the point of creation.

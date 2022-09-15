@@ -96,7 +96,7 @@ impl<F: Field> VecPoly<F> {
 
         let deg = (lhs.0.len() - 1) + (rhs.0.len() - 1);
 
-        println!("combined degree: {}", deg);
+        // println!("combined degree: {}", deg);
 
         let mut res = Poly::zero(deg);
 
