@@ -577,7 +577,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let mut u_for_g = iter::repeat(C::ScalarField::one())
             .take(n1)
             .chain(iter::repeat(u).take(n2 + pad));
-            
+
         let mut u_for_h = u_for_g.clone();
 
         // define parameters for P check
@@ -627,7 +627,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let xx = x * x;
         let rxx = r * xx;
         let xxx = x * xx;
-        
+
         assert_eq!(proof.T[0], C::zero());
         assert_eq!(proof.T[op_degree], C::zero());
         assert_eq!(proof.T.len(), t_poly_deg + 1);

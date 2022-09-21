@@ -361,7 +361,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         let v_blinding = C::ScalarField::zero(); // for simplicity: TODO change
 
-
         // compute the commitment:
         // comm = <v, G> + <v_blinding> B_blinding
         let gens = bp_gens.share(0);
@@ -525,7 +524,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         mut self,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(R1CSProof<C>, T), R1CSError> {
-        
         // pad
         while self.size() > self.secrets.a_L.len() {
             self.allocate_multiplier(Some((C::ScalarField::zero(), C::ScalarField::zero())))?;
@@ -797,7 +795,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             for (j, v) in self.secrets.vec_open.iter().enumerate() {
                 if v.1.len() > i {
                     //todo I changed this to check if `i` is out of bounds instead of `j`
-                    l_poly.coeff_mut(1 + j)[i] = v.1[i];// TODO: Check, if wit or flat.
+                    l_poly.coeff_mut(1 + j)[i] = v.1[i]; // TODO: Check, if wit or flat.
                 }
             }
 
