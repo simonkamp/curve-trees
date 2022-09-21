@@ -374,7 +374,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                     Variable::VectorCommit(j, i) => {
                         // j : index of commitment
                         // i : coordinate with-in commitment
-                        wVCs[*j][*i] -= exp_z * coeff;
+                        wVCs[*j][*i] += exp_z * coeff;
                     }
                     Variable::One(_) => {
                         wc -= exp_z * coeff;
@@ -483,9 +483,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let op_degree = 2 + self.vec_comms.len();
         let t_poly_deg = 6 + 2 * self.vec_comms.len();
 
-        // println!("{}", t_poly_deg);
-
-        assert_eq!(t_poly_deg + 1, proof.T.len());
+        debug_assert_eq!(t_poly_deg + 1, proof.T.len());
 
         transcript.validate_and_append_point(b"A_I1", &proof.A_I1)?;
         transcript.validate_and_append_point(b"A_O1", &proof.A_O1)?;
@@ -519,13 +517,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let y = transcript.challenge_scalar::<C>(b"y");
         let z = transcript.challenge_scalar::<C>(b"z");
 
-        // println!("V A_I2 {}", &proof.A_I2);
-        // println!("V A_O2 {}", &proof.A_O2);
-        // println!("V S2 {}", &proof.S2);
-        // println!("V z {}", z);
-
-        // commit to T
-
         let transcript = self.transcript.borrow_mut();
         for d in 1..t_poly_deg + 1 {
             if d == op_degree {
@@ -541,7 +532,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         // compute powers for vector commitments
         // they are assigned the lowest powers and therefore the coefficients
         // in the combination are correspondingly assigned the highest powers
-        let mut xoff = C::ScalarField::one();
+        let mut xoff = C::ScalarField::one(); // xoff = x^{op_degree - 2}
         let mut comm_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
         let mut scalar_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
         for (comm, _dim) in self.vec_comms.iter() {
@@ -549,8 +540,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             comm_V.push(comm.clone());
             scalar_V.push(xoff);
         }
-
-        // println!("V x: {}", x);
 
         transcript.append_scalar::<C>(b"t_x", &proof.t_x);
         transcript.append_scalar::<C>(b"t_x_blinding", &proof.t_x_blinding);
@@ -588,33 +577,16 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let mut u_for_g = iter::repeat(C::ScalarField::one())
             .take(n1)
             .chain(iter::repeat(u).take(n2 + pad));
+            
         let mut u_for_h = u_for_g.clone();
 
         // define parameters for P check
-        /*
-        let mut g_scalars = Vec::with_capacity(padded_n);
-
-        {
-            let mut yneg_wR = yneg_wR.into_iter();
-            let mut s = s.iter().rev().take(padded_n);
-
-            for _ in 0..padded_n {
-                let yneg_wRi = yneg_wR.next().unwrap();
-                let u_or_1 = u_for_g.next().unwrap();
-                let si = s.next().unwrap();
-
-                let res = u_or_1 * (x * yneg_wRi - a * si);
-
-                g_scalars.push(res);
-            }
-        }
-        */
 
         let g_scalars = yneg_wR
             .iter()
             .zip(u_for_g.clone())
             .zip(s.iter().take(padded_n))
-            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (xoff * x * yneg_wRi - a * s_i));
+            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i)); // TODO: is this correct?
 
         // r(x)
         let mut h_scalars = Vec::with_capacity(padded_n);
@@ -636,8 +608,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
                 let mut comb = x * wLi + wOi;
 
-                // println!("i = {}", i);
-
                 // add terms for vector commitments (higher degrees)
                 let mut xn = x * x;
                 for wVC in wVCs.iter_mut() {
@@ -645,7 +615,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                     xn = xn * x;
                 }
 
-                // y^{-n} o (w_L * x^2 + w_O * x + w_Vi)
+                // y^{-n} o (w_L * x^2 + w_O * x + w_VCi)
                 let res = u_or_1 * (y_inv * (comb - b * si) - C::ScalarField::one());
 
                 h_scalars.push(res);
@@ -657,8 +627,12 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let xx = x * x;
         let rxx = r * xx;
         let xxx = x * xx;
+        
+        assert_eq!(proof.T[0], C::zero());
+        assert_eq!(proof.T[op_degree], C::zero());
+        assert_eq!(proof.T.len(), t_poly_deg + 1);
 
-        // group the T_scalars and T_points together
+        // homomorphically evaluate t polynomial at x
         let mut T_points = vec![];
         let mut T_scalars = vec![]; // [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
         let mut rxn = r;
@@ -673,6 +647,10 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         }
 
         // println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
+
+        debug_assert!(comm_V.len() == 0 || proof.A_I2 == C::zero());
+        debug_assert!(comm_V.len() == 0 || proof.A_O2 == C::zero());
+        debug_assert!(comm_V.len() == 0 || proof.S2 == C::zero());
 
         let proof_points = comm_V
             .into_iter()
@@ -693,9 +671,9 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(iter::once(xoff * x)) // A_I1
             .chain(iter::once(xoff * xx)) // A_O1
             .chain(iter::once(xoff * xxx)) // S1
-            .chain(iter::once(u * x)) // A_I2
-            .chain(iter::once(u * xx)) // A_O2
-            .chain(iter::once(u * xxx)) // S2
+            .chain(iter::once(xoff * u * x)) // A_I2
+            .chain(iter::once(xoff * u * xx)) // A_O2
+            .chain(iter::once(xoff * u * xxx)) // S2
             .chain(wV.iter().map(|wVi| *wVi * rxx * xoff)) // V
             .chain(T_scalars.iter().cloned()) // T_points
             .chain(u_sq.into_iter()) // ipp_proof.L_vec
