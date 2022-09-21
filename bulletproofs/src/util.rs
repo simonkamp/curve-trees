@@ -94,7 +94,7 @@ impl<F: Field> VecPoly<F> {
     pub fn inner_product(lhs: &Self, rhs: &Self) -> Poly<F> {
         // TODO: make checks that l_poly.0 and r_poly.2 are zero.
 
-        let deg = (lhs.0.len() - 1) + (rhs.0.len() - 1);
+        let deg = lhs.deg() + rhs.deg();
 
         // println!("combined degree: {}", deg);
 

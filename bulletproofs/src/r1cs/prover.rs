@@ -525,10 +525,13 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         mut self,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(R1CSProof<C>, T), R1CSError> {
+        
         // pad
         while self.size() > self.secrets.a_L.len() {
             self.allocate_multiplier(Some((C::ScalarField::zero(), C::ScalarField::zero())))?;
         }
+
+        println!("number of constraints: {}", self.secrets.a_L.len());
 
         use crate::util;
         use std::iter;
@@ -765,8 +768,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         println!("Length of constraints vector: {}", self.constraints.len());
         let (wL, wR, wO, wV, wVCs) = self.flattened_constraints(&z);
 
-        println!("prover wVCs = {:?}", &wVCs);
-
         let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
         let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
 
@@ -794,7 +795,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             for (j, v) in self.secrets.vec_open.iter().enumerate() {
                 if v.1.len() > i {
                     //todo I changed this to check if `i` is out of bounds instead of `j`
-                    l_poly.coeff_mut(1 + j)[i] = v.1[i];
+                    l_poly.coeff_mut(1 + j)[i] = v.1[i];// TODO: Check, if wit or flat.
                 }
             }
 
@@ -832,7 +833,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             debug_assert_eq!(r_poly.coeff(op_degree + 1)[i], C::ScalarField::zero());
 
             // r_poly.3 = y^n * s_R
-            r_poly.coeff_mut(op_degree + 1)[i] = exp_y * sr;
+            r_poly.coeff_mut(op_degree + 1)[i] = exp_y * sr; // this is the next high deg. after all the vec. comm coeff.
 
             exp_y = exp_y * y; // y^i -> y^(i+1)
         }
@@ -893,7 +894,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // XXX this should refer to the notes to explain why this is correct
         for i in n..padded_n {
-            r_vec[i] = -exp_y;
+            r_vec[i] = -exp_y; // TODO: wtf is this? is it affected by the degree (which we change)
             exp_y = exp_y * y; // y^i -> y^(i+1)
         }
 
@@ -985,6 +986,9 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             .zip(G_factors.iter())
             .map(|(y, u_or_1)| y * u_or_1)
             .collect::<Vec<_>>();
+
+        // TODO: check if missing \circ y^{-1} on the vec. comm part:
+        // everything in H_generators (r_vec) is mult. by y!
 
         let ipp_proof = InnerProductProof::create(
             transcript,
