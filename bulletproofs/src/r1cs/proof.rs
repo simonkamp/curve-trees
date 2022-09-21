@@ -2,6 +2,7 @@
 //! Definition of the proof struct.
 
 use ark_ec::AffineCurve;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::Zero;
 
 use crate::errors::R1CSError;
@@ -54,18 +55,83 @@ pub struct R1CSProof<C: AffineCurve> {
 }
 
 impl<C: AffineCurve> R1CSProof<C> {
-    /// Returns the size in bytes required to serialize the `R1CSProof`.
-    pub fn serialized_size(&self) -> usize {
-        // version tag + (11 or 14) elements + the ipp
-        let elements = if self.missing_phase2_commitments() {
-            11
-        } else {
-            14
-        };
-        1 + elements * 32 + self.ipp_proof.serialized_size()
-    }
-
     fn missing_phase2_commitments(&self) -> bool {
         self.A_I2.is_zero() && self.A_O2.is_zero() && self.S2.is_zero()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.serialized_size());
+        if let Err(e) = self.serialize(&mut buf) {
+            panic!("{}", e)
+        }
+        buf
+    }
+
+    pub fn from_bytes(slice: &[u8]) -> Result<R1CSProof<C>, R1CSError> {
+        Self::deserialize(slice).map_err(|_| R1CSError::FormatError)
+    }
+}
+
+impl<C: AffineCurve> CanonicalSerialize for R1CSProof<C> {
+    /// Returns the size in bytes required to serialize the `R1CSProof`.
+    fn serialized_size(&self) -> usize {
+        // allocate space for the 6 points
+        let points_size = 6 * self.A_I1.serialized_size();
+        // allocate space for the T vector
+        let t_size = self.T.serialized_size();
+        // size of 3 scalars
+        let scalars_size = 3 * self.t_x.serialized_size();
+        // size of the inner product proof
+        let ipp_size = self.ipp_proof.serialized_size();
+        points_size + t_size + scalars_size + ipp_size
+    }
+    // todo account for this?
+    // pub fn serialized_size(&self) -> usize {
+    //     // version tag + (11 or 14) elements + the ipp
+    //     let elements = if self.missing_phase2_commitments() {
+    //         11
+    //     } else {
+    //         14
+    //     };
+    //     1 + elements * 32 + self.ipp_proof.serialized_size()
+    // }
+
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        // serialize points
+        self.A_I1.serialize(&mut writer)?;
+        self.A_I1.serialize(&mut writer)?;
+        self.A_O1.serialize(&mut writer)?;
+        self.S1.serialize(&mut writer)?;
+        self.A_I2.serialize(&mut writer)?;
+        self.A_O2.serialize(&mut writer)?;
+        self.S2.serialize(&mut writer)?;
+        // Serialize T
+        self.T.serialize(&mut writer)?;
+        // serialize scalars
+        self.t_x.serialize(&mut writer)?;
+        self.t_x_blinding.serialize(&mut writer)?;
+        self.e_blinding.serialize(&mut writer)?;
+        // serialize inner product argument
+        self.ipp_proof.serialize(&mut writer)?;
+
+        Ok(())
+    }
+}
+
+impl<C: AffineCurve> CanonicalDeserialize for R1CSProof<C> {
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        Ok(Self {
+            A_I1: C::deserialize(&mut reader)?,
+            A_O1: C::deserialize(&mut reader)?,
+            S1: C::deserialize(&mut reader)?,
+            A_I2: C::deserialize(&mut reader)?,
+            A_O2: C::deserialize(&mut reader)?,
+            S2: C::deserialize(&mut reader)?,
+            T: Vec::<C>::deserialize(&mut reader)?,
+            t_x: C::ScalarField::deserialize(&mut reader)?,
+            t_x_blinding: C::ScalarField::deserialize(&mut reader)?,
+            e_blinding: C::ScalarField::deserialize(&mut reader)?,
+            ipp_proof: InnerProductProof::<C>::deserialize(&mut reader)?,
+        })
     }
 }

@@ -11,7 +11,7 @@ use ark_ff::{
     fields::{batch_inversion, PrimeField},
     Field,
 };
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::{One, UniformRand, Zero};
 use core::iter;
 use merlin::Transcript;
@@ -267,7 +267,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
             // and this check prevents overflow in 1<<lg_n below.
             return Err(ProofError::VerificationError);
         }
-        
+
         if n != (1 << lg_n) {
             return Err(ProofError::VerificationError);
         }
@@ -390,43 +390,22 @@ impl<C: AffineCurve> InnerProductProof<C> {
     /// For vectors of length `n` the proof size is
     /// \\(32 \cdot (2\lg n+2)\\) bytes.
     pub fn serialized_size(&self) -> usize {
-        (self.L_vec.len() * 2 * C::zero().serialized_size())
-            + (2 * C::ScalarField::zero().serialized_size())
+        // size of the two scalars
+        let scalars_size = self.a.serialized_size() * 2;
+        // size of the 2 point vectors (should be equal)
+        let l_and_r_size = self.L_vec.serialized_size() * 2;
+        scalars_size + l_and_r_size
     }
 
-    // / Serializes the proof into a byte array of \\(2n+2\\) 32-byte elements.
-    // / The layout of the inner product proof is:
-    // / * \\(n\\) pairs of compressed Ristretto points \\(L_0, R_0 \dots, L_{n-1}, R_{n-1}\\),
-    // / * two scalars \\(a, b\\).
+    /// Serializes the proof into a byte array of \\(2n+2\\) 32-byte elements.
+    /// The layout of the inner product proof is:
+    /// * \\(n\\) pairs of compressed Ristretto points \\(L_0, R_0 \dots, L_{n-1}, R_{n-1}\\),
+    /// * two scalars \\(a, b\\).
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.serialized_size() + 16);
-
-        for (l, r) in self.L_vec.iter().zip(self.R_vec.iter()) {
-            let mut bytes = Vec::new();
-            if let Err(e) = l.serialize(&mut bytes) {
-                panic!("{}", e)
-            }
-            buf.extend_from_slice(bytes.as_slice());
-
-            let mut bytes = Vec::new();
-            if let Err(e) = r.serialize(&mut bytes) {
-                panic!("{}", e)
-            }
-            buf.extend_from_slice(bytes.as_slice());
-        }
-
-        let mut bytes = Vec::new();
-        if let Err(e) = self.a.serialize(&mut bytes) {
+        let mut buf = Vec::with_capacity(self.serialized_size());
+        if let Err(e) = self.serialize(&mut buf) {
             panic!("{}", e)
         }
-        buf.extend_from_slice(bytes.as_slice());
-
-        let mut bytes = Vec::new();
-        if let Err(e) = self.b.serialize(&mut bytes) {
-            panic!("{}", e)
-        }
-        buf.extend_from_slice(bytes.as_slice());
-
         buf
     }
 
@@ -437,52 +416,45 @@ impl<C: AffineCurve> InnerProductProof<C> {
     /// * any of \\(2n\\) points are not valid compressed Ristretto points,
     /// * any of 2 scalars are not canonical scalars modulo Ristretto group order.
     pub fn from_bytes(slice: &[u8]) -> Result<InnerProductProof<C>, ProofError> {
-        let b = slice.len();
-        let point_length = C::zero().serialized_size();
-        let scalar_length = C::ScalarField::zero().serialized_size();
-        if b < 2 * scalar_length {
-            return Err(ProofError::FormatError);
-        }
-        let points_length = b - (2 * scalar_length);
-        if points_length % point_length != 0 {
-            return Err(ProofError::FormatError);
-        }
-        let num_points = points_length / point_length;
-        if num_points % 2 != 0 {
-            return Err(ProofError::FormatError);
-        }
-        let lg_n = num_points / 2;
-        if lg_n >= 32 {
-            return Err(ProofError::FormatError);
-        }
+        Self::deserialize(slice).map_err(|_| ProofError::FormatError)
+    }
+}
 
-        let mut L_vec: Vec<C> = Vec::with_capacity(lg_n);
-        let mut R_vec: Vec<C> = Vec::with_capacity(lg_n);
+impl<C: AffineCurve> CanonicalDeserialize for InnerProductProof<C> {
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        Ok(Self {
+            L_vec: Vec::<C>::deserialize(&mut reader)?,
+            R_vec: Vec::<C>::deserialize(&mut reader)?,
+            a: C::ScalarField::deserialize(&mut reader)?,
+            b: C::ScalarField::deserialize(&mut reader)?,
+        })
+    }
+}
 
-        for i in 0..lg_n {
-            let pos = 2 * i * point_length;
-            match (
-                C::deserialize(&slice[pos..]),
-                C::deserialize(&slice[pos + point_length..]),
-            ) {
-                (Ok(l), Ok(r)) => {
-                    L_vec.push(l);
-                    R_vec.push(r);
-                }
-                _ => return Err(ProofError::FormatError),
-            }
-        }
+impl<C: AffineCurve> CanonicalSerialize for InnerProductProof<C> {
+    /// Returns the size in bytes required to serialize the inner
+    /// product proof.
+    ///
+    /// For vectors of length `n` the proof size is
+    /// \\(32 \cdot (2\lg n+2)\\) bytes.
+    fn serialized_size(&self) -> usize {
+        // size of the two scalars
+        let scalars_size = self.a.serialized_size() * 2;
+        // size of the 2 point vectors (should be equal)
+        let l_and_r_size = self.L_vec.serialized_size() * 2;
+        scalars_size + l_and_r_size
+    }
 
-        let pos = 2 * lg_n * point_length;
-        let (a, b) = match (
-            C::ScalarField::deserialize(&slice[pos..]),
-            C::ScalarField::deserialize(&slice[pos + scalar_length..]),
-        ) {
-            (Ok(a), Ok(b)) => (a, b),
-            _ => return Err(ProofError::FormatError),
-        };
-
-        Ok(InnerProductProof { L_vec, R_vec, a, b })
+    /// Serializes the proof into a byte array of \\(2n+2\\) 32-byte elements.
+    /// The layout of the inner product proof is:
+    /// * \\(n\\) pairs of compressed Ristretto points \\(L_0, R_0 \dots, L_{n-1}, R_{n-1}\\),
+    /// * two scalars \\(a, b\\).
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.L_vec.serialize(&mut writer)?;
+        self.R_vec.serialize(&mut writer)?;
+        self.a.serialize(&mut writer)?;
+        self.b.serialize(&mut writer)?;
+        Ok(())
     }
 }
 

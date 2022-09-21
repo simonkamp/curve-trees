@@ -58,7 +58,6 @@ impl<F: SquareRootField> UniversalHash<F> {
         point: GroupAffine<C>,
     ) -> bool {
         let hash_of_y_is_qr = self.universal_hash_to_bit(point.y);
-        // todo is testing the first condition sufficient?
         let hash_of_neg_y_is_not_qr = !self.universal_hash_to_bit(-point.y);
         hash_of_y_is_qr && hash_of_neg_y_is_not_qr
     }

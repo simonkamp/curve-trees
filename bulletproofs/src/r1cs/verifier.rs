@@ -473,7 +473,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         let n1 = self.size();
 
-
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -494,17 +493,17 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         self = self.create_randomized_constraints()?;
 
         let n = self.size();
-        println!("n = {}", n);
+        // println!("n = {}", n);
 
         let transcript = self.transcript.borrow_mut();
 
         // If the number of multiplications is not 0 or a power of 2, then pad the circuit.
-        
+
         let n2 = n - n1;
         let padded_n = n.next_power_of_two();
         let pad = padded_n - n;
 
-        println!("padded_n = {}", padded_n);
+        // println!("padded_n = {}", padded_n);
 
         use crate::inner_product_proof::inner_product;
         use crate::util;
@@ -518,22 +517,20 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let y = transcript.challenge_scalar::<C>(b"y");
         let z = transcript.challenge_scalar::<C>(b"z");
 
-        // commit to T
-
         let transcript = self.transcript.borrow_mut();
         for d in 1..t_poly_deg + 1 {
             if d == op_degree {
                 continue;
             }
-            println!("{}", &proof.T[d]);
+            // println!("{}", &proof.T[d]);
             transcript.validate_and_append_point(util::T_LABELS[d], &proof.T[d])?;
         }
 
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");
 
-        // compute powers for vector commitments 
-        // they are assigned the lowest powers and therefore the coefficients 
+        // compute powers for vector commitments
+        // they are assigned the lowest powers and therefore the coefficients
         // in the combination are correspondingly assigned the highest powers
         let mut xoff = C::ScalarField::one(); // xoff = x^{op_degree - 2}
         let mut comm_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
@@ -565,7 +562,9 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let y_inv_vec = util::exp_iter(y_inv)
             .take(padded_n)
             .collect::<Vec<C::ScalarField>>();
-        
+
+        let vars = self.num_vars;
+
         let yneg_wR = wR
             .into_iter()
             .zip(y_inv_vec.iter())
@@ -604,7 +603,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
                 let wLi = wL.next().unwrap_or_default();
                 let wOi = wO.next().unwrap_or_default();
-                
+
                 let si = s.next().unwrap();
 
                 let mut comb = x * wLi + wOi;
@@ -640,14 +639,18 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         for d in 1..t_poly_deg + 1 {
             rxn *= x;
             if d == op_degree {
-                println!("skip op_degree = {}", op_degree);
+                // println!("skip op_degree = {}", op_degree);
                 continue;
             }
             T_points.push(proof.T[d].clone());
             T_scalars.push(rxn);
         }
 
-        println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
+        // println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
+
+        debug_assert!(comm_V.len() == 0 || proof.A_I2 == C::zero());
+        debug_assert!(comm_V.len() == 0 || proof.A_O2 == C::zero());
+        debug_assert!(comm_V.len() == 0 || proof.S2 == C::zero());
 
         debug_assert!(comm_V.len() == 0 || proof.A_I2 == C::zero());
         debug_assert!(comm_V.len() == 0 || proof.A_O2 == C::zero());
