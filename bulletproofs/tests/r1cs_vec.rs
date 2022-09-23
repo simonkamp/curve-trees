@@ -133,8 +133,7 @@ mod veccom_empty {
 
 mod veccom_non_empty_do_nothing {
     use super::*;
-
-    /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
+    
     fn gadget<F: Field, CS: ConstraintSystem<F>>(
         cs: &mut CS,
         a1: LinearCombination<F>,
@@ -145,11 +144,6 @@ mod veccom_non_empty_do_nothing {
         d1: LinearCombination<F>,
         d2: LinearCombination<F>,
     ) {
-        /*
-        let (_, _, c_var) = cs.multiply(a1 + a2, b1 + b2);
-        cs.constrain(c1 + c2 - c_var);
-        */
-
         cs.constrain(d1 - d2);
     } 
 
@@ -291,10 +285,10 @@ mod veccom_non_trivial {
         d1: LinearCombination<F>,
         d2: LinearCombination<F>,
     ) {
-        cs.constrain((a2.clone() + F::one()) - a1);
-        cs.constrain((a3.clone() + F::one()) - a2);
-        cs.constrain((a4.clone() + F::one()) - a3);
-        cs.constrain((a5.clone() + F::one()) - a4);
+        cs.constrain(a1.clone() - a2.clone());
+        cs.constrain(a2.clone() - a3.clone());
+        cs.constrain(a4.clone() - (a1.clone() + a2.clone() + a3.clone()));
+        cs.constrain(d1.clone() - (a1 + a2 + a3 + a4 + a5));
         cs.constrain(d1 - d2);
     } 
 
@@ -415,7 +409,7 @@ mod veccom_non_trivial {
     #[test]
     fn test() {
         // (3 + 4) * (6 + 1) = (40 + 9)
-        assert!(gadget_roundtrip_helper::<Affine>(1, 2, 3, 4, 5, 4, 4).is_ok());
+        assert!(gadget_roundtrip_helper::<Affine>(5, 5, 5, 15, 7, 37, 37).is_ok());
         // (3 + 4) * (6 + 1) != (40 + 10)
         assert!(gadget_roundtrip_helper::<Affine>(1, 2, 3, 4, 5, 5, 4).is_err());
     }

@@ -493,7 +493,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         self = self.create_randomized_constraints()?;
 
         let n = self.size();
-        // println!("n = {}", n);
 
         let transcript = self.transcript.borrow_mut();
 
@@ -549,6 +548,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         let (wL, wR, wO, wV, wVCs, wc) = self.flattened_constraints(&z);
 
+        println!("verifier wVCs = {:?}", &wVCs);
+
         // Get IPP variables
         let (u_sq, u_inv_sq, s) = proof
             .ipp_proof
@@ -574,7 +575,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         let delta = inner_product(&yneg_wR[0..self.num_vars], &wL);
 
-        let mut u_for_g = iter::repeat(C::ScalarField::one())
+        let u_for_g = iter::repeat(C::ScalarField::one())
             .take(n1)
             .chain(iter::repeat(u).take(n2 + pad));
 
@@ -595,7 +596,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             let mut wO = wO.into_iter();
             let mut s = s.iter().rev().take(padded_n);
             let mut y_inv_vec = y_inv_vec.into_iter();
-            let mut wVCs: Vec<_> = wVCs.into_iter().map(|wVC| wVC.into_iter()).collect();
 
             for i in 0..padded_n {
                 let y_inv = y_inv_vec.next().unwrap();
@@ -609,9 +609,11 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 let mut comb = x * wLi + wOi;
 
                 // add terms for vector commitments (higher degrees)
+                // TODO: this is bugged for multiple vec-com, but it should work for 1.
                 let mut xn = x * x;
-                for wVC in wVCs.iter_mut() {
-                    comb += xn * wVC.next().unwrap_or_default();
+                for j in 0..wVCs.len() {
+                    println!("i = {}, {}", i, wVCs[j].get(i).cloned().unwrap_or_default());
+                    comb += xn * wVCs[j].get(i).cloned().unwrap_or_default();
                     xn = xn * x;
                 }
 
@@ -645,8 +647,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             T_points.push(proof.T[d].clone());
             T_scalars.push(rxn);
         }
-
-        // println!("xoff = {}, comm_V.len() = {}", xoff, comm_V.len());
 
         debug_assert!(comm_V.len() == 0 || proof.A_I2 == C::zero());
         debug_assert!(comm_V.len() == 0 || proof.A_O2 == C::zero());

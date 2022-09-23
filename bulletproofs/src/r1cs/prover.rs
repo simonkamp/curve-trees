@@ -359,12 +359,13 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
     ) -> (C, Vec<Variable<C::ScalarField>>) {
         use std::iter;
 
-        let v_blinding = C::ScalarField::zero(); // for simplicity: TODO change
+        // TODO: debug
 
         // compute the commitment:
         // comm = <v, G> + <v_blinding> B_blinding
         let gens = bp_gens.share(0);
 
+        // [b] * H + [v_1] * G1 + ... + [v_n] * Gn
         let generators: Vec<_> = iter::once(&self.pc_gens.B_blinding)
             .chain(gens.G(v.len()))
             .cloned()
@@ -771,11 +772,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
         let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
 
-        let mut exp_y = C::ScalarField::one(); // y^n starting at n=0
         let y_inv = y.inverse().unwrap();
-        let exp_y_inv = util::exp_iter(y_inv).take(padded_n).collect::<Vec<_>>();
 
-        // println!("vec comm: {}", self.secrets.vec_open.len());
+        let exp_y_inv = util::exp_iter(y_inv).take(padded_n).collect::<Vec<_>>();
+        let exp_y = util::exp_iter(y).take(padded_n).collect::<Vec<_>>();
 
         let vars = self.secrets.a_L.len();
         println!("Length of secrets.a_L: {}", vars);
@@ -797,6 +797,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                     //todo I changed this to check if `i` is out of bounds instead of `j`
                     l_poly.coeff_mut(1 + j)[i] = v.1[i]; // TODO: Check, if wit or flat.
                 }
+                debug_assert!(v.1.len() >= n);
             }
 
             if i < vars {
@@ -807,35 +808,30 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                 l_poly.coeff_mut(2 + offset)[i] = self.secrets.a_O[i];
             }
 
-            // l_poly.3 = s_L
+            // l_poly.3 = s_L (mask)
             l_poly.coeff_mut(3 + offset)[i] = *sl;
 
             // r(X) vector-polynomial
 
             if i < vars {
                 // r_poly.0 = (z * z^Q * W_O) - y^n
-                r_poly.coeff_mut(0)[i] = wO[i] - exp_y;
+                r_poly.coeff_mut(0)[i] = wO[i] - exp_y[i];
 
                 // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
-                r_poly.coeff_mut(1)[i] = exp_y * self.secrets.a_R[i] + wL[i];
+                r_poly.coeff_mut(1)[i] = exp_y[i] * self.secrets.a_R[i] + wL[i];
             }
 
             // r.l_poly.2..
             for (j, w) in wVCs.iter().enumerate() {
-                if w.len() > i {
-                    // println!("w[{}] = {}", i, w[i]);
-                    r_poly.coeff_mut(2 + j)[i] = w[i];
-                }
+                r_poly.coeff_mut(2 + j)[i] = w.get(i).cloned().unwrap_or_default();
             }
 
             // r_poly.<op_degree> = 0
             debug_assert_eq!(r_poly.coeff(op_degree)[i], C::ScalarField::zero());
             debug_assert_eq!(r_poly.coeff(op_degree + 1)[i], C::ScalarField::zero());
 
-            // r_poly.3 = y^n * s_R
-            r_poly.coeff_mut(op_degree + 1)[i] = exp_y * sr; // this is the next high deg. after all the vec. comm coeff.
-
-            exp_y = exp_y * y; // y^i -> y^(i+1)
+            // r_poly.3 = y^n * s_R (mask)
+            r_poly.coeff_mut(op_degree + 1)[i] = exp_y[i] * sr; // this is the next high deg. after all the vec. comm coeff.
         }
 
         // correct for all the vector commitments
@@ -886,16 +882,17 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         let t_x = t_poly.eval(x);
         let t_x_blinding = t_blinding_poly.eval(x);
+
+        // The constant term of l is zero, hence l_vec is zero beyond n
         let mut l_vec = l_poly.eval(x);
         l_vec.append(&mut vec![C::ScalarField::zero(); pad]);
 
+        // XXX this should refer to the notes to explain why this is correct
+        // This is the constant term of r(x) beyond w_O since it is zero after n.
         let mut r_vec = r_poly.eval(x);
         r_vec.append(&mut vec![C::ScalarField::zero(); pad]);
-
-        // XXX this should refer to the notes to explain why this is correct
         for i in n..padded_n {
-            r_vec[i] = -exp_y; // TODO: wtf is this? is it affected by the degree (which we change)
-            exp_y = exp_y * y; // y^i -> y^(i+1)
+            r_vec[i] = -exp_y[i]; // TODO: wtf is this? is it affected by the degree (which we change)
         }
 
         // sanity check
@@ -950,6 +947,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let o_blinding = o_blinding1 + u * o_blinding2;
         let s_blinding = s_blinding1 + u * s_blinding2;
 
+        for (b, _) in self.secrets.vec_open.iter() {
+            println!("blinding {}", b);
+        }
+
         // compute blinding opening of vector commitments
         let e_terms = self
             .secrets
@@ -966,25 +967,23 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             e_blinding *= x;
         }
 
-        // e_blinding = x * (i_blinding + x * (o_blinding + x * s_blinding));
-
         transcript.append_scalar::<C>(b"t_x", &t_x);
         transcript.append_scalar::<C>(b"t_x_blinding", &t_x_blinding);
         transcript.append_scalar::<C>(b"e_blinding", &e_blinding);
 
         // Get a challenge value to combine statements for the IPP
         let w = transcript.challenge_scalar::<C>(b"w");
-        println!("prover: w = {}", w);
         let Q = self.pc_gens.B[0].mul(w).into();
 
         let G_factors = iter::repeat(C::ScalarField::one())
             .take(n1)
             .chain(iter::repeat(u).take(n2 + pad))
             .collect::<Vec<_>>();
+
         let H_factors = exp_y_inv
             .into_iter()
             .zip(G_factors.iter())
-            .map(|(y, u_or_1)| y * u_or_1)
+            .map(|(y_inv, u_or_1)| y_inv * u_or_1)
             .collect::<Vec<_>>();
 
         // TODO: check if missing \circ y^{-1} on the vec. comm part:
