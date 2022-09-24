@@ -118,6 +118,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarFie
         let l = self.eval(&left);
         let r = self.eval(&right);
         let o = l * r;
+        println!("o {}", o);
 
         // Create variables for l,r,o ...
         let l_var = Variable::MultiplierLeft(self.secrets.a_L.len());
