@@ -118,7 +118,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarFie
         let l = self.eval(&left);
         let r = self.eval(&right);
         let o = l * r;
-        println!("o {}", o);
 
         // Create variables for l,r,o ...
         let l_var = Variable::MultiplierLeft(self.secrets.a_L.len());
@@ -769,6 +768,9 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let (wL, wR, wO, wV, wVCs) = self.flattened_constraints(&z);
 
         println!("prover wVCs = {:?}", &wVCs);
+        println!("prover wL = {:?}", &wL);
+        println!("prover wR = {:?}", &wR);
+        println!("prover wO = {:?}", &wO);
 
         let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
         let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
@@ -798,7 +800,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                     //todo I changed this to check if `i` is out of bounds instead of `j`
                     l_poly.coeff_mut(1 + j)[i] = v.1[i]; // TODO: Check, if wit or flat.
                 }
-                debug_assert!(v.1.len() >= n);
+                debug_assert!(v.1.len() <= n);
             }
 
             if i < vars {

@@ -526,8 +526,6 @@ mod veccom_mul_seperate {
         b: LinearCombination<F>,
         ab: LinearCombination<F>,
     ) {
-        let (va, vb, vab) = cs.multiply(a, b);
-        // cs.constrain(vab - ab)
     } 
 
     // Prover's scope
@@ -537,7 +535,7 @@ mod veccom_mul_seperate {
         a: C::ScalarField,
         b: C::ScalarField,
         ab: C::ScalarField,
-    ) -> Result<(R1CSProof<C>, C, C, C, C), R1CSError> {
+    ) -> Result<(R1CSProof<C>, C), R1CSError> {
         let mut transcript = Transcript::new(b"R1CSExampleGadget");
 
         // 1. Create a prover
@@ -546,19 +544,13 @@ mod veccom_mul_seperate {
         let mut rng = rand::thread_rng();
 
         // commit to all inputs in a single commitment
-        let abc: Vec<C::ScalarField> = vec![a, b, ab];
-        
-        let ah = C::ScalarField::rand(&mut rng);
-        let (a_comm, a) = prover.commit(a, ah);
+        let abc: Vec<C::ScalarField> = vec![];
 
-        let bh = C::ScalarField::rand(&mut rng);
-        let (b_comm, b) = prover.commit(b, bh);
-
-        let abh = C::ScalarField::rand(&mut rng);
-        let (ab_comm, ab) = prover.commit(ab, abh);
+        let (a, b, c) = prover.allocate_multiplier(Some((a, b))).unwrap();
 
         // create a veccom
         let h = C::ScalarField::rand(&mut rng);
+
         let (comm, vars) = prover.commit_vec(
             &abc,
             h, 
@@ -570,13 +562,13 @@ mod veccom_mul_seperate {
             &mut prover,
             a.into(),
             b.into(),
-            ab.into()
+            c.into()
         );
 
         // 4. Make a proof
         let proof = prover.prove(bp_gens)?;
 
-        Ok((proof, a_comm, b_comm, ab_comm, comm))
+        Ok((proof, C::zero()))
     }
 
     // Verifier logic
@@ -584,9 +576,6 @@ mod veccom_mul_seperate {
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         proof: R1CSProof<C>,
-        a_comm: C,
-        b_comm: C,
-        ab_comm: C,
         comm: C,
     ) -> Result<(), R1CSError> {
         let mut transcript = Transcript::new(b"R1CSExampleGadget");
@@ -594,19 +583,17 @@ mod veccom_mul_seperate {
         // 1. Create a verifier
         let mut verifier = Verifier::new(&mut transcript);
 
-        let a = verifier.commit(a_comm);
-        let b = verifier.commit(b_comm);
-        let ab = verifier.commit(ab_comm);
+        let (a, b, c) = verifier.allocate_multiplier(None).unwrap();
 
-        // 2. Commit high-level variables
-        let vars: Vec<_> = verifier.commit_vec(3, comm);
+        // 2. Commit high-level variables    
+        let vars: Vec<_> = verifier.commit_vec(0, comm);
 
         // 3. Build a CS
         gadget(
             &mut verifier,
             a.into(),
             b.into(),
-            ab.into(),
+            c.into(),
         );
 
         // 4. Verify the proof
@@ -624,9 +611,9 @@ mod veccom_mul_seperate {
         let pc_gens = PedersenGens::<C>::default();
         let bp_gens = BulletproofGens::<C>::new(20, 1);
 
-        let (proof, comm_a, comm_b, comm_ab, comm) = gadget_proof::<C>(&pc_gens, &bp_gens, a, b, ab)?;
+        let (proof, comm) = gadget_proof::<C>(&pc_gens, &bp_gens, a, b, ab)?;
 
-        gadget_verify::<C>(&pc_gens, &bp_gens, proof, comm_a, comm_b, comm_ab, comm)
+        gadget_verify::<C>(&pc_gens, &bp_gens, proof, comm)
     }
 
     #[test]
