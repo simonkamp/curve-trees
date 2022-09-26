@@ -417,7 +417,7 @@ mod veccom_non_trivial_linear {
 mod veccom_large_linear {
     use super::*;
 
-    const DIM: usize = 0x1000;
+    const DIM: usize = 0x100;
 
     /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
     fn gadget<F: Field, CS: ConstraintSystem<F>>(
@@ -519,6 +519,8 @@ mod veccom_large_linear {
 mod veccom_mul_seperate {
     use super::*;
 
+    const DIM: usize = 0;
+
     /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
     fn gadget<F: Field, CS: ConstraintSystem<F>>(
         cs: &mut CS,
@@ -557,6 +559,8 @@ mod veccom_mul_seperate {
             bp_gens
         );
 
+        assert_eq!(vars.len(), DIM);
+
         // 3. Build a CS
         gadget(
             &mut prover,
@@ -568,7 +572,7 @@ mod veccom_mul_seperate {
         // 4. Make a proof
         let proof = prover.prove(bp_gens)?;
 
-        Ok((proof, C::zero()))
+        Ok((proof, comm))
     }
 
     // Verifier logic
@@ -586,7 +590,9 @@ mod veccom_mul_seperate {
         let (a, b, c) = verifier.allocate_multiplier(None).unwrap();
 
         // 2. Commit high-level variables    
-        let vars: Vec<_> = verifier.commit_vec(0, comm);
+        let vars: Vec<_> = verifier.commit_vec(DIM, comm);
+
+        assert_eq!(vars.len(), DIM);
 
         // 3. Build a CS
         gadget(
@@ -616,9 +622,10 @@ mod veccom_mul_seperate {
         gadget_verify::<C>(&pc_gens, &bp_gens, proof, comm)
     }
 
+
     #[test]
     fn test() {
-        assert!(gadget_roundtrip_helper::<Affine>(5.into(), 5.into(), 25.into()).is_ok());
+        assert!(gadget_roundtrip_helper::<Affine>(0.into(), 0.into(), 0.into()).is_ok());
     }
 }
 

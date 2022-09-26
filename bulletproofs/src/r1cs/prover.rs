@@ -538,8 +538,18 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // this is the 2nd degree term in the case of usual BP
         // however the degree increases linearly with the number of vec-comm
         let offset = self.secrets.vec_open.len();
-        let op_degree = 2 + offset;
-        // println!("op_degree: {}", op_degree);
+
+        // number of commitments
+        let ncomm = self.secrets.vec_open.len();
+
+        // op_degree = 2 + 2 * floor(#comm / 2)
+        let op_degree = 2 + 2 * (ncomm / 2);
+
+        #[cfg(debug_assertions)]
+        {
+            println!("op_degree: {}", op_degree);
+            println!("number of commitments: {}", ncomm);
+        }
 
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
@@ -772,8 +782,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         println!("prover wR = {:?}", &wR);
         println!("prover wO = {:?}", &wO);
 
-        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
-        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, 3 + offset);
+        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, op_degree+1);
+        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, op_degree+1);
 
         let y_inv = y.inverse().unwrap();
 
@@ -789,52 +799,155 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             .chain(s_L2.iter())
             .zip(s_R1.iter().chain(s_R2.iter()));
 
+        debug_assert_eq!(op_degree % 2, 0, "op_degree must be even");
+
+        let mid_degree = op_degree / 2;
+
+        // 1 comm => op_degree = 2
+        // 2 comm => op_degree = 4
+        // 3 comm => op_degree = 4
+        // 4 comm => op_degree = 6
+        // 5 comm => op_degree = 6
+        // etc. 
+        // op_degree = 2 + 2 * floor(#comm / 2)
+
         for (i, (sl, sr)) in sLsR.enumerate() {
-            // l(X) vector-polynomial
+            debug_assert!(i < vars);
+
+            // The first (original) op_degree is 2, which permits a single vector commitment:
+            //
+            // Left:
+            // 0 : com1
+            // 1 : aL + wR
+            // 2 : aO
+            // 3 : sL
+            //            
+            // Right:
+            // 0 : Wo
+            // 1 : aR + wL
+            // 2 : Wc1
+            // 3 : sR
+            //
+            // Since a_L and a_R must be at the same power, only even op_degrees are possible :(
+            // Hence the next valid op_degree is 4, which permits up to 3 vector commitments:
+            //
+            // Left:
+            // 0 : com1
+            // 1 : com2
+            // 2 : aL
+            // 3 : aO
+            // 4 : com3
+            // 5 : sL
+            //            
+            // Right:
+            // 0 : Wc3
+            // 1 : Wo
+            // 2 : aR
+            // 3 : Wc2
+            // 4 : Wc1
+            // 5 : sR
+            //
+            // The next valid op_degree is 6, this permits up to 5 vector commitments:
+            //
+            // Left:
+            // 0 : com1
+            // 1 : com2
+            // 2 : com3
+            // 3 : aL
+            // 4 : aO
+            // 5 : com4
+            // 6 : com5
+            // 7 : sL
+            //
+            // Right:
+            // 0 : Wc5
+            // 1 : Wc4
+            // 2 : Wo
+            // 3 : aR
+            // 4 : Wc3
+            // 5 : Wc2
+            // 6 : Wc1
+            // 7 : sR
+            //
+            // Note that the x^0, x^1 term is zero.
+            // For every additional commitment r_poly degree increases by 2, 
+            // but the number of zero terms increase by 1
+            //
+            // The op_degree is 6, the total degree is 11.
+            //
+            // Left:
+            // 1 : com1
+            // 2 : com2
+            // 3 : com3
+            // 4 : aL
+            // 5 : aO
+            // 6 : -
+            // 7 : -
+            // 8 : -
+            // 9 : sL
+            //
+            // Right:
+            // 3 : Wo
+            // 4 : aR
+            // 5 : Wc3
+            // 6 : Wc2
+            // 7 : Wc1
+            // 8 : -
+            // 9 : sR
+            // 
+            // op_degree is 8
 
             // l_poly.0 = 0
 
-            // l_poly.i = a_Vi
-            for (j, v) in self.secrets.vec_open.iter().enumerate() {
-                if v.1.len() > i {
-                    //todo I changed this to check if `i` is out of bounds instead of `j`
-                    l_poly.coeff_mut(1 + j)[i] = v.1[i]; // TODO: Check, if wit or flat.
-                }
-                debug_assert!(v.1.len() <= n);
-            }
 
-            if i < vars {
-                // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
-                l_poly.coeff_mut(1 + offset)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+            // a_L and a_R constraints:
+            //
+            // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
+            // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
+            l_poly.coeff_mut(mid_degree)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+            r_poly.coeff_mut(mid_degree)[i] = exp_y[i] * self.secrets.a_R[i] + wL[i];
 
-                // l_poly.2 = a_O
-                l_poly.coeff_mut(2 + offset)[i] = self.secrets.a_O[i];
-            }
+            // a_O constraints:
+            //
+            // l_poly.2 = a_O
+            // r_poly.0 = (z * z^Q * W_O) - y^n
+            l_poly.coeff_mut(op_degree)[i] = self.secrets.a_O[i];
+            r_poly.coeff_mut(0)[i] = wO[i] - exp_y[i];
 
+            // masks:
             // l_poly.3 = s_L (mask)
-            l_poly.coeff_mut(3 + offset)[i] = *sl;
-
-            // r(X) vector-polynomial
-
-            if i < vars {
-                // r_poly.0 = (z * z^Q * W_O) - y^n
-                r_poly.coeff_mut(0)[i] = wO[i] - exp_y[i];
-
-                // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
-                r_poly.coeff_mut(1)[i] = exp_y[i] * self.secrets.a_R[i] + wL[i];
-            }
-
-            // r.l_poly.2..
-            for (j, w) in wVCs.iter().enumerate() {
-                r_poly.coeff_mut(2 + j)[i] = w.get(i).cloned().unwrap_or_default();
-            }
+            l_poly.coeff_mut(op_degree+1)[i] = *sl;
+            r_poly.coeff_mut(op_degree+1)[i] = exp_y[i] * sr;
 
             // r_poly.<op_degree> = 0
             debug_assert_eq!(r_poly.coeff(op_degree)[i], C::ScalarField::zero());
             debug_assert_eq!(r_poly.coeff(op_degree + 1)[i], C::ScalarField::zero());
+        }
 
-            // r_poly.3 = y^n * s_R (mask)
-            r_poly.coeff_mut(op_degree + 1)[i] = exp_y[i] * sr; // this is the next high deg. after all the vec. comm coeff.
+        // veccom constraints
+        // 
+        let mut r_deg = 1;
+        for (j, w) in self.secrets.vec_open.iter().enumerate() {
+            // skip mid_degree
+            if r_deg == mid_degree {
+                r_deg += 1;
+            }
+
+            // use next r_deg l_deg, st. r_deg + l_deg = op_degree
+            let l_deg = op_degree - r_deg;
+            #[cfg(debug_assertions)]
+            {
+                println!("veccom {} is in (l_degree = {}, r_degree = {})", j, l_deg, r_deg);
+            }
+
+            // copy values to l_poly r_poly
+            for i in 0..w.1.len() {
+                l_poly.coeff_mut(l_deg)[i] = w.1[i];
+                r_poly.coeff_mut(r_deg)[i] = wVCs[j][i];
+            }
+
+            // go to next term
+            r_deg += 1;
         }
 
         // correct for all the vector commitments
@@ -842,7 +955,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // r(x) <- r(x) * x + w_v
 
         let mut t_poly = util::VecPoly::inner_product(&l_poly, &r_poly);
-        assert_eq!(t_poly.deg(), 6 + 2 * self.secrets.vec_open.len());
+        assert_eq!(t_poly.deg(), 2 * (op_degree + 1));
 
         // commit to t-poly
         let mut t_blinding_poly = util::Poly::zero(t_poly.deg());
@@ -854,7 +967,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // println!("T_{}", d);
         }
 
-        //
+        // commit to t-poly
         let mut T = vec![C::zero(); t_poly.deg() + 1];
         for d in 1..t_poly.deg() + 1 {
             if d == op_degree {
@@ -876,6 +989,14 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");
+
+        // calculate x^op_degree
+        let mut op_x = C::ScalarField::one();
+        for _ in 0..op_degree {
+            op_x *= x;
+        }
+
+        println!("prover: x = {}", x);
 
         t_blinding_poly.coeff()[op_degree] = wV
             .iter()
@@ -942,7 +1063,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             t2 += delta;
 
             assert_eq!(t_poly.coeff()[op_degree], t2, "t_poly term check failed");
-            assert_eq!(t_poly.deg(), 6 + 2 * self.secrets.vec_open.len());
             println!("sanity check passed");
         }
 
@@ -955,6 +1075,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         }
 
         // compute blinding opening of vector commitments
+        // UPDATE
         let e_terms = self
             .secrets
             .vec_open

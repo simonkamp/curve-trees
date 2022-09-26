@@ -468,7 +468,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
     ) -> Result<(Vec<C>, Vec<C::ScalarField>, Vec<C::ScalarField>, usize), R1CSError> {
         // pad
         while self.size() > self.num_vars {
-            self.allocate_multiplier(Some((C::ScalarField::zero(), C::ScalarField::zero())))?;
+            self.allocate_multiplier(None)?;
         }
 
         let n1 = self.size();
@@ -528,6 +528,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");
 
+        println!("verifier: x = {}", x);
+
         // compute powers for vector commitments
         // they are assigned the lowest powers and therefore the coefficients
         // in the combination are correspondingly assigned the highest powers
@@ -564,8 +566,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .take(padded_n)
             .collect::<Vec<C::ScalarField>>();
 
-        let vars = self.num_vars;
-
         let yneg_wR = wR
             .into_iter()
             .zip(y_inv_vec.iter())
@@ -586,8 +586,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let g_scalars = yneg_wR
             .iter()
             .zip(u_for_g.clone())
-            .zip(s.iter().take(padded_n))
-            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i)); // TODO: is this correct?
+            .zip(s.iter().take(padded_n)) // s is from folding
+            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (xoff * x * yneg_wRi - a * s_i)); // TODO: is this correct?
 
         // r(x)
         let mut h_scalars = Vec::with_capacity(padded_n);
@@ -639,7 +639,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let mut T_scalars = vec![]; // [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
         let mut rxn = r;
         for d in 1..t_poly_deg + 1 {
-            rxn *= x;
+            rxn *= x; // starts at x^1
             if d == op_degree {
                 // println!("skip op_degree = {}", op_degree);
                 continue;
@@ -652,11 +652,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         debug_assert!(comm_V.len() == 0 || proof.A_O2 == C::zero());
         debug_assert!(comm_V.len() == 0 || proof.S2 == C::zero());
 
-        debug_assert!(comm_V.len() == 0 || proof.A_I2 == C::zero());
-        debug_assert!(comm_V.len() == 0 || proof.A_O2 == C::zero());
-        debug_assert!(comm_V.len() == 0 || proof.S2 == C::zero());
-
-        let proof_points = comm_V
+        let proof_points = comm_V // veccom in lowest powers
             .into_iter()
             .chain(iter::once(proof.A_I1))
             .chain(iter::once(proof.A_O1))
@@ -670,7 +666,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(proof.ipp_proof.R_vec.iter().cloned())
             .collect();
 
-        let proof_scalars: Vec<C::ScalarField> = scalar_V
+        let proof_scalars: Vec<C::ScalarField> = scalar_V // veccom in lowest powers
             .into_iter()
             .chain(iter::once(xoff * x)) // A_I1
             .chain(iter::once(xoff * xx)) // A_O1
@@ -678,14 +674,14 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(iter::once(xoff * u * x)) // A_I2
             .chain(iter::once(xoff * u * xx)) // A_O2
             .chain(iter::once(xoff * u * xxx)) // S2
-            .chain(wV.iter().map(|wVi| *wVi * rxx * xoff)) // V
+            .chain(wV.iter().map(|wVi| *wVi * rxx * xoff)) // V : at op-degree
             .chain(T_scalars.iter().cloned()) // T_points
             .chain(u_sq.into_iter()) // ipp_proof.L_vec
             .chain(u_inv_sq.into_iter()) // ipp_proof.R_vec
             .collect::<Vec<_>>();
 
         let fixed_point_scalars: Vec<C::ScalarField> =
-            iter::once(w * (proof.t_x - a * b) + r * (xx * xoff * (wc + delta) - proof.t_x)) // B
+            iter::once(w * (proof.t_x - a * b) + r * (xx * xoff * (wc + delta) - proof.t_x)) // B : shift (wc + delta) to the right power
                 .chain(iter::once(-proof.e_blinding - r * proof.t_x_blinding)) // B_blinding
                 .chain(g_scalars) // G
                 .chain(h_scalars) // H
