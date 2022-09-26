@@ -532,8 +532,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             self.allocate_multiplier(Some((C::ScalarField::zero(), C::ScalarField::zero())))?;
         }
 
-        println!("number of constraints: {}", self.secrets.a_L.len());
-
         use crate::util;
         use std::iter;
 
@@ -547,6 +545,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         {
             println!("op_degree: {}", op_degree);
             println!("number of commitments: {}", ncomm);
+            println!("number of constraints: {}", self.secrets.a_L.len());
         }
 
         // Commit a length _suffix_ for the number of high-level variables.
@@ -772,13 +771,17 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // println!("P S2 {}", &S2);
         // println!("P z {}", z);
 
-        println!("Length of constraints vector: {}", self.constraints.len());
+        
         let (wL, wR, wO, wV, wVCs) = self.flattened_constraints(&z);
 
-        println!("prover wVCs = {:?}", &wVCs);
-        println!("prover wL = {:?}", &wL);
-        println!("prover wR = {:?}", &wR);
-        println!("prover wO = {:?}", &wO);
+        #[cfg(debug_assertions)]
+        {
+            println!("Length of constraints vector: {}", self.constraints.len());
+            println!("prover wVCs = {:?}", &wVCs);
+            println!("prover wL = {:?}", &wL);
+            println!("prover wR = {:?}", &wR);
+            println!("prover wO = {:?}", &wO);
+        }
 
         let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, op_degree+1);
         let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, op_degree+1);
@@ -787,9 +790,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         let exp_y_inv = util::exp_iter(y_inv).take(padded_n).collect::<Vec<_>>();
         let exp_y = util::exp_iter(y).take(padded_n).collect::<Vec<_>>();
-
-        let vars = self.secrets.a_L.len();
-        println!("Length of secrets.a_L: {}", vars);
 
         //
         let sLsR = s_L1
@@ -816,7 +816,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         println!("ops = {:?}", &ops[..]);
 
         for (i, (sl, sr)) in sLsR.enumerate() {
-            debug_assert!(i < vars);
+            debug_assert!(i < self.secrets.a_L.len());
 
             // The first (original) op_degree is 2, which permits a single vector commitment:
             //
@@ -1060,10 +1060,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let o_blinding = o_blinding1 + u * o_blinding2;
         let s_blinding = s_blinding1 + u * s_blinding2;
 
-        for (b, _) in self.secrets.vec_open.iter() {
-            println!("blinding {}", b);
-        }
-
         //
         let mut e_terms: Vec<Option<C::ScalarField>> = vec![None; l_poly.deg() + 1];
 
@@ -1132,7 +1128,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             l_vec,
             r_vec,
         );
-        println!("ipp proof l vec len: {}", ipp_proof.L_vec.len());
 
         // We do not yet have a ClearOnDrop wrapper for Vec<Scalar>.
         // When PR 202 [1] is merged, we can simply wrap s_L and s_R at the point of creation.

@@ -669,8 +669,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             T_scalars.push(rxs[d]);
         }
 
-       
-
         debug_assert!(ncomm == 0 || proof.A_I2 == C::zero());
         debug_assert!(ncomm == 0 || proof.A_O2 == C::zero());
         debug_assert!(ncomm == 0 || proof.S2 == C::zero());
