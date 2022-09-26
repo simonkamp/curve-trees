@@ -948,7 +948,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // commit to t-poly
         let mut t_blinding_poly = util::Poly::zero(t_poly.deg());
-        for d in 1..t_poly.deg() + 1 {
+        for d in 0..t_poly.deg() + 1 {
             if d == op_degree {
                 continue;
             }
@@ -958,7 +958,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // commit to t-poly
         let mut T = vec![C::zero(); t_poly.deg() + 1];
-        for d in 1..t_poly.deg() + 1 {
+        for d in 0..t_poly.deg() + 1 {
             if d == op_degree {
                 continue;
             }
@@ -969,7 +969,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // commit to T
         let transcript = self.transcript.borrow_mut();
-        for d in 1..t_poly.deg() + 1 {
+        for d in 0..t_poly.deg() + 1 {
             if d == op_degree {
                 continue;
             }
@@ -985,6 +985,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             op_x *= x;
         }
 
+        #[cfg(debug_assertions)]
         println!("prover: x = {}", x);
 
         t_blinding_poly.coeff()[op_degree] = wV

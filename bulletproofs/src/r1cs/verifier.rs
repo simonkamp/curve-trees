@@ -535,7 +535,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let z = transcript.challenge_scalar::<C>(b"z");
 
         let transcript = self.transcript.borrow_mut();
-        for d in 1..t_poly_deg + 1 {
+        for d in 0..t_poly_deg + 1 {
             if d == op_degree {
                 continue;
             }
@@ -651,9 +651,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             }
         }
         
-        assert_eq!(proof.T[0], C::zero());
-        assert_eq!(proof.T[op_degree], C::zero());
-        assert_eq!(proof.T.len(), t_poly_deg + 1);
+        debug_assert_eq!(proof.T[op_degree], C::zero());
+        debug_assert_eq!(proof.T.len(), t_poly_deg + 1);
 
         // homomorphically evaluate t polynomial at x
         let mut T_points = vec![];
