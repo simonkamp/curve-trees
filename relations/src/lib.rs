@@ -13,4 +13,6 @@ pub mod select;
 // prove that a commitment to x defines a canonical point (x,y)
 pub mod permissible;
 
-pub mod select_rerandomize;
+pub mod select_and_rerandomize;
+
+pub mod coin;

@@ -8,7 +8,7 @@ extern crate bulletproofs;
 use bulletproofs::r1cs::{batch_verify, ConstraintSystem};
 
 extern crate relations;
-use relations::select_rerandomize::*;
+use relations::select_and_rerandomize::*;
 
 extern crate pasta;
 use pasta::{

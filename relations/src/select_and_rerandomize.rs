@@ -27,6 +27,44 @@ pub struct SingleLayerParameters<P: SWModelParameters> {
     pub tables: Vec<Lookup3Bit<2, P::BaseField>>,
 }
 
+impl<P: SWModelParameters> SingleLayerParameters<P> {
+    pub fn commit(&self, v: &[P::ScalarField], v_blinding: P::ScalarField) -> GroupAffine<P> {
+        use std::iter;
+
+        let gens = self.bp_gens.share(0);
+
+        let generators: Vec<_> = iter::once(&self.pc_gens.B_blinding)
+            .chain(gens.G(v.len()))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let scalars: Vec<<P::ScalarField as PrimeField>::BigInt> = iter::once(&v_blinding)
+            .chain(v.iter())
+            .map(|s| {
+                let s: <P::ScalarField as PrimeField>::BigInt = s.clone().into();
+                s
+            })
+            .collect();
+
+        assert_eq!(generators.len(), scalars.len());
+
+        let comm = VariableBaseMSM::multi_scalar_mul(generators.as_slice(), scalars.as_slice());
+        comm.into_affine()
+    }
+
+    pub fn permissible_commitment(
+        &self,
+        v: &[P::ScalarField],
+        v_blinding: P::ScalarField,
+    ) -> (GroupAffine<P>, P::ScalarField) {
+        let commitment = self.commit(v, v_blinding);
+        let (permissible_commitment, offset) = self
+            .uh
+            .permissible_commitment(&commitment, &self.pc_gens.B_blinding);
+        (permissible_commitment, v_blinding + offset)
+    }
+}
+
 pub enum CurveTree<const L: usize, P0: SWModelParameters, P1: SWModelParameters> {
     Even(CurveTreeNode<L, P0, P1>),
     Odd(CurveTreeNode<L, P1, P0>),
@@ -78,17 +116,16 @@ impl<
 
     /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
     /// and proves the Select and rerandomize relation for each level.
-    /// Returns the commitments and the rerandomization scalar of the selected commitment.
-    pub fn select_and_rerandomize_gadget(
+    /// Returns the rerandomized commitments on the path to (and including) the selected leaf and the rerandomization scalar of the selected leaf.
+    pub fn select_and_rerandomize_prover_gadget(
         &self,
         index: usize,
         even_prover: &mut Prover<Transcript, GroupAffine<P0>>,
         odd_prover: &mut Prover<Transcript, GroupAffine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
-    ) -> (Vec<GroupAffine<P0>>, Vec<GroupAffine<P1>>, P0::ScalarField) {
+    ) -> (SelectAndRerandomizePath<P0, P1>, P0::ScalarField) {
         let mut rng = rand::thread_rng();
 
-        // let mut level_index = 0; // todo for now lets always access the first child
         let mut even_commitments = Vec::new();
         let mut odd_commitments = Vec::new();
         let (mut even_internal_node, mut rerandomization_scalar) = match self {
@@ -131,7 +168,82 @@ impl<
         }
 
         // return the commitments and the rerandomization scalar of the leaf.
-        (even_commitments, odd_commitments, rerandomization_scalar)
+        (
+            SelectAndRerandomizePath {
+                even_commitments: even_commitments,
+                odd_commitments: odd_commitments,
+            },
+            rerandomization_scalar,
+        )
+    }
+
+    pub fn select_and_rerandomize_verifier_gadget<T: BorrowMut<Transcript>>(
+        &self,
+        even_verifier: &mut Verifier<T, GroupAffine<P0>>,
+        odd_verifier: &mut Verifier<T, GroupAffine<P1>>,
+        mut randomized_path: SelectAndRerandomizePath<P0, P1>,
+        parameters: &SelRerandParameters<P0, P1>,
+    ) -> GroupAffine<P0> {
+        // todo split into two functions for parallelizability?
+        // todo benchmark time of building circuit vs final verification to estimate gain of parallelizing one or both.
+
+        let (even_commitments, odd_commitments) = match self {
+            Self::Odd(ct) => {
+                assert_eq!(
+                    randomized_path.even_commitments.len(),
+                    randomized_path.odd_commitments.len() + 1
+                );
+                let mut odd_commitments_with_root = vec![ct.commitment];
+                odd_commitments_with_root.append(&mut randomized_path.odd_commitments);
+                (randomized_path.even_commitments, odd_commitments_with_root)
+            }
+            Self::Even(ct) => {
+                assert_eq!(
+                    randomized_path.even_commitments.len(),
+                    randomized_path.odd_commitments.len()
+                );
+                let mut even_commitments_with_root = vec![ct.commitment];
+                even_commitments_with_root.append(&mut randomized_path.even_commitments);
+                (even_commitments_with_root, randomized_path.odd_commitments)
+            }
+        };
+
+        // The last even commitment is a leaf.
+        for i in 0..even_commitments.len() - 1 {
+            let odd_index = if even_commitments.len() == odd_commitments.len() {
+                i + 1
+            } else {
+                i
+            };
+            let variables = even_verifier.commit_vec(256, even_commitments[i]);
+            single_level_select_and_rerandomize(
+                even_verifier,
+                &parameters.c1_parameters,
+                &odd_commitments[odd_index],
+                variables,
+                None,
+                None,
+            );
+        }
+
+        for i in 0..odd_commitments.len() {
+            let even_index = if even_commitments.len() == odd_commitments.len() {
+                i
+            } else {
+                i + 1
+            };
+            let variables = odd_verifier.commit_vec(256, odd_commitments[i]);
+            single_level_select_and_rerandomize(
+                odd_verifier,
+                &parameters.c0_parameters,
+                &even_commitments[even_index],
+                variables,
+                None,
+                None,
+            );
+        }
+
+        even_commitments[even_commitments.len() - 1]
     }
 
     pub fn height(&self) -> usize {
@@ -144,6 +256,36 @@ impl<
     // todo add a function to increase capacity/height
 
     //todo add a function to add a single/several commitments
+}
+
+pub struct SelectAndRerandomizePath<P0: SWModelParameters, P1: SWModelParameters> {
+    pub even_commitments: Vec<GroupAffine<P0>>,
+    pub odd_commitments: Vec<GroupAffine<P1>>,
+}
+
+impl<P0: SWModelParameters, P1: SWModelParameters> CanonicalSerialize
+    for SelectAndRerandomizePath<P0, P1>
+{
+    fn serialized_size(&self) -> usize {
+        self.even_commitments.serialized_size() + self.odd_commitments.serialized_size()
+    }
+
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.even_commitments.serialize(&mut writer)?;
+        self.odd_commitments.serialize(&mut writer)?;
+        Ok(())
+    }
+}
+
+impl<P0: SWModelParameters, P1: SWModelParameters> CanonicalDeserialize
+    for SelectAndRerandomizePath<P0, P1>
+{
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        Ok(Self {
+            even_commitments: Vec::<GroupAffine<P0>>::deserialize(&mut reader)?,
+            odd_commitments: Vec::<GroupAffine<P1>>::deserialize(&mut reader)?,
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -219,8 +361,10 @@ impl<
                         .collect::<Vec<_>>()
                         .as_slice(),
                     self.randomness + rerandomization_scalar,
+                    // todo we should not need the prover to commit to the root, i.e. the rerandomization scalar should be an option
                     &even_parameters.bp_gens,
                 );
+                println!("Committed to {:?}", rerandomized_commitment);
                 commitments.push(rerandomized_commitment);
                 let child_commitment = child.commitment;
                 let mut blinding_base = odd_parameters.pc_gens.B_blinding.into_projective();
@@ -284,15 +428,8 @@ impl<
                 }
             })
             .collect::<Vec<_>>();
-        let c_init = vector_commitment(
-            children_commitments.as_slice(),
-            P0::ScalarField::zero(),
-            &parameters.bp_gens,
-            &parameters.pc_gens,
-        );
         let (c, r) = parameters
-            .uh
-            .permissible_commitment(&c_init, &parameters.pc_gens.B_blinding);
+            .permissible_commitment(children_commitments.as_slice(), P0::ScalarField::zero());
 
         Self {
             commitment: c,
@@ -385,35 +522,6 @@ impl<P0: SWModelParameters, P1: SWModelParameters> CanonicalDeserialize for SelR
     }
 }
 
-fn vector_commitment<C: AffineCurve>(
-    v: &[C::ScalarField],
-    v_blinding: C::ScalarField,
-    bp_gens: &BulletproofGens<C>,
-    pc_gens: &PedersenGens<C>,
-) -> C {
-    use std::iter;
-
-    let gens = bp_gens.share(0);
-
-    let generators: Vec<_> = iter::once(&pc_gens.B_blinding)
-        .chain(gens.G(v.len()))
-        .cloned()
-        .collect::<Vec<_>>();
-
-    let scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = iter::once(&v_blinding)
-        .chain(v.iter())
-        .map(|s| {
-            let s: <C::ScalarField as PrimeField>::BigInt = s.clone().into();
-            s
-        })
-        .collect();
-
-    assert_eq!(generators.len(), scalars.len());
-
-    let comm = VariableBaseMSM::multi_scalar_mul(generators.as_slice(), scalars.as_slice());
-    comm.into_affine()
-}
-
 pub struct SelRerandParameters<P0: SWModelParameters, P1: SWModelParameters> {
     pub c0_parameters: SingleLayerParameters<P0>,
     pub c1_parameters: SingleLayerParameters<P1>,
@@ -495,19 +603,10 @@ pub fn prove_from_mock_curve_tree<
             .chain(iter::from_fn(|| Some(P1::ScalarField::rand(&mut rng))).take(255))
             .collect();
         // Build the first internal node: a vector commitment to the leaves.
-        let c0_r = P1::ScalarField::rand(&mut rng);
-        let c0 = vector_commitment(
-            leaves.as_slice(),
-            c0_r,
-            &srp.c1_parameters.bp_gens,
-            &srp.c1_parameters.pc_gens,
-        );
         // The internal node must also be a permissible commitment.
-        let (c0, r) = srp
+        let (c0, c0_r) = srp
             .c1_parameters
-            .uh
-            .permissible_commitment(&c0, &srp.c1_parameters.pc_gens.B_blinding);
-        let c0_r = c0_r + r;
+            .permissible_commitment(leaves.as_slice(), P1::ScalarField::rand(&mut rng));
         let c0_rerandomization_offset = P1::ScalarField::rand(&mut rng);
         let (c0_rerand, c0_rerand_vars) = vesta_prover.commit_vec(
             leaves.as_slice(),
@@ -531,19 +630,9 @@ pub fn prove_from_mock_curve_tree<
             .chain(iter::from_fn(|| Some(P0::ScalarField::rand(&mut rng))).take(255))
             .collect();
         // Build the internal node: a vector commitment to the children.
-        let c1_init_randomness = P0::ScalarField::rand(&mut rng);
-        let c1 = vector_commitment(
-            rt1.as_slice(),
-            c1_init_randomness,
-            &srp.c0_parameters.bp_gens,
-            &srp.c0_parameters.pc_gens,
-        );
-        // Rerandomize the internal node to get a permissible point.
-        let (c1, r) = srp
+        let (c1, c1_permissible_randomness) = srp
             .c0_parameters
-            .uh
-            .permissible_commitment(&c1, &srp.c0_parameters.pc_gens.B_blinding);
-        let c1_permissible_randomness = c1_init_randomness + r;
+            .permissible_commitment(rt1.as_slice(), P0::ScalarField::rand(&mut rng));
         // Rerandomize the commitment so we can show membership without revealing the branch we are in.
         let c1_rerandomization_offset = P0::ScalarField::rand(&mut rng);
         let (c1_rerand, c1_rerand_vars) = pallas_prover.commit_vec(
@@ -567,19 +656,10 @@ pub fn prove_from_mock_curve_tree<
             .chain(iter::from_fn(|| Some(P1::ScalarField::rand(&mut rng))).take(255))
             .collect();
         // Build the internal node: a vector commitment to the children.
-        let c2_init_randomness = P1::ScalarField::rand(&mut rng);
-        let c2 = vector_commitment(
-            rt2.as_slice(),
-            c2_init_randomness,
-            &srp.c1_parameters.bp_gens,
-            &srp.c1_parameters.pc_gens,
-        );
         // Rerandomize the internal node to get a permissible point.
-        let (c2, r) = srp
+        let (c2, c2_permissible_randomness) = srp
             .c1_parameters
-            .uh
-            .permissible_commitment(&c2, &srp.c1_parameters.pc_gens.B_blinding);
-        let c2_permissible_randomness = c2_init_randomness + r;
+            .permissible_commitment(rt2.as_slice(), P1::ScalarField::rand(&mut rng));
         // Rerandomize the commitment so we can show membership without revealing the branch we are in.
         let c2_rerandomization_offset = P1::ScalarField::rand(&mut rng);
         let (c2_rerand, c2_rerand_vars) = vesta_prover.commit_vec(
@@ -605,18 +685,9 @@ pub fn prove_from_mock_curve_tree<
             .collect();
         // Build the internal node: a vector commitment to the children.
         let c3_init_randomness = P0::ScalarField::rand(&mut rng);
-        let c3 = vector_commitment(
-            rt3.as_slice(),
-            c3_init_randomness,
-            &srp.c0_parameters.bp_gens,
-            &srp.c0_parameters.pc_gens,
-        );
-        // Rerandomize the internal node to get a permissible point.
-        let (c3, r) = srp
+        let (c3, c3_permissible_randomness) = srp
             .c0_parameters
-            .uh
-            .permissible_commitment(&c3, &srp.c0_parameters.pc_gens.B_blinding);
-        let c3_permissible_randomness = c3_init_randomness + r;
+            .permissible_commitment(rt3.as_slice(), c3_init_randomness);
         // c3 is the root, and does not need to be hidden.
         let (c3_r, c3_vars) = pallas_prover.commit_vec(
             rt3.as_slice(),
@@ -703,57 +774,6 @@ pub fn verification_circuit<
     (pallas_verifier, vesta_verifier)
 }
 
-fn select_and_rerandomize_verification_gadget<
-    P0: SWModelParameters,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField>,
-    T: BorrowMut<Transcript>,
->(
-    even_commitments: &Vec<GroupAffine<P0>>,
-    odd_commitments: &Vec<GroupAffine<P1>>,
-    even_verifier: &mut Verifier<T, GroupAffine<P0>>,
-    odd_verifier: &mut Verifier<T, GroupAffine<P1>>,
-    parameters: &SelRerandParameters<P0, P1>,
-) {
-    // todo split into two functions for parallelizability?
-    // todo benchmark time of building circuit vs final verification to estimate gain of parallelizing one or both.
-    assert!(even_commitments.len() >= odd_commitments.len());
-    assert!(even_commitments.len() <= odd_commitments.len() + 1);
-
-    // The last even commitment is a leaf.
-    for i in 0..even_commitments.len() - 1 {
-        let odd_index = if even_commitments.len() == odd_commitments.len() {
-            i + 1
-        } else {
-            i
-        };
-        let variables = even_verifier.commit_vec(256, even_commitments[i]);
-        single_level_select_and_rerandomize(
-            even_verifier,
-            &parameters.c1_parameters,
-            &odd_commitments[odd_index],
-            variables,
-            None,
-            None,
-        );
-    }
-
-    for i in 0..odd_commitments.len() {
-        let even_index = if even_commitments.len() == odd_commitments.len() {
-            i
-        } else {
-            i + 1
-        };
-        let variables = odd_verifier.commit_vec(256, odd_commitments[i]);
-        single_level_select_and_rerandomize(
-            odd_verifier,
-            &parameters.c0_parameters,
-            &even_commitments[even_index],
-            variables,
-            None,
-            None,
-        );
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -882,8 +902,13 @@ mod tests {
         );
         assert_eq!(curve_tree.height(), 4);
 
-        let (pallas_commitments, vesta_commitments, rerandomization_scalar) = curve_tree
-            .select_and_rerandomize_gadget(0, &mut pallas_prover, &mut vesta_prover, &sr_params);
+        let (path_commitments, rerandomization_scalar) = curve_tree
+            .select_and_rerandomize_prover_gadget(
+                0,
+                &mut pallas_prover,
+                &mut vesta_prover,
+                &sr_params,
+            );
 
         let pallas_proof = pallas_prover
             .prove(&sr_params.c0_parameters.bp_gens)
@@ -898,23 +923,21 @@ mod tests {
             let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            select_and_rerandomize_verification_gadget(
-                &pallas_commitments,
-                &vesta_commitments,
+            let _rerandomized_leaf = curve_tree.select_and_rerandomize_verifier_gadget(
                 &mut pallas_verifier,
                 &mut vesta_verifier,
+                path_commitments,
                 &sr_params,
-            );
-
-            pallas_verifier.verify(
-                &pallas_proof,
-                &sr_params.c0_parameters.pc_gens,
-                &sr_params.c0_parameters.bp_gens,
             );
             vesta_verifier.verify(
                 &vesta_proof,
                 &sr_params.c1_parameters.pc_gens,
                 &sr_params.c1_parameters.bp_gens,
+            );
+            pallas_verifier.verify(
+                &pallas_proof,
+                &sr_params.c0_parameters.pc_gens,
+                &sr_params.c0_parameters.bp_gens,
             );
         }
     }

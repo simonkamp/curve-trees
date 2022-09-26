@@ -11,6 +11,10 @@ ark-ec = { version = "0.3.0", features = [ "parallel" ] }
 ark-serialize = { version = "0.3.0" } 
 ark-std = { version = "0.3.0", features = [ "parallel" ] }
 merlin = { version = "2", default-features = false }
+rust-crypto = "^0.2"
+ark-crypto-primitives = { version = "0.3.0" } 
+digest = "0.9"
+blake2 = "0.9"
 
 [dev-dependencies]
 criterion = "0.3"
