@@ -20,3 +20,24 @@ pub use self::prover::Prover;
 pub use self::verifier::{batch_verify, Verifier};
 
 pub use crate::errors::R1CSError;
+
+fn op_splits(op_deg: usize) -> Vec<(usize, usize)> {
+    debug_assert_eq!(op_deg % 2, 0);
+    let mid = op_deg / 2;
+
+    // the first two are special
+    let mut op_splits = vec![(0, 0); op_deg];
+    op_splits[0] = (mid, mid);
+    op_splits[1] = (op_deg, 0);
+
+    // all other deg splits
+    for r_deg in 1..op_deg+1 {
+        if r_deg == mid { // already taken
+            continue;
+        }
+        let l_deg = op_deg - r_deg;
+        op_splits.push((l_deg, r_deg));
+    } 
+
+    op_splits
+}

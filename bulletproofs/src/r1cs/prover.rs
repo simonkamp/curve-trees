@@ -20,6 +20,8 @@ use crate::inner_product_proof::InnerProductProof;
 use crate::r1cs::Metrics;
 use crate::transcript::TranscriptProtocol;
 
+use super::op_splits;
+
 /// A [`ConstraintSystem`] implementation for use by the prover.
 ///
 /// The prover commits high-level variables and their blinding factors `(v, v_blinding)`,
@@ -535,10 +537,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         use crate::util;
         use std::iter;
 
-        // this is the 2nd degree term in the case of usual BP
-        // however the degree increases linearly with the number of vec-comm
-        let offset = self.secrets.vec_open.len();
-
         // number of commitments
         let ncomm = self.secrets.vec_open.len();
 
@@ -811,6 +809,12 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // etc. 
         // op_degree = 2 + 2 * floor(#comm / 2)
 
+        let ops = op_splits(op_degree);
+        let veccom_ops = &ops[2..];
+
+        #[cfg(debug_assertions)]
+        println!("ops = {:?}", &ops[..]);
+
         for (i, (sl, sr)) in sLsR.enumerate() {
             debug_assert!(i < vars);
 
@@ -899,60 +903,45 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
             // l_poly.0 = 0
 
-
             // a_L and a_R constraints:
             //
             // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
             // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
-            l_poly.coeff_mut(mid_degree)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
-            r_poly.coeff_mut(mid_degree)[i] = exp_y[i] * self.secrets.a_R[i] + wL[i];
+            debug_assert_eq!(l_poly.coeff_mut(mid_degree)[i], C::ScalarField::zero());
+            debug_assert_eq!(r_poly.coeff_mut(mid_degree)[i], C::ScalarField::zero());
+            l_poly.coeff_mut(ops[0].0)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+            r_poly.coeff_mut(ops[0].1)[i] = exp_y[i] * self.secrets.a_R[i] + wL[i];
 
             // a_O constraints:
             //
             // l_poly.2 = a_O
             // r_poly.0 = (z * z^Q * W_O) - y^n
-            l_poly.coeff_mut(op_degree)[i] = self.secrets.a_O[i];
-            r_poly.coeff_mut(0)[i] = wO[i] - exp_y[i];
+            debug_assert_eq!(l_poly.coeff_mut(op_degree)[i], C::ScalarField::zero());
+            debug_assert_eq!(r_poly.coeff_mut(0)[i], C::ScalarField::zero());
+            l_poly.coeff_mut(ops[1].0)[i] = self.secrets.a_O[i];
+            r_poly.coeff_mut(ops[1].1)[i] = wO[i] - exp_y[i];
 
             // masks:
             // l_poly.3 = s_L (mask)
+            debug_assert_eq!(l_poly.coeff_mut(op_degree+1)[i], C::ScalarField::zero());
+            debug_assert_eq!(r_poly.coeff_mut(op_degree+1)[i], C::ScalarField::zero());
             l_poly.coeff_mut(op_degree+1)[i] = *sl;
             r_poly.coeff_mut(op_degree+1)[i] = exp_y[i] * sr;
-
-            // r_poly.<op_degree> = 0
-            debug_assert_eq!(r_poly.coeff(op_degree)[i], C::ScalarField::zero());
-            debug_assert_eq!(r_poly.coeff(op_degree + 1)[i], C::ScalarField::zero());
         }
 
         // veccom constraints
-        // 
-        let mut r_deg = 1;
         for (j, w) in self.secrets.vec_open.iter().enumerate() {
-            // skip mid_degree
-            if r_deg == mid_degree {
-                r_deg += 1;
-            }
-
-            // use next r_deg l_deg, st. r_deg + l_deg = op_degree
-            let l_deg = op_degree - r_deg;
-            #[cfg(debug_assertions)]
-            {
-                println!("veccom {} is in (l_degree = {}, r_degree = {})", j, l_deg, r_deg);
-            }
+            //
+            let (l_deg, r_deg) = veccom_ops[j];
 
             // copy values to l_poly r_poly
             for i in 0..w.1.len() {
+                debug_assert_eq!(l_poly.coeff_mut(l_deg)[i], C::ScalarField::zero());
+                debug_assert_eq!(r_poly.coeff_mut(r_deg)[i], C::ScalarField::zero());
                 l_poly.coeff_mut(l_deg)[i] = w.1[i];
                 r_poly.coeff_mut(r_deg)[i] = wVCs[j][i];
             }
-
-            // go to next term
-            r_deg += 1;
         }
-
-        // correct for all the vector commitments
-        // l(x) <- l(x) x^d * a_v
-        // r(x) <- r(x) * x + w_v
 
         let mut t_poly = util::VecPoly::inner_product(&l_poly, &r_poly);
         assert_eq!(t_poly.deg(), 2 * (op_degree + 1));
@@ -1074,21 +1063,40 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             println!("blinding {}", b);
         }
 
-        // compute blinding opening of vector commitments
-        // UPDATE
-        let e_terms = self
-            .secrets
-            .vec_open
-            .iter()
-            .map(|(b, _)| b.clone()) // lowest powers
-            .chain(iter::once(i_blinding)) // xoff * x
-            .chain(iter::once(o_blinding)) // xoff * x^2
-            .chain(iter::once(s_blinding)); // xoff * x^3
+        //
+        let mut e_terms: Vec<Option<C::ScalarField>> = vec![None; l_poly.deg() + 1];
 
+        // special
+        debug_assert_eq!(ops[0].0, ops[0].1);
+        e_terms[ops[0].0] = Some(i_blinding); // aL || aR
+        e_terms[ops[1].0] = Some(o_blinding); // aO
+
+        // veccom
+        for j in 0..ncomm {
+            debug_assert!(e_terms[veccom_ops[j].0].is_none());
+            e_terms[veccom_ops[j].0] = Some(self.secrets.vec_open[j].0);
+        }
+        
+        // blinding
+        e_terms[op_degree + 1] = Some(s_blinding); // sL || sR
+
+        #[cfg(debug_assertions)]
+        {
+            for i in 0..e_terms.len() {
+                println!("e_terms, x^{} = {:?}", i, e_terms[i]);
+            }
+        }
+
+        // evaluate blinding
         let mut e_blinding = C::ScalarField::zero();
-        for bnd in e_terms.rev() {
-            e_blinding += bnd;
-            e_blinding *= x;
+        {
+            let mut xn = C::ScalarField::one();
+            for bnd in e_terms.into_iter() {
+                if let Some(val) = bnd {
+                    e_blinding += xn * val;
+                }
+                xn *= x;
+            }
         }
 
         transcript.append_scalar::<C>(b"t_x", &t_x);

@@ -18,6 +18,8 @@ use crate::generators::{BulletproofGens, PedersenGens};
 use crate::r1cs::Metrics;
 use crate::transcript::TranscriptProtocol;
 
+use super::op_splits;
+
 /// A [`ConstraintSystem`] implementation for use by the verifier.
 ///
 /// The verifier adds high-level variable commitments to the transcript,
@@ -480,8 +482,24 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let transcript = self.transcript.borrow_mut();
         transcript.append_u64(b"m", self.V.len() as u64);
 
-        let op_degree = 2 + self.vec_comms.len();
-        let t_poly_deg = 6 + 2 * self.vec_comms.len();
+        // number of commitments
+        let ncomm = self.vec_comms.len();
+
+        // op_degree = 2 + 2 * floor(#comm / 2)
+        let op_degree = 2 + 2 * (ncomm / 2);
+        let t_poly_deg = 2 * (op_degree+1);
+        let ops = op_splits(op_degree);
+
+        #[cfg(debug_assertions)]
+        {
+            println!("op_degree = {}", op_degree);
+            println!("t_poly_deg = {}", t_poly_deg);
+            println!("ops = {:?}", &ops);
+        }
+
+        let op_aLaR = ops[0];
+        let op_aO = ops[1];
+        let op_vec = &ops[2..];
 
         debug_assert_eq!(t_poly_deg + 1, proof.T.len());
 
@@ -533,13 +551,18 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         // compute powers for vector commitments
         // they are assigned the lowest powers and therefore the coefficients
         // in the combination are correspondingly assigned the highest powers
-        let mut xoff = C::ScalarField::one(); // xoff = x^{op_degree - 2}
-        let mut comm_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
-        let mut scalar_V: Vec<_> = Vec::with_capacity(self.vec_comms.len());
-        for (comm, _dim) in self.vec_comms.iter() {
-            xoff *= x;
-            comm_V.push(comm.clone());
-            scalar_V.push(xoff);
+
+        let mut rng = rand::thread_rng();
+        let r = C::ScalarField::rand(&mut rng);
+
+        // precompute x powers
+        let mut xs: Vec<C::ScalarField> = vec![C::ScalarField::zero(); t_poly_deg + 1];
+        let mut rxs: Vec<C::ScalarField> = vec![C::ScalarField::zero(); t_poly_deg + 1];
+        xs[0] = C::ScalarField::one();
+        rxs[0] = r;
+        for i in 1..xs.len() {
+            xs[i] = xs[i-1] * x;
+            rxs[i] = rxs[i-1] * x;
         }
 
         transcript.append_scalar::<C>(b"t_x", &proof.t_x);
@@ -550,6 +573,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         let (wL, wR, wO, wV, wVCs, wc) = self.flattened_constraints(&z);
 
+        #[cfg(debug_assertions)]
         println!("verifier wVCs = {:?}", &wVCs);
 
         // Get IPP variables
@@ -581,13 +605,14 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         let mut u_for_h = u_for_g.clone();
 
-        // define parameters for P check
+        debug_assert_eq!(op_aLaR.0, op_aLaR.1);
+        let xwR = xs[op_aLaR.0];
 
         let g_scalars = yneg_wR
             .iter()
             .zip(u_for_g.clone())
             .zip(s.iter().take(padded_n)) // s is from folding
-            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (xoff * x * yneg_wRi - a * s_i)); // TODO: is this correct?
+            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (xwR * yneg_wRi - a * s_i));
 
         // r(x)
         let mut h_scalars = Vec::with_capacity(padded_n);
@@ -601,59 +626,64 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 let y_inv = y_inv_vec.next().unwrap();
                 let u_or_1 = u_for_h.next().unwrap();
 
+                let si = s.next().unwrap();
                 let wLi = wL.next().unwrap_or_default();
                 let wOi = wO.next().unwrap_or_default();
 
-                let si = s.next().unwrap();
+                // compute right polynomial combination
+                let mut comb = C::ScalarField::zero();
+                {
+                    // special terms
+                    comb += xs[op_aLaR.1] * wLi;
+                    comb += xs[op_aO.1] * wOi;
 
-                let mut comb = x * wLi + wOi;
-
-                // add terms for vector commitments (higher degrees)
-                // TODO: this is bugged for multiple vec-com, but it should work for 1.
-                let mut xn = x * x;
-                for j in 0..wVCs.len() {
-                    println!("i = {}, {}", i, wVCs[j].get(i).cloned().unwrap_or_default());
-                    comb += xn * wVCs[j].get(i).cloned().unwrap_or_default();
-                    xn = xn * x;
+                    // add terms for vector commitments (higher degrees).
+                    for j in 0..wVCs.len() {
+                        let wVCji = wVCs[j].get(i).cloned().unwrap_or_default();
+                        comb += xs[op_vec[j].1] * wVCji;
+                    }
                 }
 
-                // y^{-n} o (w_L * x^2 + w_O * x + w_VCi)
+                // y^{-n} o (w_O + w_L * x + w_VCi * x^2)
                 let res = u_or_1 * (y_inv * (comb - b * si) - C::ScalarField::one());
 
                 h_scalars.push(res);
             }
         }
-
-        let mut rng = rand::thread_rng();
-        let r = C::ScalarField::rand(&mut rng);
-        let xx = x * x;
-        let rxx = r * xx;
-        let xxx = x * xx;
-
+        
         assert_eq!(proof.T[0], C::zero());
         assert_eq!(proof.T[op_degree], C::zero());
         assert_eq!(proof.T.len(), t_poly_deg + 1);
 
         // homomorphically evaluate t polynomial at x
         let mut T_points = vec![];
-        let mut T_scalars = vec![]; // [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
-        let mut rxn = r;
-        for d in 1..t_poly_deg + 1 {
-            rxn *= x; // starts at x^1
+        let mut T_scalars = vec![];
+        for d in 0..t_poly_deg + 1 {
             if d == op_degree {
-                // println!("skip op_degree = {}", op_degree);
                 continue;
             }
+            #[cfg(debug_assertions)]
+            {
+                println!("T[{}]: {} {}", d, proof.T[d].clone(), rxs[d]);
+            }
             T_points.push(proof.T[d].clone());
-            T_scalars.push(rxn);
+            T_scalars.push(rxs[d]);
         }
 
-        debug_assert!(comm_V.len() == 0 || proof.A_I2 == C::zero());
-        debug_assert!(comm_V.len() == 0 || proof.A_O2 == C::zero());
-        debug_assert!(comm_V.len() == 0 || proof.S2 == C::zero());
+       
 
-        let proof_points = comm_V // veccom in lowest powers
-            .into_iter()
+        debug_assert!(ncomm == 0 || proof.A_I2 == C::zero());
+        debug_assert!(ncomm == 0 || proof.A_O2 == C::zero());
+        debug_assert!(ncomm == 0 || proof.S2 == C::zero());
+
+        let xI = xs[op_aLaR.0];
+        let xO = xs[op_aO.0];
+        let xS = xs[op_degree + 1];
+
+        let vscalar = (0..ncomm).map(|j| xs[op_vec[j].0]);
+        let vcomm = self.vec_comms.iter().cloned().map(|(comm, _)| comm);
+
+        let proof_points = vcomm
             .chain(iter::once(proof.A_I1))
             .chain(iter::once(proof.A_O1))
             .chain(iter::once(proof.S1))
@@ -666,22 +696,21 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(proof.ipp_proof.R_vec.iter().cloned())
             .collect();
 
-        let proof_scalars: Vec<C::ScalarField> = scalar_V // veccom in lowest powers
-            .into_iter()
-            .chain(iter::once(xoff * x)) // A_I1
-            .chain(iter::once(xoff * xx)) // A_O1
-            .chain(iter::once(xoff * xxx)) // S1
-            .chain(iter::once(xoff * u * x)) // A_I2
-            .chain(iter::once(xoff * u * xx)) // A_O2
-            .chain(iter::once(xoff * u * xxx)) // S2
-            .chain(wV.iter().map(|wVi| *wVi * rxx * xoff)) // V : at op-degree
+        let proof_scalars = vscalar
+            .chain(iter::once(xI)) // A_I1
+            .chain(iter::once(xO)) // A_O1
+            .chain(iter::once(xS)) // S1
+            .chain(iter::once(xI * u)) // A_I2
+            .chain(iter::once(xO * u)) // A_O2
+            .chain(iter::once(xS * u)) // S2
+            .chain(wV.iter().map(|wVi| *wVi * rxs[op_degree])) // V : at op-degree
             .chain(T_scalars.iter().cloned()) // T_points
             .chain(u_sq.into_iter()) // ipp_proof.L_vec
             .chain(u_inv_sq.into_iter()) // ipp_proof.R_vec
             .collect::<Vec<_>>();
 
         let fixed_point_scalars: Vec<C::ScalarField> =
-            iter::once(w * (proof.t_x - a * b) + r * (xx * xoff * (wc + delta) - proof.t_x)) // B : shift (wc + delta) to the right power
+            iter::once(w * (proof.t_x - a * b) + r * (xs[op_degree] * (wc + delta) - proof.t_x)) // B : shift (wc + delta) to the right power
                 .chain(iter::once(-proof.e_blinding - r * proof.t_x_blinding)) // B_blinding
                 .chain(g_scalars) // G
                 .chain(h_scalars) // H
