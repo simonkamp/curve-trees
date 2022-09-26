@@ -44,25 +44,35 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
         rng: &mut R,
         prover: &mut Prover<Transcript, GroupAffine<P0>>,
     ) -> (Coin<P0, C>, GroupAffine<P0>, Variable<P0::ScalarField>) {
+        let (coin, coin_commitment) = Self::new(value, pk, parameters, sr_parameters, rng);
+
+        let (coin_commitment, variables) = prover.commit_vec(
+            &[P0::ScalarField::from(value), coin.tag],
+            coin.permissible_randomness,
+            &sr_parameters.bp_gens,
+        );
+        range_proof(prover, variables[0].into(), Some(value), 64); // todo what range do we want to enforce? Table of benchmarks for different powers?
+
+        (coin, coin_commitment, variables[0])
+    }
+
+    pub fn new<R: Rng>(
+        value: u64,
+        pk: &PublicKey<C>,
+        parameters: &Parameters<C, Blake2s>,
+        sr_parameters: &SingleLayerParameters<P0>,
+        rng: &mut R,
+    ) -> (Coin<P0, C>, GroupAffine<P0>) {
         let random_scalar = C::ScalarField::rand(rng);
         let mut randomness = Vec::new();
         random_scalar.write(&mut randomness);
         let randomized_pk = Schnorr::randomize_public_key(parameters, pk, &randomness).unwrap();
-        // let mut pk_bytes = Vec::new();
-        // randomized_pk.write(&mut pk_bytes);
-        // let output_tag = element_from_bytes_stat::<P0::ScalarField>(&pk_bytes);
+
         let output_tag = Self::pk_to_scalar(&randomized_pk);
-        let (_coin, permissible_randomness) = sr_parameters.permissible_commitment(
+        let (coin_commitment, permissible_randomness) = sr_parameters.permissible_commitment(
             &[P0::ScalarField::from(value), output_tag],
             P0::ScalarField::rand(rng),
         );
-
-        let (coin_commitment, variables) = prover.commit_vec(
-            &[P0::ScalarField::from(value), output_tag],
-            permissible_randomness,
-            &sr_parameters.bp_gens,
-        );
-        range_proof(prover, variables[0].into(), Some(value), 64); // todo what range do we want to enforce? Table of benchmarks for different powers?
 
         (
             Coin {
@@ -72,7 +82,6 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
                 pk_randomness: random_scalar,
             },
             coin_commitment,
-            variables[0],
         )
     }
 
@@ -84,13 +93,10 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
 
     pub fn prove_spend<
         const L: usize,
-        // P0: SWModelParameters + Clone,
         P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
-        // C: ProjectiveCurve,
     >(
         &self,
         index: usize,
-        // coin_aux: Coin<P0, C>,
         even_prover: &mut Prover<Transcript, GroupAffine<P0>>,
         odd_prover: &mut Prover<Transcript, GroupAffine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
@@ -109,7 +115,6 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
             &parameters.c0_parameters.bp_gens,
         );
 
-        // todo we could explicitly remove the tag from the commitment by subtracting G_t * tag, but it would still add a vector commitment to the proof, because we are using separate generators.
         even_prover.constrain(variables[1] - self.tag);
 
         (path, variables[0])
@@ -485,5 +490,84 @@ mod tests {
         let randomized_pk = Schnorr::randomize_public_key(&parameters, &pk, &randomness).unwrap();
         let res = Schnorr::verify(&parameters, &randomized_pk, msg, &randomized_sig).unwrap();
         assert_eq!(res, true);
+    }
+
+    #[test]
+    pub fn test_pour() {
+        let mut rng = rand::thread_rng();
+        let generators_length = 1 << 12; // minimum sufficient power of 2
+
+        let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+            generators_length,
+            &mut rng,
+        );
+
+        let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+
+        let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+
+        let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
+        let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
+
+        // Curve tree with two coins
+        let (coin_aux_0, coin_0) = Coin::<PallasParameters, PallasP>::new(
+            19,
+            &pk,
+            &schnorr_parameters,
+            &sr_params.c0_parameters,
+            &mut rng,
+        );
+        let (coin_aux_1, coin_1) = Coin::<PallasParameters, PallasP>::new(
+            23,
+            &pk,
+            &schnorr_parameters,
+            &sr_params.c0_parameters,
+            &mut rng,
+        );
+        let set = vec![coin_0, coin_1];
+        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+            &set,
+            &sr_params,
+            Some(4),
+        );
+        assert_eq!(curve_tree.height(), 4);
+
+        let receiver_pk_0 = pk;
+        let receiver_pk_1 = pk;
+
+        let proof = prove_pour(
+            pallas_prover,
+            vesta_prover,
+            &sr_params,
+            &curve_tree,
+            0,
+            coin_aux_0,
+            1,
+            coin_aux_1,
+            11,
+            receiver_pk_0,
+            31,
+            receiver_pk_1,
+            &schnorr_parameters,
+            &mut rng,
+        );
+
+        {
+            let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut pallas_verifier = Verifier::new(pallas_transcript);
+            let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut vesta_verifier = Verifier::new(vesta_transcript);
+
+            proof.verification_gadget(
+                &mut pallas_verifier,
+                &mut vesta_verifier,
+                &sr_params,
+                &curve_tree,
+            );
+        }
     }
 }
