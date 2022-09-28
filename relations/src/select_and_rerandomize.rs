@@ -86,21 +86,21 @@ impl<
             panic!("The curve tree must have at least one leaf.")
         }
         // Convert each commitment to a leaf.
-        let mut forest_length = (set.len() + L - 1) / L;
+        let mut forest_length = set.len();
+        let mut next_forest_length = (forest_length + L - 1) / L;
         let mut even_forest = Vec::with_capacity(forest_length);
         for leaf in set {
             even_forest.push(CurveTreeNode::<L, P0, P1>::leaf(*leaf));
         }
-        let mut current_height = 0;
         while forest_length > 1 {
-            current_height += 1;
-            forest_length = (forest_length + L - 1) / L;
-            println!("height {}", current_height);
             // Combine forest of trees with even roots, into a forest of trees with odd roots.
-            let mut odd_forest = Vec::with_capacity(forest_length);
-            for i in 0..forest_length {
+            let mut odd_forest = Vec::with_capacity(next_forest_length);
+            for i in 0..next_forest_length {
                 let mut chunk = Vec::new();
-                for j in i * forest_length..(i + 1) * forest_length {
+                for j in i * L..(i + 1) * L {
+                    if j >= forest_length {
+                        break;
+                    }
                     chunk.push(even_forest[j].clone());
                 }
                 odd_forest.push(CurveTreeNode::<L, P1, P0>::combine(
@@ -108,23 +108,21 @@ impl<
                     &parameters.c1_parameters,
                 ));
             }
-            // let odd_forest: Vec<_> = even_forest
-            // .chunks(L)
-            // .map(|chunk| CurveTreeNode::<L, P1, P0>::combine(chunk, &parameters.c1_parameters))
-            // .collect();
+            forest_length = next_forest_length;
+            next_forest_length = (next_forest_length + L - 1) / L;
 
             if forest_length == 1 {
                 return Self::Odd(odd_forest[0].clone()).increase_height(height, parameters);
             }
 
-            current_height += 1;
-            forest_length = (forest_length + L - 1) / L;
-            println!("height {}", current_height);
             // Combine forest of trees with odd roots, into a forest of trees with even roots.
-            even_forest = Vec::with_capacity(forest_length);
-            for i in 0..forest_length {
+            even_forest = Vec::with_capacity(next_forest_length);
+            for i in 0..next_forest_length {
                 let mut chunk = Vec::new();
-                for j in i * forest_length..(i + 1) * forest_length {
+                for j in i * L..(i + 1) * L {
+                    if j >= forest_length {
+                        break;
+                    }
                     chunk.push(odd_forest[j].clone());
                 }
                 even_forest.push(CurveTreeNode::<L, P0, P1>::combine(
@@ -132,10 +130,8 @@ impl<
                     &parameters.c0_parameters,
                 ));
             }
-            // even_forest = odd_forest
-            //     .chunks(L)
-            //     .map(|chunk| CurveTreeNode::<L, P0, P1>::combine(chunk, &parameters.c0_parameters))
-            //     .collect();
+            forest_length = next_forest_length;
+            next_forest_length = (next_forest_length + L - 1) / L;
         }
         Self::Even(even_forest[0].clone()).increase_height(height, parameters)
     }
@@ -414,7 +410,10 @@ impl<
             None => panic!("The node is assumed to be internal."),
             Some(children) => {
                 let child = match &children[self.child_index(index)] {
-                    None => panic!("Child index out of bounds."),
+                    None => panic!(
+                        "Child index out of bounds. Height: {}, Index: {}",
+                        self.height, index
+                    ),
                     Some(child) => child,
                 };
                 let (rerandomized_commitment, children_vars) = prover.commit_vec(

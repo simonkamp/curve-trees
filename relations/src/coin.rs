@@ -336,19 +336,22 @@ impl<
     // verification
     pub fn verification_gadget<const L: usize>(
         self,
-        even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
-        odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
+        mut even_verifier: Verifier<Transcript, GroupAffine<P0>>,
+        mut odd_verifier: Verifier<Transcript, GroupAffine<P1>>,
         sr_parameters: &SelRerandParameters<P0, P1>,
         curve_tree: &CurveTree<L, P0, P1>,
+    ) -> (
+        VerificationTuple<GroupAffine<P0>>,
+        VerificationTuple<GroupAffine<P1>>,
     ) {
         // mint
         let minted_amount_var_0 = verify_mint(
-            even_verifier,
+            &mut even_verifier,
             self.minted_coin_commitment_0,
             &sr_parameters.c0_parameters,
         );
         let minted_amount_var_1 = verify_mint(
-            even_verifier,
+            &mut even_verifier,
             self.minted_coin_commitment_1,
             &sr_parameters.c0_parameters,
         );
@@ -356,16 +359,16 @@ impl<
         // spend
         let spent_amount_var_0 = Self::verify_spend(
             self.randomized_path_0,
-            even_verifier,
-            odd_verifier,
+            &mut even_verifier,
+            &mut odd_verifier,
             sr_parameters,
             curve_tree,
             &self.pk0,
         );
         let spent_amount_var_1 = Self::verify_spend(
             self.randomized_path_1,
-            even_verifier,
-            odd_verifier,
+            &mut even_verifier,
+            &mut odd_verifier,
             sr_parameters,
             curve_tree,
             &self.pk1,
@@ -376,7 +379,16 @@ impl<
             minted_amount_var_0 + minted_amount_var_1 - spent_amount_var_0 - spent_amount_var_1,
         );
 
-        //check signatures
+        let even_vt = even_verifier
+            .verification_scalars_and_points(&self.even_proof)
+            .unwrap();
+        let odd_vt = odd_verifier
+            .verification_scalars_and_points(&self.odd_proof)
+            .unwrap();
+
+        // todo check signatures
+
+        (even_vt, odd_vt)
     }
 
     fn verify_spend<const L: usize>(
@@ -513,7 +525,6 @@ mod tests {
         let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
         let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
 
-        // Curve tree with two coins
         let (coin_aux_0, coin_0) = Coin::<PallasParameters, PallasP>::new(
             19,
             &pk,
@@ -528,13 +539,13 @@ mod tests {
             &sr_params.c0_parameters,
             &mut rng,
         );
+        // Curve tree with two coins
         let set = vec![coin_0, coin_1];
         let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
             &set,
             &sr_params,
             Some(4),
         );
-        assert_eq!(curve_tree.height(), 4);
 
         let receiver_pk_0 = pk;
         let receiver_pk_1 = pk;
@@ -562,12 +573,8 @@ mod tests {
             let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            proof.verification_gadget(
-                &mut pallas_verifier,
-                &mut vesta_verifier,
-                &sr_params,
-                &curve_tree,
-            );
+            let (pallas_vt, vesta_vt) =
+                proof.verification_gadget(pallas_verifier, vesta_verifier, &sr_params, &curve_tree);
         }
     }
 }
