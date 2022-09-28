@@ -771,7 +771,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // println!("P S2 {}", &S2);
         // println!("P z {}", z);
 
-        
         let (wL, wR, wO, wV, wVCs) = self.flattened_constraints(&z);
 
         #[cfg(debug_assertions)]
@@ -783,8 +782,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             println!("prover wO = {:?}", &wO);
         }
 
-        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, op_degree+1);
-        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, op_degree+1);
+        let mut l_poly = util::VecPoly::<C::ScalarField>::zero(n, op_degree + 1);
+        let mut r_poly = util::VecPoly::<C::ScalarField>::zero(n, op_degree + 1);
 
         let y_inv = y.inverse().unwrap();
 
@@ -806,7 +805,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // 3 comm => op_degree = 4
         // 4 comm => op_degree = 6
         // 5 comm => op_degree = 6
-        // etc. 
+        // etc.
         // op_degree = 2 + 2 * floor(#comm / 2)
 
         let ops = op_splits(op_degree);
@@ -825,7 +824,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // 1 : aL + wR
             // 2 : aO
             // 3 : sL
-            //            
+            //
             // Right:
             // 0 : Wo
             // 1 : aR + wL
@@ -842,7 +841,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // 3 : aO
             // 4 : com3
             // 5 : sL
-            //            
+            //
             // Right:
             // 0 : Wc3
             // 1 : Wo
@@ -874,7 +873,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // 7 : sR
             //
             // Note that the x^0, x^1 term is zero.
-            // For every additional commitment r_poly degree increases by 2, 
+            // For every additional commitment r_poly degree increases by 2,
             // but the number of zero terms increase by 1
             //
             // The op_degree is 6, the total degree is 11.
@@ -898,7 +897,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // 7 : Wc1
             // 8 : -
             // 9 : sR
-            // 
+            //
             // op_degree is 8
 
             // l_poly.0 = 0
@@ -923,10 +922,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
             // masks:
             // l_poly.3 = s_L (mask)
-            debug_assert_eq!(l_poly.coeff_mut(op_degree+1)[i], C::ScalarField::zero());
-            debug_assert_eq!(r_poly.coeff_mut(op_degree+1)[i], C::ScalarField::zero());
-            l_poly.coeff_mut(op_degree+1)[i] = *sl;
-            r_poly.coeff_mut(op_degree+1)[i] = exp_y[i] * sr;
+            debug_assert_eq!(l_poly.coeff_mut(op_degree + 1)[i], C::ScalarField::zero());
+            debug_assert_eq!(r_poly.coeff_mut(op_degree + 1)[i], C::ScalarField::zero());
+            l_poly.coeff_mut(op_degree + 1)[i] = *sl;
+            r_poly.coeff_mut(op_degree + 1)[i] = exp_y[i] * sr;
         }
 
         // veccom constraints
@@ -1073,7 +1072,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             debug_assert!(e_terms[veccom_ops[j].0].is_none());
             e_terms[veccom_ops[j].0] = Some(self.secrets.vec_open[j].0);
         }
-        
+
         // blinding
         e_terms[op_degree + 1] = Some(s_blinding); // sL || sR
 

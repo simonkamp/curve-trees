@@ -31,13 +31,14 @@ fn op_splits(op_deg: usize) -> Vec<(usize, usize)> {
     op_splits[1] = (op_deg, 0);
 
     // all other deg splits
-    for r_deg in 1..op_deg+1 {
-        if r_deg == mid { // already taken
+    for r_deg in 1..op_deg + 1 {
+        if r_deg == mid {
+            // already taken
             continue;
         }
         let l_deg = op_deg - r_deg;
         op_splits.push((l_deg, r_deg));
-    } 
+    }
 
     op_splits
 }

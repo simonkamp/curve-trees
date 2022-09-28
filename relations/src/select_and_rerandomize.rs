@@ -267,10 +267,8 @@ impl<
         };
 
         for c in &even_commitments {
-
             println!("even commitments: {}", c);
         }
-
 
         // The last even commitment is a leaf.
         for i in 0..even_commitments.len() - 1 {
@@ -522,7 +520,10 @@ fn single_level_select_and_rerandomize<
     xy_witness: Option<GroupAffine<C2>>, // witness of the commitment we wish to select and rerandomize
     randomness_offset: Option<Fb>,       // the scalar used for randomizing
 ) {
-    println!("single level (cs) sel and rerand, rerandomized: {}", rerandomized);
+    println!(
+        "single level (cs) sel and rerand, rerandomized: {}",
+        rerandomized
+    );
     let x_var = cs.allocate(xy_witness.map(|xy| xy.x)).unwrap();
     // show that leaf is in c0
     select(
@@ -685,7 +686,7 @@ pub fn prove_from_mock_curve_tree<
 
         (c0, c0_rerand, c0_rerandomization_offset, c0_rerand_vars)
     };
-    
+
     let (c1, c1_rerand, c1_rerandomization_offset, c1_rerand_vars) = {
         // Make a bunch of dummy commitments (random points) for the remaining children.
         let rt1: Vec<_> = iter::once(c0.x)
@@ -704,7 +705,7 @@ pub fn prove_from_mock_curve_tree<
         );
         (c1, c1_rerand, c1_rerandomization_offset, c1_rerand_vars)
     };
-    
+
     let (c2, c2_rerand, c2_rerandomization_offset, c2_rerand_vars) = {
         // Make a bunch of dummy commitments (random points) for the remaining children.
         let rt2: Vec<_> = iter::once(c1.x)
@@ -724,7 +725,6 @@ pub fn prove_from_mock_curve_tree<
         );
         (c2, c2_rerand, c2_rerandomization_offset, c2_rerand_vars)
     };
-    
 
     // let (c3, c3_vars) = {
     //     // Make a bunch of dummy commitments (random points) for the remaining children.
@@ -977,13 +977,12 @@ mod tests {
         // assert_eq!(curve_tree.height(), 4);
 
         println!("prover test");
-        let (path_commitments, _) = curve_tree
-            .select_and_rerandomize_prover_gadget(
-                0,
-                &mut pallas_prover,
-                &mut vesta_prover,
-                &sr_params,
-            );
+        let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
+            0,
+            &mut pallas_prover,
+            &mut vesta_prover,
+            &sr_params,
+        );
 
         let pallas_proof = pallas_prover
             .prove(&sr_params.c0_parameters.bp_gens)

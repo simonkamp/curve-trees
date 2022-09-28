@@ -487,7 +487,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         // op_degree = 2 + 2 * floor(#comm / 2)
         let op_degree = 2 + 2 * (ncomm / 2);
-        let t_poly_deg = 2 * (op_degree+1);
+        let t_poly_deg = 2 * (op_degree + 1);
         let ops = op_splits(op_degree);
 
         #[cfg(debug_assertions)]
@@ -561,8 +561,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         xs[0] = C::ScalarField::one();
         rxs[0] = r;
         for i in 1..xs.len() {
-            xs[i] = xs[i-1] * x;
-            rxs[i] = rxs[i-1] * x;
+            xs[i] = xs[i - 1] * x;
+            rxs[i] = rxs[i - 1] * x;
         }
 
         transcript.append_scalar::<C>(b"t_x", &proof.t_x);
@@ -650,7 +650,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 h_scalars.push(res);
             }
         }
-        
+
         debug_assert_eq!(proof.T[op_degree], C::zero());
         debug_assert_eq!(proof.T.len(), t_poly_deg + 1);
 

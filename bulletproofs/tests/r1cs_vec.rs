@@ -13,7 +13,6 @@ use pasta::pallas::Affine;
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
 use merlin::Transcript;
-use rand::seq::SliceRandom;
 
 mod veccom_twice {
     use super::*;
@@ -64,8 +63,7 @@ mod veccom_twice {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>(
-    ) -> Result<(), R1CSError> {
+    fn gadget_roundtrip_helper<C: AffineCurve>() -> Result<(), R1CSError> {
         // Common
         let pc_gens = PedersenGens::<C>::default();
         let bp_gens = BulletproofGens::<C>::new(128, 1);
@@ -97,7 +95,7 @@ mod veccom_empty {
         */
 
         cs.constrain(d1 - d2);
-    } 
+    }
 
     // Prover's scope
     fn gadget_proof<C: AffineCurve>(
@@ -176,11 +174,7 @@ mod veccom_empty {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>(
-        c2: u64,
-        d1: u64,
-        d2: u64,
-    ) -> Result<(), R1CSError> {
+    fn gadget_roundtrip_helper<C: AffineCurve>(c2: u64, d1: u64, d2: u64) -> Result<(), R1CSError> {
         // Common
         let pc_gens = PedersenGens::<C>::default();
         let bp_gens = BulletproofGens::<C>::new(128, 1);
@@ -199,7 +193,7 @@ mod veccom_empty {
 
 mod veccom_non_empty_do_nothing {
     use super::*;
-    
+
     fn gadget<F: Field, CS: ConstraintSystem<F>>(
         cs: &mut CS,
         a1: LinearCombination<F>,
@@ -211,7 +205,7 @@ mod veccom_non_empty_do_nothing {
         d2: LinearCombination<F>,
     ) {
         cs.constrain(d1 - d2);
-    } 
+    }
 
     // Prover's scope
     fn gadget_proof<C: AffineCurve>(
@@ -247,9 +241,9 @@ mod veccom_non_empty_do_nothing {
                 C::ScalarField::from(a3),
                 C::ScalarField::from(a4),
                 C::ScalarField::from(a5),
-            ], 
-            h, 
-            bp_gens
+            ],
+            h,
+            bp_gens,
         );
 
         // 3. Build a CS
@@ -322,7 +316,8 @@ mod veccom_non_empty_do_nothing {
         let pc_gens = PedersenGens::<C>::default();
         let bp_gens = BulletproofGens::<C>::new(128, 1);
 
-        let (proof, d1_comm, d2_comm, comm) = gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, a3, a4, a5, d1, d2)?;
+        let (proof, d1_comm, d2_comm, comm) =
+            gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, a3, a4, a5, d1, d2)?;
 
         gadget_verify::<C>(&pc_gens, &bp_gens, proof, d1_comm, d2_comm, comm)
     }
@@ -355,7 +350,7 @@ mod veccom_non_trivial_linear {
         cs.constrain(a4.clone() - (a1.clone() + a2.clone() + a3.clone()));
         cs.constrain(d1.clone() - (a1 + a2 + a3 + a4 + a5));
         cs.constrain(d1 - d2);
-    } 
+    }
 
     // Prover's scope
     fn gadget_proof<C: AffineCurve>(
@@ -391,9 +386,9 @@ mod veccom_non_trivial_linear {
                 C::ScalarField::from(a3),
                 C::ScalarField::from(a4),
                 C::ScalarField::from(a5),
-            ], 
-            h, 
-            bp_gens
+            ],
+            h,
+            bp_gens,
         );
 
         // 3. Build a CS
@@ -466,7 +461,8 @@ mod veccom_non_trivial_linear {
         let pc_gens = PedersenGens::<C>::default();
         let bp_gens = BulletproofGens::<C>::new(128, 1);
 
-        let (proof, d1_comm, d2_comm, comm) = gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, a3, a4, a5, d1, d2)?;
+        let (proof, d1_comm, d2_comm, comm) =
+            gadget_proof::<C>(&pc_gens, &bp_gens, a1, a2, a3, a4, a5, d1, d2)?;
 
         gadget_verify::<C>(&pc_gens, &bp_gens, proof, d1_comm, d2_comm, comm)
     }
@@ -486,16 +482,13 @@ mod veccom_large_linear {
     const DIM: usize = 0x100;
 
     /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
-    fn gadget<F: Field, CS: ConstraintSystem<F>>(
-        cs: &mut CS,
-        ax: Vec<LinearCombination<F>>,
-    ) {
+    fn gadget<F: Field, CS: ConstraintSystem<F>>(cs: &mut CS, ax: Vec<LinearCombination<F>>) {
         cs.constrain(ax[0].clone() - F::one());
         cs.constrain(ax[1].clone() - F::one());
         for i in 2..DIM {
-            cs.constrain(ax[i].clone() - (ax[i-1].clone() + ax[i-2].clone()));
+            cs.constrain(ax[i].clone() - (ax[i - 1].clone() + ax[i - 2].clone()));
         }
-    } 
+    }
 
     // Prover's scope
     fn gadget_proof<C: AffineCurve>(
@@ -518,13 +511,8 @@ mod veccom_large_linear {
             fib[i] = fib[i - 1] + fib[i - 2];
         }
 
-
         let h = C::ScalarField::rand(&mut rng);
-        let (comm, vars) = prover.commit_vec(
-            &fib,
-            h, 
-            bp_gens
-        );
+        let (comm, vars) = prover.commit_vec(&fib, h, bp_gens);
 
         // 3. Build a CS
         gadget(
@@ -581,7 +569,6 @@ mod veccom_large_linear {
     }
 }
 
-
 mod veccom_mul_seperate {
     use super::*;
 
@@ -594,7 +581,7 @@ mod veccom_mul_seperate {
         b: LinearCombination<F>,
         ab: LinearCombination<F>,
     ) {
-    } 
+    }
 
     // Prover's scope
     fn gadget_proof<C: AffineCurve>(
@@ -619,21 +606,12 @@ mod veccom_mul_seperate {
         // create a veccom
         let h = C::ScalarField::rand(&mut rng);
 
-        let (comm, vars) = prover.commit_vec(
-            &abc,
-            h, 
-            bp_gens
-        );
+        let (comm, vars) = prover.commit_vec(&abc, h, bp_gens);
 
         assert_eq!(vars.len(), DIM);
 
         // 3. Build a CS
-        gadget(
-            &mut prover,
-            a.into(),
-            b.into(),
-            c.into()
-        );
+        gadget(&mut prover, a.into(), b.into(), c.into());
 
         // 4. Make a proof
         let proof = prover.prove(bp_gens)?;
@@ -655,18 +633,13 @@ mod veccom_mul_seperate {
 
         let (a, b, c) = verifier.allocate_multiplier(None).unwrap();
 
-        // 2. Commit high-level variables    
+        // 2. Commit high-level variables
         let vars: Vec<_> = verifier.commit_vec(DIM, comm);
 
         assert_eq!(vars.len(), DIM);
 
         // 3. Build a CS
-        gadget(
-            &mut verifier,
-            a.into(),
-            b.into(),
-            c.into(),
-        );
+        gadget(&mut verifier, a.into(), b.into(), c.into());
 
         // 4. Verify the proof
         verifier
@@ -688,7 +661,6 @@ mod veccom_mul_seperate {
         gadget_verify::<C>(&pc_gens, &bp_gens, proof, comm)
     }
 
-
     #[test]
     fn test() {
         assert!(gadget_roundtrip_helper::<Affine>(0.into(), 0.into(), 0.into()).is_ok());
@@ -707,7 +679,7 @@ mod veccom_mul {
     ) {
         let (va, vb, vab) = cs.multiply(a, b);
         cs.constrain(vab - ab)
-    } 
+    }
 
     // Prover's scope
     fn gadget_proof<C: AffineCurve>(
@@ -725,23 +697,14 @@ mod veccom_mul {
         let mut rng = rand::thread_rng();
 
         // commit to all inputs in a single commitment
-        
+
         let abc: Vec<C::ScalarField> = vec![a, b, ab];
 
         let h = C::ScalarField::rand(&mut rng);
-        let (comm, vars) = prover.commit_vec(
-            &abc,
-            h, 
-            bp_gens
-        );
+        let (comm, vars) = prover.commit_vec(&abc, h, bp_gens);
 
         // 3. Build a CS
-        gadget(
-            &mut prover,
-            vars[0].into(),
-            vars[1].into(),
-            vars[2].into()
-        );
+        gadget(&mut prover, vars[0].into(), vars[1].into(), vars[2].into());
 
         // 4. Make a proof
         let proof = prover.prove(bp_gens)?;
@@ -769,7 +732,7 @@ mod veccom_mul {
             &mut verifier,
             vars[0].into(),
             vars[1].into(),
-            vars[2].into()
+            vars[2].into(),
         );
 
         // 4. Verify the proof
