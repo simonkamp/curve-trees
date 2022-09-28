@@ -745,14 +745,14 @@ pub fn prove_from_mock_curve_tree<
     //     // assert_eq!(c3, c3_r);
     //     (c3, c3_vars)
     // };
-    single_level_select_and_rerandomize(
-        &mut vesta_prover,
-        &srp.c0_parameters,
-        &leaf_rerand,
-        c0_rerand_vars,
-        Some(leaf),
-        Some(leaf_rerandomization_offset),
-    );
+    // single_level_select_and_rerandomize(
+    //     &mut vesta_prover,
+    //     &srp.c0_parameters,
+    //     &leaf_rerand,
+    //     c0_rerand_vars,
+    //     Some(leaf),
+    //     Some(leaf_rerandomization_offset),
+    // );
     single_level_select_and_rerandomize(
         &mut pallas_prover,
         &srp.c1_parameters,
@@ -804,14 +804,14 @@ pub fn verification_circuit<
         let mut verifier = Verifier::new(transcript);
         let c0_rerand_vars = verifier.commit_vec(256, sr_proof.vesta_commitments[0]);
         let c2_rerand_vars = verifier.commit_vec(256, sr_proof.vesta_commitments[1]);
-        single_level_select_and_rerandomize(
-            &mut verifier,
-            &sr_params.c0_parameters,
-            &sr_proof.result,
-            c0_rerand_vars,
-            None,
-            None,
-        );
+        // single_level_select_and_rerandomize(
+        //     &mut verifier,
+        //     &sr_params.c0_parameters,
+        //     &sr_proof.result,
+        //     c0_rerand_vars,
+        //     None,
+        //     None,
+        // );
         // single_level_select_and_rerandomize(
         //     &mut verifier,
         //     &sr_params.c0_parameters,

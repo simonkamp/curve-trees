@@ -15,6 +15,72 @@ use bulletproofs::{BulletproofGens, PedersenGens};
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 
+mod veccom_twice {
+    use super::*;
+
+    // Prover's scope
+    fn gadget_proof<C: AffineCurve>(
+        pc_gens: &PedersenGens<C>,
+        bp_gens: &BulletproofGens<C>,
+    ) -> Result<(R1CSProof<C>, C, C), R1CSError> {
+        let mut transcript = Transcript::new(b"R1CSExampleGadget");
+
+        // 1. Create a prover
+        let mut prover = Prover::new(pc_gens, &mut transcript);
+
+        let mut rng = rand::thread_rng();
+
+        // empty vector commitment
+        let v = vec![];
+
+        // 2. Commit to two empty vectors
+        let (comm1, _) = prover.commit_vec(&v, C::ScalarField::rand(&mut rng), bp_gens);
+        let (comm2, _) = prover.commit_vec(&v, C::ScalarField::rand(&mut rng), bp_gens);
+
+        // 3. Prove
+        let proof = prover.prove(bp_gens)?;
+
+        Ok((proof, comm1, comm2))
+    }
+
+    // Verifier logic
+    fn gadget_verify<C: AffineCurve>(
+        pc_gens: &PedersenGens<C>,
+        bp_gens: &BulletproofGens<C>,
+        proof: R1CSProof<C>,
+        comm1: C,
+        comm2: C,
+    ) -> Result<(), R1CSError> {
+        let mut transcript = Transcript::new(b"R1CSExampleGadget");
+
+        // 1. Create a verifier
+        let mut verifier = Verifier::new(&mut transcript);
+
+        let _: Vec<_> = verifier.commit_vec(0, comm1);
+        let _: Vec<_> = verifier.commit_vec(0, comm2);
+
+        verifier
+            .verify(&proof, &pc_gens, &bp_gens)
+            .map_err(|_| R1CSError::VerificationError)
+    }
+
+    fn gadget_roundtrip_helper<C: AffineCurve>(
+    ) -> Result<(), R1CSError> {
+        // Common
+        let pc_gens = PedersenGens::<C>::default();
+        let bp_gens = BulletproofGens::<C>::new(128, 1);
+
+        let (proof, comm1, comm2) = gadget_proof::<C>(&pc_gens, &bp_gens)?;
+
+        gadget_verify::<C>(&pc_gens, &bp_gens, proof, comm1, comm2)
+    }
+
+    #[test]
+    fn test() {
+        assert!(gadget_roundtrip_helper::<Affine>().is_ok());
+        assert!(gadget_roundtrip_helper::<Affine>().is_err());
+    }
+}
 mod veccom_empty {
     use super::*;
 
