@@ -541,11 +541,15 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // op_degree = 2 + 2 * floor(#comm / 2)
         let op_degree = 2 + 2 * (ncomm / 2);
 
+        let ops = op_splits(op_degree);
+        let veccom_ops = &ops[2..];
+
         #[cfg(debug_assertions)]
         {
             println!("op_degree: {}", op_degree);
             println!("number of commitments: {}", ncomm);
             println!("number of constraints: {}", self.secrets.a_L.len());
+            println!("ops = {:?}", &ops[..]);
         }
 
         // Commit a length _suffix_ for the number of high-level variables.
@@ -808,12 +812,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // etc.
         // op_degree = 2 + 2 * floor(#comm / 2)
 
-        let ops = op_splits(op_degree);
-        let veccom_ops = &ops[2..];
-
-        #[cfg(debug_assertions)]
-        println!("ops = {:?}", &ops[..]);
-
+      
         for (i, (sl, sr)) in sLsR.enumerate() {
             debug_assert!(i < self.secrets.a_L.len());
 
