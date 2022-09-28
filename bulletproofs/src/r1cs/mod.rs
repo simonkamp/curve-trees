@@ -26,9 +26,9 @@ fn op_splits(op_deg: usize) -> Vec<(usize, usize)> {
     let mid = op_deg / 2;
 
     // the first two are special
-    let mut op_splits = vec![(0, 0); op_deg];
-    op_splits[0] = (mid, mid);
-    op_splits[1] = (op_deg, 0);
+    let mut op_splits = Vec::with_capacity(op_deg);
+    op_splits.push((mid, mid));
+    op_splits.push((op_deg, 0));
 
     // all other deg splits
     for r_deg in 1..op_deg + 1 {
