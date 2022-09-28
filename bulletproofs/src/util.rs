@@ -21,7 +21,8 @@ pub struct VecPoly3<F: Field>(pub Vec<F>, pub Vec<F>, pub Vec<F>, pub Vec<F>);
 
 pub const T_LABELS: [&[u8]; 25] = [
     b"T_0", b"T_1", b"T_2", b"T_3", b"T_4", b"T_5", b"T_6", b"T_7", b"T_8", b"T_9", b"T_10",
-    b"T_11", b"T_12", b"T_13", b"T_14", b"T_15", b"T_16", b"T_17", b"T_18", b"T_19", b"T_20", b"T_21",  b"T_22",  b"T_23",  b"T_24",   
+    b"T_11", b"T_12", b"T_13", b"T_14", b"T_15", b"T_16", b"T_17", b"T_18", b"T_19", b"T_20",
+    b"T_21", b"T_22", b"T_23", b"T_24",
 ];
 
 /// The general case for Vector CP.

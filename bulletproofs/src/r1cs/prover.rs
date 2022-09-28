@@ -812,7 +812,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // etc.
         // op_degree = 2 + 2 * floor(#comm / 2)
 
-      
         for (i, (sl, sr)) in sLsR.enumerate() {
             debug_assert!(i < self.secrets.a_L.len());
 
