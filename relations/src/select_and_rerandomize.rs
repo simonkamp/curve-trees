@@ -320,6 +320,7 @@ impl<
     //todo add a function to add a single/several commitments
 }
 
+#[derive(Clone)]
 pub struct SelectAndRerandomizePath<P0: SWModelParameters, P1: SWModelParameters> {
     pub even_commitments: Vec<GroupAffine<P0>>,
     pub odd_commitments: Vec<GroupAffine<P1>>,

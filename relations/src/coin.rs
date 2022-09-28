@@ -262,6 +262,7 @@ pub fn prove_pour<
 }
 
 // todo do an n to m pour with arrays?
+#[derive(Clone)]
 pub struct Pour<
     P0: SWModelParameters + Clone,
     P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
@@ -507,7 +508,7 @@ mod tests {
     #[test]
     pub fn test_pour() {
         let mut rng = rand::thread_rng();
-        let generators_length = 1 << 12; // minimum sufficient power of 2
+        let generators_length = 1 << 13; // minimum sufficient power of 2 (for height 4 curve tree)
 
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
@@ -575,6 +576,19 @@ mod tests {
 
             let (pallas_vt, vesta_vt) =
                 proof.verification_gadget(pallas_verifier, vesta_verifier, &sr_params, &curve_tree);
+
+            batch_verify(
+                vec![pallas_vt],
+                &sr_params.c0_parameters.pc_gens,
+                &sr_params.c0_parameters.bp_gens,
+            )
+            .unwrap();
+            batch_verify(
+                vec![vesta_vt],
+                &sr_params.c1_parameters.pc_gens,
+                &sr_params.c1_parameters.bp_gens,
+            )
+            .unwrap();
         }
     }
 }

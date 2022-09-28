@@ -24,5 +24,9 @@ pasta = { path = "../pasta" }
 name = "select_rerandomize"
 harness = false
 
+[[bench]]
+name = "coin"
+harness = false
+
 [profile.release]
 lto = true
