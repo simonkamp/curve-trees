@@ -194,7 +194,6 @@ impl<
         };
         // While the current node is internal, do two iterations of the proof.
         while let Some(_) = &even_internal_node.children {
-            // println!("Prover ")
             // Do two iterations of the proof and advance `even_internal_node`to a grandchild.
             let (child, child_rerandomization_scalar) = even_internal_node
                 .single_level_select_and_rerandomize_prover_gadget(
@@ -251,7 +250,6 @@ impl<
                 (randomized_path.even_commitments, odd_commitments_with_root)
             }
             Self::Even(ct) => {
-                println!("Verifier. Even root: {}", ct.commitment);
                 assert_eq!(
                     randomized_path.even_commitments.len(),
                     randomized_path.odd_commitments.len()
@@ -262,10 +260,6 @@ impl<
             }
         };
 
-        for c in &even_commitments {
-            println!("even commitments: {}", c);
-        }
-
         // The last even commitment is a leaf.
         for i in 0..even_commitments.len() - 1 {
             let odd_index = if even_commitments.len() == odd_commitments.len() {
@@ -273,7 +267,6 @@ impl<
             } else {
                 i
             };
-            println!("Verifier commiting to {}", even_commitments[i]);
             let variables = even_verifier.commit_vec(256, even_commitments[i]); // committing to public value in first iteration
             single_level_select_and_rerandomize(
                 even_verifier,
@@ -287,18 +280,15 @@ impl<
 
         for i in 0..odd_commitments.len() {
             let even_index = if even_commitments.len() == odd_commitments.len() {
-                println!("equal length");
                 i
             } else {
-                println!("not equal length");
-                i + 1 // todo this logic has changed
+                i + 1
             };
-            println!("Verifier commiting to {}", odd_commitments[i]);
             let variables = odd_verifier.commit_vec(256, odd_commitments[i]);
             single_level_select_and_rerandomize(
                 odd_verifier,
                 &parameters.c0_parameters,
-                &even_commitments[even_index], // todo is this supposed to be the witness of the child?
+                &even_commitments[even_index],
                 variables,
                 None,
                 None,
@@ -314,8 +304,6 @@ impl<
             Self::Odd(ct) => ct.height,
         }
     }
-
-    // todo add a function to increase capacity/height
 
     //todo add a function to add a single/several commitments
 }
@@ -427,10 +415,8 @@ impl<
                         .collect::<Vec<_>>()
                         .as_slice(),
                     self.randomness + rerandomization_scalar,
-                    // todo we should not need the prover to commit to the root, i.e. the rerandomization scalar should be an option
                     &even_parameters.bp_gens,
                 );
-                println!("Committed to {}", rerandomized_commitment);
                 let child_commitment = child.commitment;
                 let mut blinding_base = odd_parameters.pc_gens.B_blinding.into_projective();
                 blinding_base *= child_rerandomization_scalar;
@@ -520,10 +506,6 @@ fn single_level_select_and_rerandomize<
     xy_witness: Option<GroupAffine<C2>>, // witness of the commitment we wish to select and rerandomize
     randomness_offset: Option<Fb>,       // the scalar used for randomizing
 ) {
-    println!(
-        "single level (cs) sel and rerand, rerandomized: {}",
-        rerandomized
-    );
     let x_var = cs.allocate(xy_witness.map(|xy| xy.x)).unwrap();
     // show that leaf is in c0
     select(
@@ -726,33 +708,33 @@ pub fn prove_from_mock_curve_tree<
         (c2, c2_rerand, c2_rerandomization_offset, c2_rerand_vars)
     };
 
-    // let (c3, c3_vars) = {
-    //     // Make a bunch of dummy commitments (random points) for the remaining children.
-    //     let rt3: Vec<_> = iter::once(c2.x)
-    //         .chain(iter::from_fn(|| Some(P0::ScalarField::rand(&mut rng))).take(255))
-    //         .collect();
-    //     // Build the internal node: a vector commitment to the children.
-    //     let c3_init_randomness = P0::ScalarField::rand(&mut rng);
-    //     let (c3, c3_permissible_randomness) = srp
-    //         .c0_parameters
-    //         .permissible_commitment(rt3.as_slice(), c3_init_randomness);
-    //     // c3 is the root, and does not need to be hidden.
-    //     let (c3_r, c3_vars) = pallas_prover.commit_vec(
-    //         rt3.as_slice(),
-    //         c3_permissible_randomness,
-    //         &srp.c0_parameters.bp_gens,
-    //     );
-    //     // assert_eq!(c3, c3_r);
-    //     (c3, c3_vars)
-    // };
-    // single_level_select_and_rerandomize(
-    //     &mut vesta_prover,
-    //     &srp.c0_parameters,
-    //     &leaf_rerand,
-    //     c0_rerand_vars,
-    //     Some(leaf),
-    //     Some(leaf_rerandomization_offset),
-    // );
+    let (c3, c3_vars) = {
+        // Make a bunch of dummy commitments (random points) for the remaining children.
+        let rt3: Vec<_> = iter::once(c2.x)
+            .chain(iter::from_fn(|| Some(P0::ScalarField::rand(&mut rng))).take(255))
+            .collect();
+        // Build the internal node: a vector commitment to the children.
+        let c3_init_randomness = P0::ScalarField::rand(&mut rng);
+        let (c3, c3_permissible_randomness) = srp
+            .c0_parameters
+            .permissible_commitment(rt3.as_slice(), c3_init_randomness);
+        // c3 is the root, and does not need to be hidden.
+        let (c3_r, c3_vars) = pallas_prover.commit_vec(
+            rt3.as_slice(),
+            c3_permissible_randomness,
+            &srp.c0_parameters.bp_gens,
+        );
+        assert_eq!(c3, c3_r);
+        (c3, c3_vars)
+    };
+    single_level_select_and_rerandomize(
+        &mut vesta_prover,
+        &srp.c0_parameters,
+        &leaf_rerand,
+        c0_rerand_vars,
+        Some(leaf),
+        Some(leaf_rerandomization_offset),
+    );
     single_level_select_and_rerandomize(
         &mut pallas_prover,
         &srp.c1_parameters,
@@ -761,30 +743,28 @@ pub fn prove_from_mock_curve_tree<
         Some(c0),
         Some(c0_rerandomization_offset),
     );
-    // single_level_select_and_rerandomize(
-    //     &mut vesta_prover,
-    //     &srp.c0_parameters,
-    //     &c1_rerand,
-    //     c2_rerand_vars,
-    //     Some(c1),
-    //     Some(c1_rerandomization_offset),
-    // );
-    // single_level_select_and_rerandomize(
-    //     &mut pallas_prover,
-    //     &srp.c1_parameters,
-    //     &c2_rerand,
-    //     c3_vars,
-    //     Some(c2),
-    //     Some(c2_rerandomization_offset),
-    // );
+    single_level_select_and_rerandomize(
+        &mut vesta_prover,
+        &srp.c0_parameters,
+        &c1_rerand,
+        c2_rerand_vars,
+        Some(c1),
+        Some(c1_rerandomization_offset),
+    );
+    single_level_select_and_rerandomize(
+        &mut pallas_prover,
+        &srp.c1_parameters,
+        &c2_rerand,
+        c3_vars,
+        Some(c2),
+        Some(c2_rerandomization_offset),
+    );
     SelRerandProof {
         result: leaf_rerand,
         pallas_proof: pallas_prover.prove(&srp.c0_parameters.bp_gens).unwrap(),
-        // pallas_commitments: vec![c1_rerand, c3],
-        pallas_commitments: vec![c1_rerand],
+        pallas_commitments: vec![c1_rerand, c3],
         vesta_proof: vesta_prover.prove(&srp.c1_parameters.bp_gens).unwrap(),
         vesta_commitments: vec![c0_rerand, c2_rerand],
-        // vesta_commitments: vec![c0_rerand],
     }
 }
 
@@ -804,29 +784,29 @@ pub fn verification_circuit<
         let mut verifier = Verifier::new(transcript);
         let c0_rerand_vars = verifier.commit_vec(256, sr_proof.vesta_commitments[0]);
         let c2_rerand_vars = verifier.commit_vec(256, sr_proof.vesta_commitments[1]);
-        // single_level_select_and_rerandomize(
-        //     &mut verifier,
-        //     &sr_params.c0_parameters,
-        //     &sr_proof.result,
-        //     c0_rerand_vars,
-        //     None,
-        //     None,
-        // );
-        // single_level_select_and_rerandomize(
-        //     &mut verifier,
-        //     &sr_params.c0_parameters,
-        //     &sr_proof.pallas_commitments[0],
-        //     c2_rerand_vars,
-        //     None,
-        //     None,
-        // );
+        single_level_select_and_rerandomize(
+            &mut verifier,
+            &sr_params.c0_parameters,
+            &sr_proof.result,
+            c0_rerand_vars,
+            None,
+            None,
+        );
+        single_level_select_and_rerandomize(
+            &mut verifier,
+            &sr_params.c0_parameters,
+            &sr_proof.pallas_commitments[0],
+            c2_rerand_vars,
+            None,
+            None,
+        );
         verifier
     };
     let pallas_verifier = {
         let mut transcript = Transcript::new(b"select_and_rerandomize");
         let mut verifier = Verifier::new(transcript);
         let c1_rerand_vars = verifier.commit_vec(256, sr_proof.pallas_commitments[0]);
-        // let c3_vars = verifier.commit_vec(256, sr_proof.pallas_commitments[1]);
+        let c3_vars = verifier.commit_vec(256, sr_proof.pallas_commitments[1]);
         single_level_select_and_rerandomize(
             &mut verifier,
             &sr_params.c1_parameters,
@@ -835,14 +815,14 @@ pub fn verification_circuit<
             None,
             None,
         );
-        // single_level_select_and_rerandomize(
-        //     &mut verifier,
-        //     &sr_params.c1_parameters,
-        //     &sr_proof.vesta_commitments[1],
-        //     c3_vars,
-        //     None,
-        //     None,
-        // );
+        single_level_select_and_rerandomize(
+            &mut verifier,
+            &sr_params.c1_parameters,
+            &sr_proof.vesta_commitments[1],
+            c3_vars,
+            None,
+            None,
+        );
         verifier
     };
     (pallas_verifier, vesta_verifier)
@@ -919,10 +899,10 @@ mod tests {
 
         let (pallas_verifier, vesta_verifier) = verification_circuit(&sr_params, &sr_proof2);
         let vesta_verification_scalars_and_points2 = vesta_verifier
-            .verification_scalars_and_points(&sr_proof.vesta_proof)
+            .verification_scalars_and_points(&sr_proof2.vesta_proof)
             .unwrap();
         let pallas_verification_scalars_and_points2 = pallas_verifier
-            .verification_scalars_and_points(&sr_proof.pallas_proof)
+            .verification_scalars_and_points(&sr_proof2.pallas_proof)
             .unwrap();
 
         let p_res = batch_verify(
@@ -972,11 +952,10 @@ mod tests {
         let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
             &set,
             &sr_params,
-            Some(4), // works up to 2
+            Some(4),
         );
-        // assert_eq!(curve_tree.height(), 4);
+        assert_eq!(curve_tree.height(), 4);
 
-        println!("prover test");
         let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
             0,
             &mut pallas_prover,
@@ -992,7 +971,6 @@ mod tests {
             .unwrap();
 
         {
-            println!("verifier test");
             let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
             let mut pallas_verifier = Verifier::new(pallas_transcript);
             let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
@@ -1019,5 +997,102 @@ mod tests {
         }
     }
 
-    // todo could add a test with branching factor 1 to test correctness w.o. vector commitments.
+    #[test]
+    pub fn test_curve_tree_batched() {
+        let mut rng = rand::thread_rng();
+        let generators_length = 1 << 12;
+
+        let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+            generators_length,
+            &mut rng,
+        );
+
+        let some_point = PallasP::rand(&mut rng).into_affine();
+        let (permissible_point, _) = sr_params
+            .c0_parameters
+            .uh
+            .permissible_commitment(&some_point, &sr_params.c0_parameters.pc_gens.B_blinding);
+        let set = vec![permissible_point];
+        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+            &set,
+            &sr_params,
+            Some(4),
+        );
+        assert_eq!(curve_tree.height(), 4);
+
+        let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+
+        let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+
+        let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
+            0,
+            &mut pallas_prover,
+            &mut vesta_prover,
+            &sr_params,
+        );
+
+        let pallas_proof = pallas_prover
+            .prove(&sr_params.c0_parameters.bp_gens)
+            .unwrap();
+        let vesta_proof = vesta_prover
+            .prove(&sr_params.c1_parameters.bp_gens)
+            .unwrap();
+
+        let (pvt1, vvt1) = {
+            let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut pallas_verifier = Verifier::new(pallas_transcript);
+            let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut vesta_verifier = Verifier::new(vesta_transcript);
+
+            let _rerandomized_leaf = curve_tree.select_and_rerandomize_verifier_gadget(
+                &mut pallas_verifier,
+                &mut vesta_verifier,
+                path_commitments.clone(),
+                &sr_params,
+            );
+            let vesta_verification_tuples = vesta_verifier
+                .verification_scalars_and_points(&vesta_proof)
+                .unwrap();
+            let pallas_verification_tuples = pallas_verifier
+                .verification_scalars_and_points(&pallas_proof)
+                .unwrap();
+            (pallas_verification_tuples, vesta_verification_tuples)
+        };
+        let (pvt2, vvt2) = {
+            let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut pallas_verifier = Verifier::new(pallas_transcript);
+            let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut vesta_verifier = Verifier::new(vesta_transcript);
+
+            let _rerandomized_leaf = curve_tree.select_and_rerandomize_verifier_gadget(
+                &mut pallas_verifier,
+                &mut vesta_verifier,
+                path_commitments,
+                &sr_params,
+            );
+            let vesta_verification_tuples = vesta_verifier
+                .verification_scalars_and_points(&vesta_proof)
+                .unwrap();
+            let pallas_verification_tuples = pallas_verifier
+                .verification_scalars_and_points(&pallas_proof)
+                .unwrap();
+            (pallas_verification_tuples, vesta_verification_tuples)
+        };
+        let pallas_res = batch_verify(
+            vec![pvt1, pvt2],
+            &sr_params.c0_parameters.pc_gens,
+            &sr_params.c0_parameters.bp_gens,
+        );
+        let vesta_res = batch_verify(
+            vec![vvt1, vvt2],
+            &sr_params.c1_parameters.pc_gens,
+            &sr_params.c1_parameters.bp_gens,
+        );
+        assert_eq!(pallas_res, vesta_res);
+        assert_eq!(pallas_res, Ok(()));
+    }
 }

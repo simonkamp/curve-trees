@@ -22,7 +22,7 @@ use ark_crypto_primitives::{
     signature::schnorr::{Parameters, PublicKey, Schnorr},
     SignatureScheme,
 };
-use ark_ec::{models::short_weierstrass_jacobian::GroupAffine};
+use ark_ec::models::short_weierstrass_jacobian::GroupAffine;
 use ark_serialize::CanonicalSerialize;
 use blake2::Blake2s;
 
