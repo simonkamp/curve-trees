@@ -15,7 +15,7 @@ use crate::permissible::*;
 use crate::select_and_rerandomize::*;
 
 use ark_crypto_primitives::{
-    signature::schnorr::{Parameters, PublicKey, Schnorr},
+    signature::schnorr::{Parameters, PublicKey, Schnorr, SecretKey},
     SignatureScheme,
 };
 use ark_ec::{
@@ -63,12 +63,10 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
         sr_parameters: &SingleLayerParameters<P0>,
         rng: &mut R,
     ) -> (Coin<P0, C>, GroupAffine<P0>) {
-        let random_scalar = C::ScalarField::rand(rng);
-        let mut randomness = Vec::new();
-        random_scalar.write(&mut randomness);
-        let randomized_pk = Schnorr::randomize_public_key(parameters, pk, &randomness).unwrap();
-
+        let pk_rerandomization = C::ScalarField::rand(rng);
+        let randomized_pk = Self::rerandomized_pk(pk, &pk_rerandomization, parameters);
         let output_tag = Self::pk_to_scalar(&randomized_pk);
+
         let (coin_commitment, permissible_randomness) = sr_parameters.permissible_commitment(
             &[P0::ScalarField::from(value), output_tag],
             P0::ScalarField::rand(rng),
@@ -79,7 +77,7 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
                 value: value,
                 tag: output_tag,
                 permissible_randomness: permissible_randomness,
-                pk_randomness: random_scalar,
+                pk_randomness: pk_rerandomization,
             },
             coin_commitment,
         )
@@ -89,6 +87,16 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
         let mut pk_bytes = Vec::new();
         pk.write(&mut pk_bytes);
         element_from_bytes_stat::<P0::ScalarField>(&pk_bytes)
+    }
+
+    pub fn rerandomized_pk(
+        pk: &PublicKey<C>,
+        rerandomization: &C::ScalarField,
+        parameters: &Parameters<C, Blake2s>,
+    ) -> PublicKey<C> {
+        let mut randomness = Vec::new();
+        rerandomization.write(&mut randomness);
+        Schnorr::randomize_public_key(parameters, pk, &randomness).unwrap()
     }
 
     pub fn prove_spend<
@@ -109,11 +117,13 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
             parameters,
         );
 
-        let (_, variables) = even_prover.commit_vec(
+        let (rerandomized_point, variables) = even_prover.commit_vec(
             &[P0::ScalarField::from(self.value), self.tag],
             self.permissible_randomness + rerandomization,
             &parameters.c0_parameters.bp_gens,
         );
+        assert_eq!(path.even_commitments.len(), 2);
+        assert_eq!(path.even_commitments[1], rerandomized_point);
 
         even_prover.constrain(variables[1] - self.tag);
 
@@ -179,6 +189,13 @@ pub fn element_from_bytes_stat<F: PrimeField>(bytes: &[u8]) -> F {
     F::from_le_bytes_mod_order(&buf)
 }
 
+pub struct SpendingInfo<P: SWModelParameters + Clone, C: ProjectiveCurve> {
+    pub index: usize,
+    pub coin_aux: Coin<P, C>,
+    pub randomized_pk: PublicKey<C>,
+    pub sk: SecretKey<C>,
+}
+
 pub fn prove_pour<
     const L: usize,
     P0: SWModelParameters + Clone,
@@ -190,16 +207,14 @@ pub fn prove_pour<
     mut odd_prover: Prover<Transcript, GroupAffine<P1>>,
     sr_parameters: &SelRerandParameters<P0, P1>,
     curve_tree: &CurveTree<L, P0, P1>,
-    index_0: usize,
-    coin_aux_0: Coin<P0, C>,
-    index_1: usize,
-    coin_aux_1: Coin<P0, C>,
+    input_0: &SpendingInfo<P0, C>,
+    input_1: &SpendingInfo<P0, C>,
     receiver_value_0: u64,
     receiver_pk_0: PublicKey<C>,
     receiver_value_1: u64,
     receiver_pk_1: PublicKey<C>,
     sig_parameters: &Parameters<C, Blake2s>,
-    rng: &mut R,
+    rng: &mut R, // todo input spending pks
 ) -> Pour<P0, P1, C> {
     // mint coins
     let (coin_opening_0, minted_coin_commitment_0, minted_amount_var_0) = Coin::<P0, C>::mint(
@@ -220,15 +235,15 @@ pub fn prove_pour<
     );
 
     // spend coins
-    let (path_0, spent_amount_var_0) = coin_aux_0.prove_spend(
-        index_0,
+    let (path_0, spent_amount_var_0) = input_0.coin_aux.prove_spend(
+        input_0.index,
         &mut even_prover,
         &mut odd_prover,
         sr_parameters,
         curve_tree,
     );
-    let (path_1, spent_amount_var_1) = coin_aux_1.prove_spend(
-        index_1,
+    let (path_1, spent_amount_var_1) = input_1.coin_aux.prove_spend(
+        input_1.index,
         &mut even_prover,
         &mut odd_prover,
         sr_parameters,
@@ -254,8 +269,8 @@ pub fn prove_pour<
         odd_proof: odd_proof,
         randomized_path_0: path_0,
         randomized_path_1: path_1,
-        pk0: receiver_pk_0,
-        pk1: receiver_pk_1,
+        pk0: input_0.randomized_pk,
+        pk1: input_1.randomized_pk,
         minted_coin_commitment_0: minted_coin_commitment_0,
         minted_coin_commitment_1: minted_coin_commitment_1,
     }
@@ -561,6 +576,11 @@ mod tests {
             &sr_params.c0_parameters,
             &mut rng,
         );
+        let rerandomized_pk = Coin::<PallasParameters, PallasP>::rerandomized_pk(
+            &pk,
+            &coin_aux.pk_randomness,
+            &schnorr_parameters,
+        );
         // Curve tree with two coins
         let set = vec![coin];
         let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
@@ -590,13 +610,14 @@ mod tests {
             let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
+            // let pk =
             let amount_var = verify_spend::<256, _, _, PallasP>(
                 path,
                 &mut pallas_verifier,
                 &mut vesta_verifier,
                 &sr_params,
                 &curve_tree,
-                &pk,
+                &rerandomized_pk,
             );
 
             vesta_verifier
@@ -658,6 +679,28 @@ mod tests {
             &sr_params,
             Some(4),
         );
+        let randomized_pk_0 = Coin::<PallasParameters, PallasP>::rerandomized_pk(
+            &pk,
+            &coin_aux_0.pk_randomness,
+            &schnorr_parameters,
+        );
+        let input0 = SpendingInfo {
+            coin_aux: coin_aux_0,
+            index: 0,
+            randomized_pk: randomized_pk_0,
+            sk: sk.clone(),
+        };
+        let randomized_pk_1 = Coin::<PallasParameters, PallasP>::rerandomized_pk(
+            &pk,
+            &coin_aux_1.pk_randomness,
+            &schnorr_parameters,
+        );
+        let input1 = SpendingInfo {
+            coin_aux: coin_aux_1,
+            index: 1,
+            randomized_pk: randomized_pk_1,
+            sk: sk,
+        };
 
         let receiver_pk_0 = pk;
         let receiver_pk_1 = pk;
@@ -667,10 +710,8 @@ mod tests {
             vesta_prover,
             &sr_params,
             &curve_tree,
-            0,
-            coin_aux_0,
-            1,
-            coin_aux_1,
+            &input0,
+            &input1,
             11,
             receiver_pk_0,
             31,

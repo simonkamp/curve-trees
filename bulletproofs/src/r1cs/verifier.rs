@@ -469,7 +469,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
     pub fn verification_scalars_and_points(
         mut self,
         proof: &R1CSProof<C>,
-    ) -> Result<(VerificationTuple<C>), R1CSError> {
+    ) -> Result<VerificationTuple<C>, R1CSError> {
         // pad
         while self.size() > self.num_vars {
             self.allocate_multiplier(None)?;
@@ -731,7 +731,7 @@ pub struct VerificationTuple<C: AffineCurve> {
 }
 
 pub fn batch_verify<C: AffineCurve>(
-    verification_tuples: Vec<(VerificationTuple<C>)>,
+    verification_tuples: Vec<VerificationTuple<C>>,
     pc_gens: &PedersenGens<C>,
     bp_gens: &BulletproofGens<C>,
 ) -> Result<(), R1CSError> {
@@ -745,7 +745,7 @@ pub fn batch_verify<C: AffineCurve>(
     );
     let padded_n = (linear_combination.len() - 2) / 2;
 
-    for (mut vt) in ver_iter {
+    for mut vt in ver_iter {
         proof_points.append(&mut vt.proof_dependent_points);
 
         // Sample random scalar

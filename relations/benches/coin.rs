@@ -33,7 +33,7 @@ fn bench_pour(c: &mut Criterion) {
         SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
 
     let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
-    let (pk, _) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
+    let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
 
     let (coin_aux_0, coin_0) = Coin::<PallasParameters, PallasP>::new(
         19,
@@ -54,6 +54,28 @@ fn bench_pour(c: &mut Criterion) {
     let curve_tree =
         CurveTree::<256, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
 
+    let randomized_pk_0 = Coin::<PallasParameters, PallasP>::rerandomized_pk(
+        &pk,
+        &coin_aux_0.pk_randomness,
+        &schnorr_parameters,
+    );
+    let input0 = SpendingInfo {
+        coin_aux: coin_aux_0,
+        index: 0,
+        randomized_pk: randomized_pk_0,
+        sk: sk.clone(),
+    };
+    let randomized_pk_1 = Coin::<PallasParameters, PallasP>::rerandomized_pk(
+        &pk,
+        &coin_aux_1.pk_randomness,
+        &schnorr_parameters,
+    );
+    let input1 = SpendingInfo {
+        coin_aux: coin_aux_1,
+        index: 1,
+        randomized_pk: randomized_pk_1,
+        sk: sk,
+    };
     let proof = {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
@@ -71,10 +93,8 @@ fn bench_pour(c: &mut Criterion) {
             vesta_prover,
             &sr_params,
             &curve_tree,
-            0,
-            coin_aux_0,
-            1,
-            coin_aux_1,
+            &input0,
+            &input1,
             11,
             receiver_pk_0,
             31,
@@ -103,17 +123,18 @@ fn bench_pour(c: &mut Criterion) {
             );
 
             // todo benchmark gadget vs msm time
-            let p_res = batch_verify(
+            batch_verify(
                 vec![pallas_vt],
                 &sr_params.c0_parameters.pc_gens,
                 &sr_params.c0_parameters.bp_gens,
-            );
-            let v_res = batch_verify(
+            )
+            .unwrap();
+            batch_verify(
                 vec![vesta_vt],
                 &sr_params.c1_parameters.pc_gens,
                 &sr_params.c1_parameters.bp_gens,
-            );
-            println!("Pallas result: {:?}. Vesta result: {:?}.", p_res, v_res)
+            )
+            .unwrap();
         })
     });
 
@@ -146,18 +167,18 @@ fn bench_pour(c: &mut Criterion) {
                         pallas_verification_scalars_and_points.push(pallas_vt);
                         vesta_verification_scalars_and_points.push(vesta_vt);
                     }
-                    let p_res = batch_verify(
+                    batch_verify(
                         pallas_verification_scalars_and_points,
                         &sr_params.c0_parameters.pc_gens,
                         &sr_params.c0_parameters.bp_gens,
-                    );
-                    let v_res = batch_verify(
+                    )
+                    .unwrap();
+                    batch_verify(
                         vesta_verification_scalars_and_points,
                         &sr_params.c1_parameters.pc_gens,
                         &sr_params.c1_parameters.bp_gens,
-                    );
-                    // todo assert that the result is Ok
-                    println!("Pallas result: {:?}. Vesta result: {:?}.", p_res, v_res)
+                    )
+                    .unwrap();
                 })
             },
         );
