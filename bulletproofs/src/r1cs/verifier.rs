@@ -548,6 +548,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let u = transcript.challenge_scalar::<C>(b"u");
         let x = transcript.challenge_scalar::<C>(b"x");
 
+        #[cfg(debug_assertions)]
         println!("verifier: x = {}", x);
 
         // compute powers for vector commitments
