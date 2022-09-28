@@ -358,7 +358,7 @@ impl<
         );
 
         // spend
-        let spent_amount_var_0 = Self::verify_spend(
+        let spent_amount_var_0 = verify_spend::<L, _, _, C>(
             self.randomized_path_0,
             &mut even_verifier,
             &mut odd_verifier,
@@ -366,7 +366,7 @@ impl<
             curve_tree,
             &self.pk0,
         );
-        let spent_amount_var_1 = Self::verify_spend(
+        let spent_amount_var_1 = verify_spend::<L, _, _, C>(
             self.randomized_path_1,
             &mut even_verifier,
             &mut odd_verifier,
@@ -392,28 +392,56 @@ impl<
         (even_vt, odd_vt)
     }
 
-    fn verify_spend<const L: usize>(
-        randomized_path: SelectAndRerandomizePath<P0, P1>,
-        even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
-        odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
-        sr_parameters: &SelRerandParameters<P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
-        pk: &PublicKey<C>,
-    ) -> Variable<P0::ScalarField> {
-        let rerandomized_coin = curve_tree.select_and_rerandomize_verifier_gadget(
-            even_verifier,
-            odd_verifier,
-            randomized_path,
-            sr_parameters,
-        );
-        let vars = even_verifier.commit_vec(L, rerandomized_coin);
+    // fn verify_spend<const L: usize>(
+    //     randomized_path: SelectAndRerandomizePath<P0, P1>,
+    //     even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
+    //     odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
+    //     sr_parameters: &SelRerandParameters<P0, P1>,
+    //     curve_tree: &CurveTree<L, P0, P1>,
+    //     pk: &PublicKey<C>,
+    // ) -> Variable<P0::ScalarField> {
+    //     let rerandomized_coin = curve_tree.select_and_rerandomize_verifier_gadget(
+    //         even_verifier,
+    //         odd_verifier,
+    //         randomized_path,
+    //         sr_parameters,
+    //     );
+    //     let vars = even_verifier.commit_vec(L, rerandomized_coin);
 
-        // enforce equality of tag with hash of public key
-        even_verifier.constrain(vars[1] - Coin::<P0, C>::pk_to_scalar(pk));
+    //     // enforce equality of tag with hash of public key
+    //     even_verifier.constrain(vars[1] - Coin::<P0, C>::pk_to_scalar(pk));
 
-        // return value to constrain spending balance
-        vars[0]
-    }
+    //     // return value to constrain spending balance
+    //     vars[0]
+    // }
+}
+
+fn verify_spend<
+    const L: usize,
+    P0: SWModelParameters + Clone,
+    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    C: ProjectiveCurve,
+>(
+    randomized_path: SelectAndRerandomizePath<P0, P1>,
+    even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
+    odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
+    sr_parameters: &SelRerandParameters<P0, P1>,
+    curve_tree: &CurveTree<L, P0, P1>,
+    pk: &PublicKey<C>,
+) -> Variable<P0::ScalarField> {
+    let rerandomized_coin = curve_tree.select_and_rerandomize_verifier_gadget(
+        even_verifier,
+        odd_verifier,
+        randomized_path,
+        sr_parameters,
+    );
+    let vars = even_verifier.commit_vec(L, rerandomized_coin);
+
+    // enforce equality of tag with hash of public key
+    even_verifier.constrain(vars[1] - Coin::<P0, C>::pk_to_scalar(pk));
+
+    // return value to constrain spending balance
+    vars[0]
 }
 
 pub struct SignedTx<
@@ -503,6 +531,89 @@ mod tests {
         let randomized_pk = Schnorr::randomize_public_key(&parameters, &pk, &randomness).unwrap();
         let res = Schnorr::verify(&parameters, &randomized_pk, msg, &randomized_sig).unwrap();
         assert_eq!(res, true);
+    }
+
+    #[test]
+    pub fn test_spend() {
+        let mut rng = rand::thread_rng();
+        let generators_length = 1 << 13; // minimum sufficient power of 2 (for height 4 curve tree)
+
+        let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+            generators_length,
+            &mut rng,
+        );
+
+        let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+
+        let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+
+        let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
+        let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
+
+        let (coin_aux, coin) = Coin::<PallasParameters, PallasP>::new(
+            19,
+            &pk,
+            &schnorr_parameters,
+            &sr_params.c0_parameters,
+            &mut rng,
+        );
+        // Curve tree with two coins
+        let set = vec![coin];
+        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+            &set,
+            &sr_params,
+            Some(4),
+        );
+
+        let (path, amount_var) = coin_aux.prove_spend(
+            0,
+            &mut pallas_prover,
+            &mut vesta_prover,
+            &sr_params,
+            &curve_tree,
+        );
+
+        let pallas_proof = pallas_prover
+            .prove(&sr_params.c0_parameters.bp_gens)
+            .unwrap();
+        let vesta_proof = vesta_prover
+            .prove(&sr_params.c1_parameters.bp_gens)
+            .unwrap();
+
+        {
+            let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut pallas_verifier = Verifier::new(pallas_transcript);
+            let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut vesta_verifier = Verifier::new(vesta_transcript);
+
+            let amount_var = verify_spend::<256, _, _, PallasP>(
+                path,
+                &mut pallas_verifier,
+                &mut vesta_verifier,
+                &sr_params,
+                &curve_tree,
+                &pk,
+            );
+
+            vesta_verifier
+                .verify(
+                    &vesta_proof,
+                    &sr_params.c1_parameters.pc_gens,
+                    &sr_params.c1_parameters.bp_gens,
+                )
+                .unwrap();
+            pallas_verifier
+                .verify(
+                    &pallas_proof,
+                    &sr_params.c0_parameters.pc_gens,
+                    &sr_params.c0_parameters.bp_gens,
+                )
+                .unwrap();
+        }
     }
 
     #[test]

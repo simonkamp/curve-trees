@@ -5,7 +5,7 @@ extern crate criterion;
 use criterion::Criterion;
 
 extern crate bulletproofs;
-use bulletproofs::r1cs::{batch_verify, ConstraintSystem, Prover, VerificationTuple, Verifier};
+use bulletproofs::r1cs::{batch_verify, Prover, Verifier};
 
 extern crate relations;
 use merlin::Transcript;
@@ -14,15 +14,12 @@ use relations::select_and_rerandomize::*;
 
 extern crate pasta;
 use pasta::{
-    pallas::{Affine as PallasAffine, PallasParameters, Projective as PallasP},
-    vesta::{Affine as VestaAffine, VestaParameters},
+    pallas::{PallasParameters, Projective as PallasP},
+    vesta::VestaParameters,
 };
 
-use ark_crypto_primitives::{
-    signature::schnorr::{Parameters, PublicKey, Schnorr},
-    SignatureScheme,
-};
-use ark_ec::{models::short_weierstrass_jacobian::GroupAffine};
+use ark_crypto_primitives::{signature::schnorr::Schnorr, SignatureScheme};
+use ark_ec::models::short_weierstrass_jacobian::GroupAffine;
 use ark_serialize::CanonicalSerialize;
 use blake2::Blake2s;
 
@@ -36,7 +33,7 @@ fn bench_pour(c: &mut Criterion) {
         SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
 
     let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
-    let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
+    let (pk, _) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
 
     let (coin_aux_0, coin_0) = Coin::<PallasParameters, PallasP>::new(
         19,
@@ -58,12 +55,12 @@ fn bench_pour(c: &mut Criterion) {
         CurveTree::<256, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
 
     let proof = {
-        let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
-        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+        let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+        let pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
             Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
 
-        let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
-        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+        let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+        let vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
             Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
 
         let receiver_pk_0 = pk;
@@ -93,10 +90,10 @@ fn bench_pour(c: &mut Criterion) {
 
     group.bench_function("verify_single", |b| {
         b.iter(|| {
-            let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
-            let mut pallas_verifier = Verifier::new(pallas_transcript);
-            let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
-            let mut vesta_verifier = Verifier::new(vesta_transcript);
+            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let pallas_verifier = Verifier::new(pallas_transcript);
+            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let vesta_verifier = Verifier::new(vesta_transcript);
 
             let (pallas_vt, vesta_vt) = proof.clone().verification_gadget(
                 pallas_verifier,
@@ -106,18 +103,17 @@ fn bench_pour(c: &mut Criterion) {
             );
 
             // todo benchmark gadget vs msm time
-            batch_verify(
+            let p_res = batch_verify(
                 vec![pallas_vt],
                 &sr_params.c0_parameters.pc_gens,
                 &sr_params.c0_parameters.bp_gens,
-            )
-            .unwrap();
-            batch_verify(
+            );
+            let v_res = batch_verify(
                 vec![vesta_vt],
                 &sr_params.c1_parameters.pc_gens,
                 &sr_params.c1_parameters.bp_gens,
-            )
-            .unwrap();
+            );
+            println!("Pallas result: {:?}. Vesta result: {:?}.", p_res, v_res)
         })
     });
 
@@ -129,16 +125,15 @@ fn bench_pour(c: &mut Criterion) {
             &iter::repeat(proof.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
-                    // proofs.map(|sr_proof| verification_circuit(&sr_params, sr_proof));
                     let mut pallas_verification_scalars_and_points =
                         Vec::with_capacity(proofs.len());
                     let mut vesta_verification_scalars_and_points =
                         Vec::with_capacity(proofs.len());
                     for proof in proofs {
-                        let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
-                        let mut pallas_verifier = Verifier::new(pallas_transcript);
-                        let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
-                        let mut vesta_verifier = Verifier::new(vesta_transcript);
+                        let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+                        let pallas_verifier = Verifier::new(pallas_transcript);
+                        let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+                        let vesta_verifier = Verifier::new(vesta_transcript);
 
                         let p = proof.clone();
                         let (pallas_vt, vesta_vt) = p.verification_gadget(
@@ -161,7 +156,8 @@ fn bench_pour(c: &mut Criterion) {
                         &sr_params.c1_parameters.pc_gens,
                         &sr_params.c1_parameters.bp_gens,
                     );
-                    // should assert that the result is Ok
+                    // todo assert that the result is Ok
+                    println!("Pallas result: {:?}. Vesta result: {:?}.", p_res, v_res)
                 })
             },
         );
@@ -175,5 +171,4 @@ criterion_group! {
     bench_pour,
 }
 
-// The benckmark for prove is ignored as it is very slow.
 criterion_main!(pour);
