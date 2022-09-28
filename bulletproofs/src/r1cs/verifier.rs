@@ -424,11 +424,11 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(), R1CSError> {
-        let (proof_points, proof_scalars, fixed_point_scalars, padded_n) =
-            match self.verification_scalars_and_points(proof) {
-                Err(e) => return Err(e),
-                Ok(t) => t,
-            };
+        let verification_tuple = match self.verification_scalars_and_points(proof) {
+            Err(e) => return Err(e),
+            Ok(t) => t,
+        };
+        let padded_n = (verification_tuple.proof_independent_scalars.len() - 2) / 2;
 
         // We are performing a single-party circuit proof, so party index is 0.
         let gens = bp_gens.share(0);
@@ -444,14 +444,16 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(gens.H(padded_n).map(|&H_i| (H_i)));
 
         let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
-            proof_points
+            verification_tuple
+                .proof_dependent_points
                 .into_iter()
                 .chain(fixed_points)
                 .collect::<Vec<_>>()
                 .as_slice(),
-            proof_scalars
+            verification_tuple
+                .proof_dependent_scalars
                 .into_iter()
-                .chain(fixed_point_scalars.into_iter())
+                .chain(verification_tuple.proof_independent_scalars.into_iter())
                 .map(|s| s.into())
                 .collect::<Vec<_>>()
                 .as_slice(),
@@ -467,7 +469,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
     pub fn verification_scalars_and_points(
         mut self,
         proof: &R1CSProof<C>,
-    ) -> Result<(Vec<C>, Vec<C::ScalarField>, Vec<C::ScalarField>, usize), R1CSError> {
+    ) -> Result<(VerificationTuple<C>), R1CSError> {
         // pad
         while self.size() > self.num_vars {
             self.allocate_multiplier(None)?;
@@ -713,29 +715,50 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 .chain(h_scalars) // H
                 .collect::<Vec<_>>();
 
-        Ok((proof_points, proof_scalars, fixed_point_scalars, padded_n))
+        Ok(VerificationTuple {
+            proof_dependent_points: proof_points,
+            proof_dependent_scalars: proof_scalars,
+            proof_independent_scalars: fixed_point_scalars,
+        })
     }
 }
 
+pub struct VerificationTuple<C: AffineCurve> {
+    pub proof_dependent_points: Vec<C>,
+    pub proof_dependent_scalars: Vec<C::ScalarField>,
+    pub proof_independent_scalars: Vec<C::ScalarField>,
+}
+
 pub fn batch_verify<C: AffineCurve>(
-    verification_tuples: Vec<(Vec<C>, Vec<C::ScalarField>, Vec<C::ScalarField>, usize)>,
+    verification_tuples: Vec<(VerificationTuple<C>)>,
     pc_gens: &PedersenGens<C>,
     bp_gens: &BulletproofGens<C>,
 ) -> Result<(), R1CSError> {
     let mut rng = rand::thread_rng();
     let mut ver_iter = verification_tuples.into_iter();
-    let (mut proof_points, mut proof_point_scalars, mut linear_combination, padded_n) =
-        ver_iter.nth(0).unwrap();
+    let vt = ver_iter.nth(0).unwrap();
+    let (mut proof_points, mut proof_point_scalars, mut linear_combination) = (
+        vt.proof_dependent_points,
+        vt.proof_dependent_scalars,
+        vt.proof_independent_scalars,
+    );
+    let padded_n = (linear_combination.len() - 2) / 2;
 
-    for (mut pp, ps, fps, _) in ver_iter {
-        proof_points.append(&mut pp);
+    for (mut vt) in ver_iter {
+        proof_points.append(&mut vt.proof_dependent_points);
 
         // Sample random scalar
         let random_scalar = C::ScalarField::rand(&mut rng);
 
         // Multiply all scalars
-        let ps = ps.into_iter().map(|s| s * random_scalar);
-        let fps = fps.into_iter().map(|s| s * random_scalar);
+        let ps = vt
+            .proof_dependent_scalars
+            .into_iter()
+            .map(|s| s * random_scalar);
+        let fps = vt
+            .proof_independent_scalars
+            .into_iter()
+            .map(|s| s * random_scalar);
 
         proof_point_scalars.append(&mut ps.collect());
         linear_combination = linear_combination

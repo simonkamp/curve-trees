@@ -142,7 +142,7 @@ impl<C: AffineCurve> ShuffleProof<C> {
         transcript: &'a mut Transcript,
         input_commitments: &Vec<C>,
         output_commitments: &Vec<C>,
-    ) -> Result<(Vec<C>, Vec<C::ScalarField>, Vec<C::ScalarField>, usize), R1CSError> {
+    ) -> Result<(VerificationTuple<C>), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
         let k = input_commitments.len();
