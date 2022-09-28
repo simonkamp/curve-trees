@@ -188,7 +188,7 @@ impl<
             Self::Odd(ct) => ct.single_level_select_and_rerandomize_prover_gadget(
                 index,
                 odd_prover,
-                &mut odd_commitments,
+                &mut even_commitments,
                 &parameters.c1_parameters,
                 &parameters.c0_parameters,
                 P1::ScalarField::zero(),
@@ -198,12 +198,13 @@ impl<
         };
         // While the current node is internal, do two iterations of the proof.
         while let Some(_) = &even_internal_node.children {
+            // println!("Prover ")
             // Do two iterations of the proof and advance `even_internal_node`to a grandchild.
             let (child, child_rerandomization_scalar) = even_internal_node
                 .single_level_select_and_rerandomize_prover_gadget(
                     index,
                     even_prover,
-                    &mut even_commitments,
+                    &mut odd_commitments,
                     &parameters.c0_parameters,
                     &parameters.c1_parameters,
                     rerandomization_scalar,
@@ -215,7 +216,7 @@ impl<
                 .single_level_select_and_rerandomize_prover_gadget(
                     index,
                     odd_prover,
-                    &mut odd_commitments,
+                    &mut even_commitments,
                     &parameters.c1_parameters,
                     &parameters.c0_parameters,
                     child_rerandomization_scalar,
@@ -254,6 +255,7 @@ impl<
                 (randomized_path.even_commitments, odd_commitments_with_root)
             }
             Self::Even(ct) => {
+                println!("Verifier. Even root: {}", ct.commitment);
                 assert_eq!(
                     randomized_path.even_commitments.len(),
                     randomized_path.odd_commitments.len()
@@ -264,6 +266,12 @@ impl<
             }
         };
 
+        for c in &even_commitments {
+
+            println!("even commitments: {}", c);
+        }
+
+
         // The last even commitment is a leaf.
         for i in 0..even_commitments.len() - 1 {
             let odd_index = if even_commitments.len() == odd_commitments.len() {
@@ -271,7 +279,8 @@ impl<
             } else {
                 i
             };
-            let variables = even_verifier.commit_vec(256, even_commitments[i]);
+            println!("Verifier commiting to {}", even_commitments[i]);
+            let variables = even_verifier.commit_vec(256, even_commitments[i]); // committing to public value in first iteration
             single_level_select_and_rerandomize(
                 even_verifier,
                 &parameters.c1_parameters,
@@ -284,15 +293,18 @@ impl<
 
         for i in 0..odd_commitments.len() {
             let even_index = if even_commitments.len() == odd_commitments.len() {
+                println!("equal length");
                 i
             } else {
-                i + 1
+                println!("not equal length");
+                i + 1 // todo this logic has changed
             };
+            println!("Verifier commiting to {}", odd_commitments[i]);
             let variables = odd_verifier.commit_vec(256, odd_commitments[i]);
             single_level_select_and_rerandomize(
                 odd_verifier,
                 &parameters.c0_parameters,
-                &even_commitments[even_index],
+                &even_commitments[even_index], // todo is this supposed to be the witness of the child?
                 variables,
                 None,
                 None,
@@ -392,7 +404,7 @@ impl<
         &self,
         index: usize,
         prover: &mut Prover<Transcript, GroupAffine<P0>>,
-        commitments: &mut Vec<GroupAffine<P0>>,
+        commitments: &mut Vec<GroupAffine<P1>>,
         even_parameters: &SingleLayerParameters<P0>,
         odd_parameters: &SingleLayerParameters<P1>,
         rerandomization_scalar: P0::ScalarField,
@@ -420,12 +432,12 @@ impl<
                     // todo we should not need the prover to commit to the root, i.e. the rerandomization scalar should be an option
                     &even_parameters.bp_gens,
                 );
-                println!("Committed to {:?}", rerandomized_commitment);
-                commitments.push(rerandomized_commitment);
+                println!("Committed to {}", rerandomized_commitment);
                 let child_commitment = child.commitment;
                 let mut blinding_base = odd_parameters.pc_gens.B_blinding.into_projective();
                 blinding_base *= child_rerandomization_scalar;
                 let rerandomized_child = child_commitment + blinding_base.into_affine();
+                commitments.push(rerandomized_child);
                 (child, rerandomized_child, children_vars)
             }
         };
@@ -510,6 +522,7 @@ fn single_level_select_and_rerandomize<
     xy_witness: Option<GroupAffine<C2>>, // witness of the commitment we wish to select and rerandomize
     randomness_offset: Option<Fb>,       // the scalar used for randomizing
 ) {
+    println!("single level (cs) sel and rerand, rerandomized: {}", rerandomized);
     let x_var = cs.allocate(xy_witness.map(|xy| xy.x)).unwrap();
     // show that leaf is in c0
     select(
@@ -874,7 +887,7 @@ mod tests {
             &sr_params.c1_parameters.pc_gens,
             &sr_params.c1_parameters.bp_gens,
         );
-        assert_eq!(p_res, Ok(()));
+        assert_eq!(p_res, v_res);
         assert_eq!(v_res, Ok(()));
     }
 
@@ -930,7 +943,7 @@ mod tests {
     #[test]
     pub fn test_curve_tree() {
         let mut rng = rand::thread_rng();
-        let generators_length = 1 << 12; // minimum sufficient power of 2
+        let generators_length = 1 << 12;
 
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
@@ -954,11 +967,12 @@ mod tests {
         let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
             &set,
             &sr_params,
-            Some(4),
+            Some(4), // works up to 2
         );
-        assert_eq!(curve_tree.height(), 4);
+        // assert_eq!(curve_tree.height(), 4);
 
-        let (path_commitments, rerandomization_scalar) = curve_tree
+        println!("prover test");
+        let (path_commitments, _) = curve_tree
             .select_and_rerandomize_prover_gadget(
                 0,
                 &mut pallas_prover,
@@ -974,6 +988,7 @@ mod tests {
             .unwrap();
 
         {
+            println!("verifier test");
             let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
             let mut pallas_verifier = Verifier::new(pallas_transcript);
             let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
@@ -985,16 +1000,18 @@ mod tests {
                 path_commitments,
                 &sr_params,
             );
-            vesta_verifier.verify(
+            let vesta_res = vesta_verifier.verify(
                 &vesta_proof,
                 &sr_params.c1_parameters.pc_gens,
                 &sr_params.c1_parameters.bp_gens,
             );
-            pallas_verifier.verify(
+            let pallas_res = pallas_verifier.verify(
                 &pallas_proof,
                 &sr_params.c0_parameters.pc_gens,
                 &sr_params.c0_parameters.bp_gens,
             );
+            assert_eq!(vesta_res, pallas_res);
+            assert_eq!(vesta_res, Ok(()));
         }
     }
 
