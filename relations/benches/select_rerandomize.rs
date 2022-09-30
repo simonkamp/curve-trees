@@ -5,24 +5,23 @@ extern crate criterion;
 use criterion::Criterion;
 
 extern crate bulletproofs;
-use bulletproofs::r1cs::{batch_verify, ConstraintSystem};
+use bulletproofs::r1cs::{batch_verify, Prover, Verifier};
 
 extern crate relations;
+use rand::distributions::Uniform;
 use relations::select_and_rerandomize::*;
 
 extern crate pasta;
 use pasta::{
-    pallas::{Affine as PallasAffine, PallasParameters},
-    vesta::{Affine as VestaAffine, VestaParameters},
+    pallas::{PallasParameters, Projective as PallasP},
+    vesta::VestaParameters,
 };
 
-use ark_ec::AffineCurve;
+use ark_ec::{short_weierstrass_jacobian::GroupAffine, ProjectiveCurve};
 use ark_serialize::CanonicalSerialize;
+use ark_std::UniformRand;
 
-type PallasScalar = <PallasAffine as AffineCurve>::ScalarField;
-type PallasBase = <PallasAffine as AffineCurve>::BaseField;
-type VestaScalar = <VestaAffine as AffineCurve>::ScalarField;
-type VestaBase = <VestaAffine as AffineCurve>::BaseField;
+use merlin::Transcript;
 
 fn bench_select_and_rerandomize_prove(c: &mut Criterion) {
     let mut rng = rand::thread_rng();
@@ -48,76 +47,246 @@ criterion_group! {
 fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
     let mut group = c.benchmark_group("Verification of select and randomize proofs");
 
+    // let mut rng = rand::thread_rng();
+    // let generators_length = 1 << 12; // minimum sufficient power of 2
+
+    // let sr_params =
+    //     SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
+    // let sr_proof = prove_from_mock_curve_tree(&sr_params);
+
+    // println!(
+    //     "Proof result (a point) in bytes {}",
+    //     sr_proof.result.serialized_size()
+    // );
+    // println!("Proof size in bytes {}", sr_proof.serialized_size());
+
+    // group.bench_function("verify_single", |b| {
+    //     b.iter(|| {
+    //         // benchmarks all of the verification steps, except:
+    //         // 1) checking if both msms return zero
+    //         // 2) that the root of the curve is consistent with the known curve tree
+    //         let (pallas_verifier, vesta_verifier) = verification_circuit(&sr_params, &sr_proof);
+    //         let p_res = pallas_verifier.verify(
+    //             &sr_proof.pallas_proof,
+    //             &sr_params.c0_parameters.pc_gens,
+    //             &sr_params.c0_parameters.bp_gens,
+    //         );
+    //         let v_res = vesta_verifier.verify(
+    //             &sr_proof.vesta_proof,
+    //             &sr_params.c1_parameters.pc_gens,
+    //             &sr_params.c1_parameters.bp_gens,
+    //         );
+    //     })
+    // });
+
+    // use std::iter;
+
+    // for n in [1, 10, 50, 99, 100, 199, 200] {
+    //     group.bench_with_input(
+    //         format!("Batch verification of {} proofs.", n),
+    //         &iter::repeat(&sr_proof).take(n).collect::<Vec<_>>(),
+    //         |b, proofs| {
+    //             b.iter(|| {
+    //                 // proofs.map(|sr_proof| verification_circuit(&sr_params, sr_proof));
+    //                 let mut pallas_verification_scalars_and_points =
+    //                     Vec::with_capacity(proofs.len());
+    //                 let mut vesta_verification_scalars_and_points =
+    //                     Vec::with_capacity(proofs.len());
+    //                 for sr_proof in proofs {
+    //                     let (pallas_verifier, vesta_verifier) =
+    //                         verification_circuit(&sr_params, &sr_proof);
+    //                     pallas_verification_scalars_and_points.push(
+    //                         pallas_verifier
+    //                             .verification_scalars_and_points(&sr_proof.pallas_proof)
+    //                             .unwrap(),
+    //                     );
+    //                     vesta_verification_scalars_and_points.push(
+    //                         vesta_verifier
+    //                             .verification_scalars_and_points(&sr_proof.vesta_proof)
+    //                             .unwrap(),
+    //                     );
+    //                 }
+    //                 let p_res = batch_verify(
+    //                     pallas_verification_scalars_and_points,
+    //                     &sr_params.c0_parameters.pc_gens,
+    //                     &sr_params.c0_parameters.bp_gens,
+    //                 );
+    //                 let v_res = batch_verify(
+    //                     vesta_verification_scalars_and_points,
+    //                     &sr_params.c1_parameters.pc_gens,
+    //                     &sr_params.c1_parameters.bp_gens,
+    //                 );
+    //                 // should assert that the result is Ok
+    //             })
+    //         },
+    //     );
+    // }
+
     let mut rng = rand::thread_rng();
     let generators_length = 1 << 12; // minimum sufficient power of 2
 
     let sr_params =
         SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
-    let sr_proof = prove_from_mock_curve_tree(&sr_params);
+
+    let some_point = PallasP::rand(&mut rng).into_affine();
+    let (permissible_point, _) = sr_params
+        .c0_parameters
+        .uh
+        .permissible_commitment(&some_point, &sr_params.c0_parameters.pc_gens.B_blinding);
+    let set = vec![permissible_point];
+    let curve_tree =
+        CurveTree::<256, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
+
+    let (path, pallas_proof, vesta_proof) = {
+        let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+
+        let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+
+        let (path, _) = curve_tree.select_and_rerandomize_prover_gadget(
+            0,
+            &mut pallas_prover,
+            &mut vesta_prover,
+            &sr_params,
+        );
+        let pallas_proof = pallas_prover
+            .prove(&sr_params.c0_parameters.bp_gens)
+            .unwrap();
+        let vesta_proof = vesta_prover
+            .prove(&sr_params.c1_parameters.bp_gens)
+            .unwrap();
+        (path, pallas_proof, vesta_proof)
+    };
 
     println!(
-        "Proof result (a point) in bytes {}",
-        sr_proof.result.serialized_size()
+        "Proof size in bytes {}",
+        path.serialized_size() + pallas_proof.serialized_size() + vesta_proof.serialized_size()
     );
-    println!("Proof size in bytes {}", sr_proof.serialized_size());
 
+    group.bench_function("verification_gadget", |b| {
+        b.iter(|| {
+            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut pallas_verifier = Verifier::new(pallas_transcript);
+            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut vesta_verifier = Verifier::new(vesta_transcript);
+
+            curve_tree.select_and_rerandomize_verifier_gadget(
+                &mut pallas_verifier,
+                &mut vesta_verifier,
+                path.clone(),
+                &sr_params,
+            );
+        })
+    });
+    group.bench_function("verification_tuples", |b| {
+        b.iter(|| {
+            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut pallas_verifier = Verifier::new(pallas_transcript);
+            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut vesta_verifier = Verifier::new(vesta_transcript);
+
+            curve_tree.select_and_rerandomize_verifier_gadget(
+                &mut pallas_verifier,
+                &mut vesta_verifier,
+                path.clone(),
+                &sr_params,
+            );
+
+            let pallas_vt = pallas_verifier
+                .verification_scalars_and_points(&pallas_proof)
+                .unwrap();
+            let vesta_vt = vesta_verifier
+                .verification_scalars_and_points(&vesta_proof)
+                .unwrap();
+        })
+    });
     group.bench_function("verify_single", |b| {
         b.iter(|| {
-            // benchmarks all of the verification steps, except:
-            // 1) checking if both msms return zero
-            // 2) that the root of the curve is consistent with the known curve tree
-            let (pallas_verifier, vesta_verifier) = verification_circuit(&sr_params, &sr_proof);
-            let p_res = pallas_verifier.verify(
-                &sr_proof.pallas_proof,
+            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut pallas_verifier = Verifier::new(pallas_transcript);
+            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let mut vesta_verifier = Verifier::new(vesta_transcript);
+
+            curve_tree.select_and_rerandomize_verifier_gadget(
+                &mut pallas_verifier,
+                &mut vesta_verifier,
+                path.clone(),
+                &sr_params,
+            );
+
+            let pallas_vt = pallas_verifier
+                .verification_scalars_and_points(&pallas_proof)
+                .unwrap();
+            let vesta_vt = vesta_verifier
+                .verification_scalars_and_points(&vesta_proof)
+                .unwrap();
+
+            // todo benchmark gadget vs msm time
+            batch_verify(
+                vec![pallas_vt],
                 &sr_params.c0_parameters.pc_gens,
                 &sr_params.c0_parameters.bp_gens,
-            );
-            let v_res = vesta_verifier.verify(
-                &sr_proof.vesta_proof,
+            )
+            .unwrap();
+            batch_verify(
+                vec![vesta_vt],
                 &sr_params.c1_parameters.pc_gens,
                 &sr_params.c1_parameters.bp_gens,
-            );
+            )
+            .unwrap();
         })
     });
 
     use std::iter;
 
-    for n in [1, 10, 50, 99, 100, 199, 200] {
+    for n in [1, 10, 50, 100, 150, 200] {
         group.bench_with_input(
             format!("Batch verification of {} proofs.", n),
-            &iter::repeat(&sr_proof).take(n).collect::<Vec<_>>(),
+            &iter::repeat(path.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
-                    // proofs.map(|sr_proof| verification_circuit(&sr_params, sr_proof));
                     let mut pallas_verification_scalars_and_points =
                         Vec::with_capacity(proofs.len());
                     let mut vesta_verification_scalars_and_points =
                         Vec::with_capacity(proofs.len());
-                    for sr_proof in proofs {
-                        let (pallas_verifier, vesta_verifier) =
-                            verification_circuit(&sr_params, &sr_proof);
-                        pallas_verification_scalars_and_points.push(
-                            pallas_verifier
-                                .verification_scalars_and_points(&sr_proof.pallas_proof)
-                                .unwrap(),
+                    for path in proofs {
+                        let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+                        let mut pallas_verifier = Verifier::new(pallas_transcript);
+                        let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+                        let mut vesta_verifier = Verifier::new(vesta_transcript);
+
+                        curve_tree.select_and_rerandomize_verifier_gadget(
+                            &mut pallas_verifier,
+                            &mut vesta_verifier,
+                            path.clone(),
+                            &sr_params,
                         );
-                        vesta_verification_scalars_and_points.push(
-                            vesta_verifier
-                                .verification_scalars_and_points(&sr_proof.vesta_proof)
-                                .unwrap(),
-                        );
+
+                        let pallas_vt = pallas_verifier
+                            .verification_scalars_and_points(&pallas_proof)
+                            .unwrap();
+                        let vesta_vt = vesta_verifier
+                            .verification_scalars_and_points(&vesta_proof)
+                            .unwrap();
+
+                        pallas_verification_scalars_and_points.push(pallas_vt);
+                        vesta_verification_scalars_and_points.push(vesta_vt);
                     }
-                    let p_res = batch_verify(
+                    batch_verify(
                         pallas_verification_scalars_and_points,
                         &sr_params.c0_parameters.pc_gens,
                         &sr_params.c0_parameters.bp_gens,
-                    );
-                    let v_res = batch_verify(
+                    )
+                    .unwrap();
+                    batch_verify(
                         vesta_verification_scalars_and_points,
                         &sr_params.c1_parameters.pc_gens,
                         &sr_params.c1_parameters.bp_gens,
-                    );
-                    // should assert that the result is Ok
+                    )
+                    .unwrap();
                 })
             },
         );

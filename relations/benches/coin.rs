@@ -27,6 +27,7 @@ fn bench_pour(c: &mut Criterion) {
     let mut group = c.benchmark_group("Pour proofs");
 
     let mut rng = rand::thread_rng();
+    // todo this is needlessly adding 8192 generators to the "odd curve"
     let generators_length = 1 << 13; // minimum sufficient power of 2
 
     let sr_params =
@@ -108,6 +109,21 @@ fn bench_pour(c: &mut Criterion) {
 
     println!("Proof size in bytes {}", proof.serialized_size());
 
+    group.bench_function("verification_gadget", |b| {
+        b.iter(|| {
+            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let pallas_verifier = Verifier::new(pallas_transcript);
+            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let vesta_verifier = Verifier::new(vesta_transcript);
+
+            proof.clone().verification_gadget(
+                pallas_verifier,
+                vesta_verifier,
+                &sr_params,
+                &curve_tree,
+            );
+        })
+    });
     group.bench_function("verify_single", |b| {
         b.iter(|| {
             let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -140,7 +156,7 @@ fn bench_pour(c: &mut Criterion) {
 
     use std::iter;
 
-    for n in [1, 10, 50, 99, 100, 199, 200] {
+    for n in [1, 10, 50, 100, 150, 200] {
         group.bench_with_input(
             format!("Batch verification of {} proofs.", n),
             &iter::repeat(proof.clone()).take(n).collect::<Vec<_>>(),
