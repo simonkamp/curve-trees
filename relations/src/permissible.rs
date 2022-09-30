@@ -1,18 +1,10 @@
-#![allow(unused)] // todo
 use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
 
 use crate::curve::*;
-use crate::lookup::*;
 
-use ark_ec::{
-    models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
-    AffineCurve, ModelParameters, ProjectiveCurve, SWModelParameters,
-};
-use ark_ff::{BigInteger, Field, PrimeField, SquareRootField};
-use ark_std::{rand::Rng, One, UniformRand, Zero};
-use merlin::Transcript;
-use std::{borrow::BorrowMut, iter, marker::PhantomData};
+use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, SWModelParameters};
+use ark_ff::SquareRootField;
+use ark_std::rand::Rng;
 
 #[derive(Clone, Copy, Debug)]
 pub struct UniversalHash<F: SquareRootField> {
@@ -93,22 +85,17 @@ impl<F: SquareRootField> UniversalHash<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use ark_ec::{AffineCurve, ProjectiveCurve};
     use ark_std::UniformRand;
     use bulletproofs::{BulletproofGens, PedersenGens};
     use merlin::Transcript;
 
-    use rand::thread_rng;
-    use rand::Rng;
-
     use pasta;
     type PallasA = pasta::pallas::Affine;
     type PallasP = pasta::pallas::Projective;
-    type PallasScalar = <PallasA as AffineCurve>::ScalarField;
     type PallasBase = <PallasA as AffineCurve>::BaseField;
     type VestaA = pasta::vesta::Affine;
     type VestaScalar = <VestaA as AffineCurve>::ScalarField;
-    type VestaBase = <VestaA as AffineCurve>::BaseField;
 
     #[test]
     fn test_permissible() {
@@ -120,7 +107,7 @@ mod tests {
             pasta::pallas::PallasParameters::COEFF_A,
             pasta::pallas::PallasParameters::COEFF_B,
         );
-        let (c2, r) = uh.permissible_commitment(&c, &h);
+        let (c2, _) = uh.permissible_commitment(&c, &h);
 
         let pc_gens = PedersenGens::<VestaA>::default();
         let bp_gens = BulletproofGens::<VestaA>::new(8, 1);

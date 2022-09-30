@@ -1,18 +1,6 @@
-#![allow(unused)] // todo
 use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
 
-use crate::curve::*;
-use crate::lookup::*;
-
-use ark_ec::{
-    models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
-    AffineCurve, ModelParameters, ProjectiveCurve, SWModelParameters,
-};
-use ark_ff::{BigInteger, Field, PrimeField};
-use ark_std::{One, UniformRand, Zero};
-use merlin::Transcript;
-use std::{borrow::BorrowMut, iter, marker::PhantomData};
+use ark_ff::Field;
 
 /// Prove that a commitment x is one of the values committed to in vector commitment xs.
 pub fn select<F: Field, Cs: ConstraintSystem<F>>(
@@ -25,7 +13,7 @@ pub fn select<F: Field, Cs: ConstraintSystem<F>>(
     // (x_1 - x) * (x_2 - x) * ... * (x_n - x) = 0
     let mut product: LinearCombination<F> = xs[0].clone();
     for i in 0..xs.len() {
-        let (_, _, next_product) = cs.multiply(product, (xs[i].clone() - x.clone()));
+        let (_, _, next_product) = cs.multiply(product, xs[i].clone() - x.clone());
         product = next_product.into();
     }
     cs.constrain(product);
@@ -35,20 +23,17 @@ pub fn select<F: Field, Cs: ConstraintSystem<F>>(
 mod tests {
     use super::*;
 
+    use ark_ec::AffineCurve;
     use ark_std::UniformRand;
     use bulletproofs::{BulletproofGens, PedersenGens};
     use merlin::Transcript;
-
-    use rand::thread_rng;
-    use rand::Rng;
+    use std::iter;
 
     use pasta;
     type PallasA = pasta::pallas::Affine;
-    type PallasScalar = <PallasA as AffineCurve>::ScalarField;
     type PallasBase = <PallasA as AffineCurve>::BaseField;
     type VestaA = pasta::vesta::Affine;
     type VestaScalar = <VestaA as AffineCurve>::ScalarField;
-    type VestaBase = <VestaA as AffineCurve>::BaseField;
 
     #[test]
     fn test_select() {

@@ -1,8 +1,6 @@
-#![allow(unused)]
 use bulletproofs::r1cs::*;
 
-use ark_ec::AffineCurve;
-use ark_ff::{Field, One, Zero};
+use ark_ff::Field;
 
 const WINDOW_SIZE: usize = 3;
 pub const WINDOW_ELEMS: usize = 1 << WINDOW_SIZE;
@@ -119,16 +117,15 @@ pub fn lookup<const N: usize, F: Field, Cs: ConstraintSystem<F>>(
 mod tests {
     use super::*;
 
+    use ark_ec::AffineCurve;
     use ark_std::UniformRand;
     use bulletproofs::{BulletproofGens, PedersenGens};
     use merlin::Transcript;
 
     use rand::thread_rng;
-    use rand::Rng;
 
     use pasta;
     type C = pasta::pallas::Affine;
-    type C2 = pasta::vesta::Affine;
     type F = <C as AffineCurve>::ScalarField;
 
     #[test]

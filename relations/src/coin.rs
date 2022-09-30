@@ -1,31 +1,17 @@
-#![allow(unused)]
-use ark_crypto_primitives::commitment::blake2s;
-use ark_crypto_primitives::signature::schnorr::Signature;
-use ark_ec::CurveCycle;
-// todo
 use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
-use digest::Digest;
-use merlin::{Transcript, TranscriptRng};
-// use digest::Digest;
+use merlin::Transcript;
 use rand::Rng;
 
-use crate::curve::{self, *};
-use crate::permissible::*;
 use crate::select_and_rerandomize::*;
 
 use ark_crypto_primitives::{
     signature::schnorr::{Parameters, PublicKey, Schnorr, SecretKey},
     SignatureScheme,
 };
-use ark_ec::{
-    models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
-    msm::VariableBaseMSM,
-    AffineCurve, ModelParameters, ProjectiveCurve, SWModelParameters,
-};
-use ark_ff::{BigInteger, Field, PrimeField, SquareRootField, ToBytes};
+use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, ProjectiveCurve, SWModelParameters};
+use ark_ff::{Field, PrimeField, ToBytes};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
-use ark_std::{One, UniformRand, Zero};
+use ark_std::UniformRand;
 use blake2::Blake2s;
 
 pub struct Coin<P0: SWModelParameters + Clone, C: ProjectiveCurve> {
@@ -44,14 +30,14 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
         rng: &mut R,
         prover: &mut Prover<Transcript, GroupAffine<P0>>,
     ) -> (Coin<P0, C>, GroupAffine<P0>, Variable<P0::ScalarField>) {
-        let (coin, coin_commitment) = Self::new(value, pk, parameters, sr_parameters, rng);
+        let (coin, _) = Self::new(value, pk, parameters, sr_parameters, rng);
 
         let (coin_commitment, variables) = prover.commit_vec(
             &[P0::ScalarField::from(value), coin.tag],
             coin.permissible_randomness,
             &sr_parameters.bp_gens,
         );
-        range_proof(prover, variables[0].into(), Some(value), 64); // todo what range do we want to enforce? Table of benchmarks for different powers?
+        range_proof(prover, variables[0].into(), Some(value), 64).unwrap(); // todo what range do we want to enforce? Table of benchmarks for different powers?
 
         (coin, coin_commitment, variables[0])
     }
@@ -85,7 +71,7 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
 
     fn pk_to_scalar(pk: &PublicKey<C>) -> P0::ScalarField {
         let mut pk_bytes = Vec::new();
-        pk.write(&mut pk_bytes);
+        pk.write(&mut pk_bytes).unwrap();
         element_from_bytes_stat::<P0::ScalarField>(&pk_bytes)
     }
 
@@ -95,7 +81,7 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
         parameters: &Parameters<C, Blake2s>,
     ) -> PublicKey<C> {
         let mut randomness = Vec::new();
-        rerandomization.write(&mut randomness);
+        rerandomization.write(&mut randomness).unwrap();
         Schnorr::randomize_public_key(parameters, pk, &randomness).unwrap()
     }
 
@@ -134,10 +120,9 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
 pub fn verify_mint<P: SWModelParameters>(
     verifier: &mut Verifier<Transcript, GroupAffine<P>>,
     commitment: GroupAffine<P>,
-    parameters: &SingleLayerParameters<P>,
 ) -> Variable<P::ScalarField> {
-    let (variables) = verifier.commit_vec(2, commitment);
-    range_proof(verifier, variables[0].into(), None, 64); // todo range?
+    let variables = verifier.commit_vec(2, commitment);
+    range_proof(verifier, variables[0].into(), None, 64).unwrap(); // todo range?
     variables[0]
 }
 
@@ -274,6 +259,7 @@ pub fn prove_pour<
         minted_coin_commitment_0: minted_coin_commitment_0,
         minted_coin_commitment_1: minted_coin_commitment_1,
     }
+    // todo output minted coins
 }
 
 // todo do an n to m pour with arrays?
@@ -361,16 +347,8 @@ impl<
         VerificationTuple<GroupAffine<P1>>,
     ) {
         // mint
-        let minted_amount_var_0 = verify_mint(
-            &mut even_verifier,
-            self.minted_coin_commitment_0,
-            &sr_parameters.c0_parameters,
-        );
-        let minted_amount_var_1 = verify_mint(
-            &mut even_verifier,
-            self.minted_coin_commitment_1,
-            &sr_parameters.c0_parameters,
-        );
+        let minted_amount_var_0 = verify_mint(&mut even_verifier, self.minted_coin_commitment_0);
+        let minted_amount_var_1 = verify_mint(&mut even_verifier, self.minted_coin_commitment_1);
 
         // spend
         let spent_amount_var_0 = verify_spend::<L, _, _, C>(
@@ -406,29 +384,6 @@ impl<
 
         (even_vt, odd_vt)
     }
-
-    // fn verify_spend<const L: usize>(
-    //     randomized_path: SelectAndRerandomizePath<P0, P1>,
-    //     even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
-    //     odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
-    //     sr_parameters: &SelRerandParameters<P0, P1>,
-    //     curve_tree: &CurveTree<L, P0, P1>,
-    //     pk: &PublicKey<C>,
-    // ) -> Variable<P0::ScalarField> {
-    //     let rerandomized_coin = curve_tree.select_and_rerandomize_verifier_gadget(
-    //         even_verifier,
-    //         odd_verifier,
-    //         randomized_path,
-    //         sr_parameters,
-    //     );
-    //     let vars = even_verifier.commit_vec(L, rerandomized_coin);
-
-    //     // enforce equality of tag with hash of public key
-    //     even_verifier.constrain(vars[1] - Coin::<P0, C>::pk_to_scalar(pk));
-
-    //     // return value to constrain spending balance
-    //     vars[0]
-    // }
 }
 
 fn verify_spend<
@@ -515,23 +470,11 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use ark_std::UniformRand;
-    use bulletproofs::{BulletproofGens, PedersenGens};
     use merlin::Transcript;
-
-    use rand::thread_rng;
-
     use pasta;
     type PallasParameters = pasta::pallas::PallasParameters;
     type VestaParameters = pasta::vesta::VestaParameters;
-    type PallasA = pasta::pallas::Affine;
     type PallasP = pasta::pallas::Projective;
-    type PallasScalar = <PallasA as AffineCurve>::ScalarField;
-    type PallasBase = <PallasA as AffineCurve>::BaseField;
-    type VestaA = pasta::vesta::Affine;
-    type VestaScalar = <VestaA as AffineCurve>::ScalarField;
-    type VestaBase = <VestaA as AffineCurve>::BaseField;
 
     #[test]
     fn test_schnorr() {
@@ -558,11 +501,11 @@ mod tests {
             &mut rng,
         );
 
-        let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+        let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
             Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
 
-        let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+        let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
             Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
 
@@ -589,7 +532,7 @@ mod tests {
             Some(4),
         );
 
-        let (path, amount_var) = coin_aux.prove_spend(
+        let (path, _) = coin_aux.prove_spend(
             0,
             &mut pallas_prover,
             &mut vesta_prover,
@@ -605,13 +548,12 @@ mod tests {
             .unwrap();
 
         {
-            let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
             let mut pallas_verifier = Verifier::new(pallas_transcript);
-            let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            // let pk =
-            let amount_var = verify_spend::<256, _, _, PallasP>(
+            let _ = verify_spend::<256, _, _, PallasP>(
                 path,
                 &mut pallas_verifier,
                 &mut vesta_verifier,
@@ -647,12 +589,12 @@ mod tests {
             &mut rng,
         );
 
-        let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
-        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+        let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+        let pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
             Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
 
-        let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
-        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+        let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+        let vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
             Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
 
         let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
@@ -721,10 +663,10 @@ mod tests {
         );
 
         {
-            let mut pallas_transcript = Transcript::new(b"select_and_rerandomize");
-            let mut pallas_verifier = Verifier::new(pallas_transcript);
-            let mut vesta_transcript = Transcript::new(b"select_and_rerandomize");
-            let mut vesta_verifier = Verifier::new(vesta_transcript);
+            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+            let pallas_verifier = Verifier::new(pallas_transcript);
+            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+            let vesta_verifier = Verifier::new(vesta_transcript);
 
             let (pallas_vt, vesta_vt) =
                 proof.verification_gadget(pallas_verifier, vesta_verifier, &sr_params, &curve_tree);

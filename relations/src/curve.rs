@@ -1,17 +1,6 @@
-#![allow(unused)] // todo
+use ark_ff::Field;
 use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
-
-use crate::lookup::*;
-
-use ark_ec::{
-    models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
-    AffineCurve, ModelParameters, ProjectiveCurve, SWModelParameters,
-};
-use ark_ff::{BigInteger, Field, PrimeField};
-use ark_std::{One, Zero};
-use merlin::Transcript;
-use std::{borrow::BorrowMut, marker::PhantomData};
+use std::marker::PhantomData;
 
 pub fn curve_check<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
@@ -105,12 +94,13 @@ mod tests {
 
     use ark_ec::ProjectiveCurve;
     use ark_std::UniformRand;
+    use bulletproofs::{BulletproofGens, PedersenGens};
     use pasta::{
         pallas::Affine as PallasA, pallas::Projective as PallasP, vesta::Affine as VestaA,
-        vesta::Projective as VestaP, Fp, Fq,
+        vesta::Projective as VestaP,
     };
-    type PallasScalar = <PallasP as ProjectiveCurve>::ScalarField;
     type VestaScalar = <VestaP as ProjectiveCurve>::ScalarField;
+    use merlin::Transcript;
 
     #[test]
     fn test_curve_addition() {

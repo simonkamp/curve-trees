@@ -1,18 +1,15 @@
-#![allow(unused)] // todo
 use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
 
 use crate::curve::*;
 use crate::lookup::*;
 
 use ark_ec::{
-    models::short_weierstrass_jacobian::{GroupAffine, GroupProjective},
-    AffineCurve, ModelParameters, ProjectiveCurve, SWModelParameters,
+    models::short_weierstrass_jacobian::GroupAffine, AffineCurve, ProjectiveCurve,
+    SWModelParameters,
 };
 use ark_ff::{BigInteger, Field, PrimeField};
 use ark_std::{One, Zero};
-use merlin::Transcript;
-use std::{borrow::BorrowMut, marker::PhantomData};
+use std::marker::PhantomData;
 
 pub fn build_tables<C: SWModelParameters>(h: GroupAffine<C>) -> Vec<Lookup3Bit<2, C::BaseField>> {
     let lambda = <C::ScalarField as PrimeField>::size_in_bits();
@@ -77,7 +74,7 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
     let mut acc_i_minus_1_y_lc: LinearCombination<F> = Variable::One(PhantomData).into();
     // Define tables T_1 .. T_m, and witnesses
     for i in 1..m + 1 {
-        let mut table = tables[i - 1];
+        let table = tables[i - 1];
 
         let (index, x_l_minus_x_r_inv, delta, acc_i_x, acc_i_y) = match &r_bits {
             None => (None, None, None, None, None),
@@ -177,15 +174,15 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bulletproofs::{BulletproofGens, PedersenGens};
 
     use ark_ec::ProjectiveCurve;
     use ark_std::UniformRand;
+    use merlin::Transcript;
     use pasta::{
         pallas::Affine as PallasA, pallas::Projective as PallasP, vesta::Affine as VestaA,
-        vesta::Projective as VestaP, Fp, Fq,
     };
     type PallasScalar = <PallasP as ProjectiveCurve>::ScalarField;
-    type VestaScalar = <VestaP as ProjectiveCurve>::ScalarField;
 
     #[test]
     fn test_re_randomize() {
@@ -251,7 +248,6 @@ mod tests {
         let mut rng = rand::thread_rng();
         let h = PallasP::rand(&mut rng).into_affine();
         let r: PallasScalar = <PallasA as AffineCurve>::ScalarField::rand(&mut rng);
-        // let r = PallasScalar::from(1u8);
         let h_r = h.mul(r).into_affine();
 
         let tables = build_tables(h);
@@ -262,7 +258,7 @@ mod tests {
         let mut h_r_acc = PallasA::zero();
         for i in 1..m + 1 {
             // n.b. i is 0 indexed
-            let mut table = tables[i - 1];
+            let table = tables[i - 1];
             let bi = (i - 1) * 3;
             let mut index = if bi < lambda && random_bits[bi] {
                 1usize

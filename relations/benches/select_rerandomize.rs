@@ -8,7 +8,6 @@ extern crate bulletproofs;
 use bulletproofs::r1cs::{batch_verify, Prover, Verifier};
 
 extern crate relations;
-use rand::distributions::Uniform;
 use relations::select_and_rerandomize::*;
 
 extern crate pasta;
