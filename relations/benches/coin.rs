@@ -27,7 +27,6 @@ fn bench_pour(c: &mut Criterion) {
     let mut group = c.benchmark_group("Pour proofs");
 
     let mut rng = rand::thread_rng();
-    // todo this is needlessly adding 8192 generators to the "odd curve"
     let generators_length = 1 << 13; // minimum sufficient power of 2
 
     let sr_params =
@@ -104,8 +103,6 @@ fn bench_pour(c: &mut Criterion) {
             &mut rng,
         )
     };
-
-    // todo pre clone proofs or benchmark clone time
 
     println!("Proof size in bytes {}", proof.serialized_size());
 
@@ -203,7 +200,7 @@ fn bench_pour(c: &mut Criterion) {
 
 criterion_group! {
     name = pour;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(50);
     targets =
     bench_pour,
 }
