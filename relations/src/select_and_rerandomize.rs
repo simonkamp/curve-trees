@@ -36,7 +36,7 @@ impl<P: SWModelParameters> SingleLayerParameters<P> {
         let scalars: Vec<<P::ScalarField as PrimeField>::BigInt> = iter::once(&v_blinding)
             .chain(v.iter())
             .map(|s| {
-                let s: <P::ScalarField as PrimeField>::BigInt = s.clone().into();
+                let s: <P::ScalarField as PrimeField>::BigInt = (*s).into();
                 s
             })
             .collect();
@@ -77,7 +77,7 @@ impl<
         parameters: &SelRerandParameters<P0, P1>,
         height: Option<usize>, // resulting curve tree will have height at least `height`
     ) -> Self {
-        if set.len() == 0 {
+        if set.is_empty() {
             panic!("The curve tree must have at least one leaf.")
         }
         // Convert each commitment to a leaf.
@@ -188,7 +188,7 @@ impl<
             Self::Even(ct) => (ct, P0::ScalarField::zero()),
         };
         // While the current node is internal, do two iterations of the proof.
-        while let Some(_) = &even_internal_node.children {
+        while even_internal_node.children.is_some() {
             // Do two iterations of the proof and advance `even_internal_node`to a grandchild.
             let (child, child_rerandomization_scalar) = even_internal_node
                 .single_level_select_and_rerandomize_prover_gadget(
@@ -217,8 +217,8 @@ impl<
         // return the commitments and the rerandomization scalar of the leaf.
         (
             SelectAndRerandomizePath {
-                even_commitments: even_commitments,
-                odd_commitments: odd_commitments,
+                even_commitments,
+                odd_commitments,
             },
             rerandomization_scalar,
         )
@@ -360,7 +360,7 @@ impl<
     // The commitment is assumed to be permissible
     pub fn leaf(commitment: GroupAffine<P0>) -> Self {
         Self {
-            commitment: commitment,
+            commitment,
             randomness: P0::ScalarField::zero(),
             children: None,
             height: 0,
@@ -401,7 +401,7 @@ impl<
                     Some(child) => child,
                 };
                 let (_, children_vars) = prover.commit_vec(
-                    &children
+                    children
                         .iter()
                         .map(|opt| match opt {
                             None => P0::ScalarField::zero(),
@@ -423,7 +423,7 @@ impl<
 
         single_level_select_and_rerandomize(
             prover,
-            &odd_parameters,
+            odd_parameters,
             &rerandomized_child,
             children_vars,
             Some(child.commitment),
@@ -482,8 +482,8 @@ impl<
             commitment: c,
             randomness: r,
             children: Some(Box::new(children)),
-            height: height,
-            elements: elements,
+            height,
+            elements,
         }
     }
 }
@@ -552,8 +552,8 @@ impl<P0: SWModelParameters, P1: SWModelParameters> SelRerandParameters<P0, P1> {
             tables: c1_scalar_tables,
         };
         SelRerandParameters {
-            c0_parameters: c0_parameters,
-            c1_parameters: c1_parameters,
+            c0_parameters,
+            c1_parameters,
         }
     }
 }

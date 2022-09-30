@@ -316,9 +316,9 @@ pub fn scalar_exp_vartime<F: Field>(x: &F, mut n: u64) -> F {
     while n > 0 {
         let bit = n & 1;
         if bit == 1 {
-            result = result * aux;
+            result *= aux;
         }
-        n = n >> 1;
+        n >>= 1;
         aux = aux * aux; // FIXME: one unnecessary mult at the last step here!
     }
     result
@@ -341,7 +341,7 @@ pub fn sum_of_powers<F: Field>(x: &F, n: usize) -> F {
     while m > 2 {
         factor = factor * factor;
         result = result + factor * result;
-        m = m / 2;
+        m /= 2;
     }
     result
 }

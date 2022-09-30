@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-
 #[macro_use]
 extern crate criterion;
 use criterion::Criterion;
@@ -76,7 +74,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
             let vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            curve_tree.select_and_rerandomize_verifier_gadget(
+            let _ = curve_tree.select_and_rerandomize_verifier_gadget(
                 &mut pallas_verifier,
                 &mut vesta_verifier,
                 path.clone(),
@@ -91,17 +89,17 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
             let vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            curve_tree.select_and_rerandomize_verifier_gadget(
+            let _ = curve_tree.select_and_rerandomize_verifier_gadget(
                 &mut pallas_verifier,
                 &mut vesta_verifier,
                 path.clone(),
                 &sr_params,
             );
 
-            let pallas_vt = pallas_verifier
+            let _ = pallas_verifier
                 .verification_scalars_and_points(&pallas_proof)
                 .unwrap();
-            let vesta_vt = vesta_verifier
+            let _ = vesta_verifier
                 .verification_scalars_and_points(&vesta_proof)
                 .unwrap();
         })
@@ -113,7 +111,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
             let vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            curve_tree.select_and_rerandomize_verifier_gadget(
+            let _ = curve_tree.select_and_rerandomize_verifier_gadget(
                 &mut pallas_verifier,
                 &mut vesta_verifier,
                 path.clone(),
@@ -161,7 +159,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
                         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
                         let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-                        curve_tree.select_and_rerandomize_verifier_gadget(
+                        let _ = curve_tree.select_and_rerandomize_verifier_gadget(
                             &mut pallas_verifier,
                             &mut vesta_verifier,
                             path.clone(),

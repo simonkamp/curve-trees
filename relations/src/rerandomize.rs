@@ -50,7 +50,7 @@ pub fn build_tables<C: SWModelParameters>(h: GroupAffine<C>) -> Vec<Lookup3Bit<2
 
 pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
-    tables: &Vec<Lookup3Bit<2, F>>,
+    tables: &[Lookup3Bit<2, F>],
     commitment_x: LinearCombination<F>,
     commitment_y: LinearCombination<F>,
     commitment_x_tilde: LinearCombination<F>,
@@ -133,7 +133,7 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
                 y_r: y_table,
                 x_o: acc_i_x_lc.clone(),
                 y_o: acc_i_y_lc.clone(),
-                delta: delta,
+                delta,
             };
             if i == m {
                 // enforce checked curve addition
@@ -166,7 +166,7 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
         y_r: acc_i_minus_1_y_lc,
         x_o: commitment_x_tilde,
         y_o: commitment_y_tilde,
-        delta: delta,
+        delta,
     };
     checked_curve_addition(cs, &prms, x_l_minus_x_r_inv);
 }

@@ -8,12 +8,12 @@ pub fn select<F: Field, Cs: ConstraintSystem<F>>(
     x: LinearCombination<F>,
     xs: Vec<LinearCombination<F>>,
 ) {
-    assert!(xs.len() > 0);
+    assert!(!xs.is_empty());
 
     // (x_1 - x) * (x_2 - x) * ... * (x_n - x) = 0
     let mut product: LinearCombination<F> = xs[0].clone();
-    for i in 0..xs.len() {
-        let (_, _, next_product) = cs.multiply(product, xs[i].clone() - x.clone());
+    for xi in xs.iter() {
+        let (_, _, next_product) = cs.multiply(product, xi.clone() - x.clone());
         product = next_product.into();
     }
     cs.constrain(product);

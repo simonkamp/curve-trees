@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use ark_ec::{msm::VariableBaseMSM, AffineCurve};
-use ark_ff::{Field, PrimeField};
+use ark_ff::Field;
 use ark_std::{One, UniformRand, Zero};
 use core::borrow::BorrowMut;
 use core::mem;
@@ -395,7 +395,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         // Clear the pending multiplier (if any) because it was committed into A_L/A_R/S.
         self.pending_multiplier = None;
 
-        if self.deferred_constraints.len() == 0 {
+        if self.deferred_constraints.is_empty() {
             self.transcript.borrow_mut().r1cs_1phase_domain_sep();
             Ok(self)
         } else {
@@ -440,8 +440,8 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         use std::iter;
         let fixed_points = iter::once(pc_gens.B[0])
             .chain(iter::once(pc_gens.B_blinding))
-            .chain(gens.G(padded_n).map(|&G_i| (G_i)))
-            .chain(gens.H(padded_n).map(|&H_i| (H_i)));
+            .chain(gens.G(padded_n).copied())
+            .chain(gens.H(padded_n).copied());
 
         let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
             verification_tuple
@@ -613,7 +613,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
         let g_scalars = yneg_wR
             .iter()
-            .zip(u_for_g.clone())
+            .zip(u_for_g)
             .zip(s.iter().take(padded_n)) // s is from folding
             .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (xwR * yneg_wRi - a * s_i));
 
@@ -668,7 +668,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             {
                 println!("T[{}]: {} {}", d, proof.T[d].clone(), rxs[d]);
             }
-            T_points.push(proof.T[d].clone());
+            T_points.push(proof.T[d]);
             T_scalars.push(rxs[d]);
         }
 
@@ -737,7 +737,7 @@ pub fn batch_verify<C: AffineCurve>(
 ) -> Result<(), R1CSError> {
     let mut rng = rand::thread_rng();
     let mut ver_iter = verification_tuples.into_iter();
-    let vt = ver_iter.nth(0).unwrap();
+    let vt = ver_iter.next().unwrap();
     let (mut proof_points, mut proof_point_scalars, mut linear_combination) = (
         vt.proof_dependent_points,
         vt.proof_dependent_scalars,
@@ -779,8 +779,8 @@ pub fn batch_verify<C: AffineCurve>(
     use std::iter;
     let fixed_points = iter::once(pc_gens.B[0])
         .chain(iter::once(pc_gens.B_blinding))
-        .chain(gens.G(padded_n).map(|&G_i| (G_i)))
-        .chain(gens.H(padded_n).map(|&H_i| (H_i)));
+        .chain(gens.G(padded_n).copied())
+        .chain(gens.H(padded_n).copied());
 
     let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
         proof_points

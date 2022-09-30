@@ -52,7 +52,7 @@ pub fn incomplete_curve_addition<F: Field, Cs: ConstraintSystem<F>>(
     );
 
     // delta * delta = x_o + x_r + x_l
-    let (_, _, delta2) = cs.multiply(delta_lc.clone(), delta_lc.clone());
+    let (_, _, delta2) = cs.multiply(delta_lc.clone(), delta_lc);
     cs.constrain(
         prms.x_o.clone() + prms.x_r.clone() + prms.x_l.clone()
             - LinearCombination::<F>::from(delta2),

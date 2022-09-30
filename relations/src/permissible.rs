@@ -20,8 +20,8 @@ impl<F: SquareRootField> UniversalHash<F> {
         Self {
             alpha: F::rand(rng),
             beta: F::rand(rng),
-            a: a,
-            b: b,
+            a,
+            b,
         }
     }
     /// Given a commitment c, blinded using h, returns c' and r s.t. c' = c+h*r and c' is a permissible point

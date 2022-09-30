@@ -1,6 +1,6 @@
 //! Definition of linear combinations.
 
-use ark_ff::{Field, One};
+use ark_ff::Field;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul, Neg, Sub};

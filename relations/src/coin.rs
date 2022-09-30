@@ -60,9 +60,9 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
 
         (
             Coin {
-                value: value,
+                value,
                 tag: output_tag,
-                permissible_randomness: permissible_randomness,
+                permissible_randomness,
                 pk_randomness: pk_rerandomization,
             },
             coin_commitment,
@@ -250,14 +250,14 @@ pub fn prove_pour<
 
     // todo serialize tx's and sign using both of the secret keys
     Pour {
-        even_proof: even_proof,
-        odd_proof: odd_proof,
+        even_proof,
+        odd_proof,
         randomized_path_0: path_0,
         randomized_path_1: path_1,
         pk0: input_0.randomized_pk,
         pk1: input_1.randomized_pk,
-        minted_coin_commitment_0: minted_coin_commitment_0,
-        minted_coin_commitment_1: minted_coin_commitment_1,
+        minted_coin_commitment_0,
+        minted_coin_commitment_1,
     }
     // todo output minted coins
 }

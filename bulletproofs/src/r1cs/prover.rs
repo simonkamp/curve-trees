@@ -376,7 +376,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = iter::once(&v_blinding)
             .chain(v.iter())
             .map(|s| {
-                let s: <C::ScalarField as PrimeField>::BigInt = s.clone().into();
+                let s: <C::ScalarField as PrimeField>::BigInt = (*s).into();
                 s
             })
             .collect();
@@ -491,7 +491,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // Clear the pending multiplier (if any) because it was committed into A_L/A_R/S.
         self.pending_multiplier = None;
 
-        if self.deferred_constraints.len() == 0 {
+        if self.deferred_constraints.is_empty() {
             self.transcript.borrow_mut().r1cs_1phase_domain_sep();
             Ok(self)
         } else {
@@ -701,7 +701,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             (0..n2).map(|_| C::ScalarField::rand(&mut rng)).collect();
 
         // both not supported atm.
-        assert!(!has_2nd_phase_commitments || self.secrets.vec_open.len() == 0);
+        assert!(!has_2nd_phase_commitments || self.secrets.vec_open.is_empty());
 
         let (A_I2, A_O2, S2) = if has_2nd_phase_commitments {
             (

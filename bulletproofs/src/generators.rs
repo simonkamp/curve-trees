@@ -12,7 +12,7 @@ use std::marker::PhantomData;
 
 use crate::util;
 use digest::{ExtendableOutputDirty, Update, XofReader};
-use sha3::{Sha3XofReader, Sha3_512, Shake256};
+use sha3::{Sha3XofReader, Shake256};
 
 /// todo
 /// Represents a pair of base points for Pedersen commitments.
@@ -223,7 +223,7 @@ impl<C: AffineCurve> BulletproofGens<C> {
     /// slice of vectors G and H for the j-th range proof.
     pub fn share(&self, j: usize) -> BulletproofGensShare<'_, C> {
         BulletproofGensShare {
-            gens: &self,
+            gens: self,
             share: j,
         }
     }

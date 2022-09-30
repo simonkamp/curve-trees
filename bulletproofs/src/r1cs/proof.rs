@@ -3,7 +3,6 @@
 
 use ark_ec::AffineCurve;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
-use ark_std::Zero;
 
 use crate::errors::R1CSError;
 use crate::inner_product_proof::InnerProductProof;
