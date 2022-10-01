@@ -1099,7 +1099,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         // Get a challenge value to combine statements for the IPP
         let w = transcript.challenge_scalar::<C>(b"w");
-        let Q = self.pc_gens.B[0].mul(w).into();
+        let Q = self.pc_gens.B.mul(w).into();
 
         let G_factors = iter::repeat(C::ScalarField::one())
             .take(n1)

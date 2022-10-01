@@ -239,7 +239,6 @@ mod tests {
             None,
         );
 
-        // todo final msm fails
         verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
     }
 
