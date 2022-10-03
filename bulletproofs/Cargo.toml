@@ -25,8 +25,8 @@ byteorder = { version = "1", default-features = false }
 thiserror = { version = "1", optional = true }
 merlin = { version = "2", default-features = false }
 clear_on_drop = { version = "0.2", default-features = false }
-ark-ec = { version = "0.3.0", features = ["parallel"] }
-ark-ff = { version = "0.3.0", features = ["parallel", "asm"] }
+ark-ec = { version = "0.3.0"}
+ark-ff = { version = "0.3.0"}
 ark-serialize = { version = "0.3.0" } 
 ark-std = { version = "0.3.0" } 
 rust-crypto = "^0.2"
@@ -37,11 +37,12 @@ criterion = "0.3"
 ark-algebra-test-templates = "0.3.0"
 
 [features]
-default = ["std", "yoloproofs"]
-yoloproofs = []
+default = ["std", "yoloproofs", "parallel", "asm"]
 std = ["rand", "rand/std", "thiserror"]
+asm = ["ark-ff/asm"]
+parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel"]
+yoloproofs = []
 nightly = ["clear_on_drop/nightly"]
-docs = ["nightly"]
 
 [[test]]
 name = "r1cs"

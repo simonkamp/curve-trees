@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 rand = { version = "0.8", default-features = false }
-bulletproofs = { path = "../bulletproofs" }
-ark-ff = { version = "0.3.0", features = ["parallel", "asm"] }
-ark-ec = { version = "0.3.0", features = [ "parallel" ] }
+bulletproofs = { path = "../bulletproofs", default-features = false, features = ["yoloproofs", "std"]}
+ark-ff = { version = "0.3.0"}
+ark-ec = { version = "0.3.0"}
 ark-serialize = { version = "0.3.0" } 
-ark-std = { version = "0.3.0", features = [ "parallel" ] }
+ark-std = { version = "0.3.0"}
 merlin = { version = "2", default-features = false }
 rust-crypto = "^0.2"
 ark-crypto-primitives = { version = "0.3.0" } 
@@ -19,6 +19,11 @@ blake2 = "0.9"
 [dev-dependencies]
 criterion = "0.3"
 pasta = { path = "../pasta" }
+
+[features]
+default = ["asm", "parallel"]
+asm = ["ark-ff/asm", "bulletproofs/asm"]
+parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "bulletproofs/parallel"]
 
 [[bench]]
 name = "select_rerandomize"
@@ -30,3 +35,6 @@ harness = false
 
 [profile.release]
 lto = true
+
+[build]
+rustflags = "-C target-cpu=native" # check if this actually improves benchmarks
