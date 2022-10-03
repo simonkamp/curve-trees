@@ -498,6 +498,7 @@ mod tests {
 
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
+            generators_length,
             &mut rng,
         );
 
@@ -585,6 +586,7 @@ mod tests {
         let generators_length = 1 << 13; // minimum sufficient power of 2 (for height 4 curve tree)
 
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+            generators_length,
             generators_length,
             &mut rng,
         );

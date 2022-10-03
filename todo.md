@@ -28,3 +28,4 @@
 3. Stacking 2 curve trees to halve the number of rerandomizations.
 4. Stacking the layers of curve trees?
 5. If above does not increase the number of commitments, decrease branching factor to 2.
+6. RUSTFLAGS="-C target-cpu=native"

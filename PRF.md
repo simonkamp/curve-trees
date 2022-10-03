@@ -37,7 +37,7 @@ The prover:
 Concretely:
     - show opening of commitment $C^*_{sk+H(tx)}$ obtaining variable for $x$
     - then either:
-        - treat $t$ as a commitment with randomness zero, show opening, obtaining variable for $x^{-1}$ and constrain $x*x^{-1}-1 = 0$.
-        - constrain a free variable to be inverse of $x$. ($x*x^{-1}-1$) and relate $t$ to $x^{-1}$ using ???
+        - treat $t$ as a commitment (not vector) with randomness zero, show opening, obtaining variable for $x^{-1}$ and constrain $x\cdot x^{-1}-1 = 0$.
+        - constrain a free variable to be inverse of $x$. ($x\cdot x^{-1}-1$) and relate $t$ to $x^{-1}$ using ???
 
 

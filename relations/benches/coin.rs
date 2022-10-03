@@ -29,8 +29,11 @@ fn bench_pour(c: &mut Criterion) {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << 13; // minimum sufficient power of 2
 
-    let sr_params =
-        SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+        generators_length,
+        generators_length,
+        &mut rng,
+    );
 
     let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
     let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();

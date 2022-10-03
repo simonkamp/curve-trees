@@ -26,8 +26,11 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << 12; // minimum sufficient power of 2
 
-    let sr_params =
-        SelRerandParameters::<PallasParameters, VestaParameters>::new(generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+        generators_length,
+        generators_length,
+        &mut rng,
+    );
 
     let some_point = PallasP::rand(&mut rng).into_affine();
     let (permissible_point, _) = sr_params

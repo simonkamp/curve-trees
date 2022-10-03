@@ -63,7 +63,7 @@ impl<F: SquareRootField> UniversalHash<F> {
         v * self.alpha + self.beta
     }
 
-    pub fn permissible<Cs: ConstraintSystem<F>>(
+    pub fn permissible_gadget<Cs: ConstraintSystem<F>>(
         &self,
         cs: &mut Cs,
         x: LinearCombination<F>,
@@ -117,7 +117,7 @@ mod tests {
             let mut prover = Prover::new(&pc_gens, &mut transcript);
             let (x_comm, x_var) = prover.commit(c2.x, VestaScalar::rand(&mut rng));
 
-            uh.permissible(&mut prover, x_var.into(), Some(c2.y));
+            uh.permissible_gadget(&mut prover, x_var.into(), Some(c2.y));
 
             let proof = prover.prove(&bp_gens).unwrap();
             (proof, x_comm)
@@ -127,7 +127,7 @@ mod tests {
         let mut verifier = Verifier::new(&mut transcript);
         let x_var = verifier.commit(x_comm);
 
-        uh.permissible(&mut verifier, x_var.into(), None);
+        uh.permissible_gadget(&mut verifier, x_var.into(), None);
 
         verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
     }

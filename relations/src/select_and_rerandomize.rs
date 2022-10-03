@@ -25,6 +25,7 @@ pub struct SingleLayerParameters<P: SWModelParameters> {
 }
 
 impl<P: SWModelParameters> SingleLayerParameters<P> {
+    // todo refactor with bases as parameter for stackable curve trees (independent generators)
     pub fn commit(&self, v: &[P::ScalarField], v_blinding: P::ScalarField) -> GroupAffine<P> {
         let gens = self.bp_gens.share(0);
 
@@ -488,7 +489,7 @@ impl<
     }
 }
 
-fn single_level_select_and_rerandomize<
+pub fn single_level_select_and_rerandomize<
     Fb: SquareRootField,
     Fs: SquareRootField,
     C2: SWModelParameters<BaseField = Fs, ScalarField = Fb>,
@@ -511,8 +512,8 @@ fn single_level_select_and_rerandomize<
     // proof that l0 is a permissible
     parameters
         .uh
-        .permissible(cs, x_var.into(), xy_witness.map(|xy| xy.y)); // todo this allocates a variable for y in addition to the one below
-                                                                   // show that leaf_rerand, is a rerandomization of leaf
+        .permissible_gadget(cs, x_var.into(), xy_witness.map(|xy| xy.y)); // todo this allocates a variable for y in addition to the one below
+                                                                          // show that leaf_rerand, is a rerandomization of leaf
     let leaf_y = cs.allocate(xy_witness.map(|xy| xy.y)).unwrap();
     re_randomize(
         cs,
@@ -532,7 +533,11 @@ pub struct SelRerandParameters<P0: SWModelParameters, P1: SWModelParameters> {
 }
 
 impl<P0: SWModelParameters, P1: SWModelParameters> SelRerandParameters<P0, P1> {
-    pub fn new<R: Rng>(generators_length: usize, rng: &mut R) -> Self {
+    pub fn new<R: Rng>(
+        even_generators_length: usize,
+        odd_generators_length: usize,
+        rng: &mut R,
+    ) -> Self {
         // todo clean up naming and dead code
         let c0_pc_gens = PedersenGens::<GroupAffine<P0>>::default();
         let c0_scalar_tables = build_tables(c0_pc_gens.B_blinding);
@@ -540,13 +545,13 @@ impl<P0: SWModelParameters, P1: SWModelParameters> SelRerandParameters<P0, P1> {
 
         let c1_scalar_tables = build_tables(c2_pc_gens.B_blinding);
         let c0_parameters = SingleLayerParameters {
-            bp_gens: BulletproofGens::<GroupAffine<P0>>::new(generators_length, 1),
+            bp_gens: BulletproofGens::<GroupAffine<P0>>::new(even_generators_length, 1),
             pc_gens: PedersenGens::<GroupAffine<P0>>::default(),
             uh: UniversalHash::new(rng, P0::COEFF_A, P0::COEFF_B),
             tables: c0_scalar_tables,
         };
         let c1_parameters = SingleLayerParameters {
-            bp_gens: BulletproofGens::<GroupAffine<P1>>::new(generators_length, 1),
+            bp_gens: BulletproofGens::<GroupAffine<P1>>::new(odd_generators_length, 1),
             pc_gens: PedersenGens::<GroupAffine<P1>>::default(),
             uh: UniversalHash::new(rng, P1::COEFF_A, P1::COEFF_B),
             tables: c1_scalar_tables,
@@ -576,6 +581,7 @@ mod tests {
         let generators_length = 1 << 12;
 
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+            generators_length,
             generators_length,
             &mut rng,
         );
@@ -648,6 +654,7 @@ mod tests {
         let generators_length = 1 << 12;
 
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+            generators_length,
             generators_length,
             &mut rng,
         );

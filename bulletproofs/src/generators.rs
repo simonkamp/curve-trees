@@ -148,6 +148,7 @@ pub struct BulletproofGens<C: AffineCurve> {
     H_vec: Vec<Vec<C>>,
 }
 
+// todo we are not using the multi party stuff
 impl<C: AffineCurve> BulletproofGens<C> {
     /// Create a new `BulletproofGens` object.
     ///
