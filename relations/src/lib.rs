@@ -16,3 +16,5 @@ pub mod permissible;
 pub mod select_and_rerandomize;
 
 pub mod coin;
+
+pub mod prf_coin;
