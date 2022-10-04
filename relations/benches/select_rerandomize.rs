@@ -68,6 +68,10 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
             &mut vesta_prover,
             &sr_params,
         );
+        println!(
+            "Number of constraints: {}",
+            pallas_prover.number_of_constraints()
+        );
         let pallas_proof = pallas_prover
             .prove(&sr_params.c0_parameters.bp_gens)
             .unwrap();
@@ -78,7 +82,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     };
 
     println!(
-        "Proof size in bytes {}",
+        "Proof size in bytes: {}",
         path.serialized_size() + pallas_proof.serialized_size() + vesta_proof.serialized_size()
     );
 

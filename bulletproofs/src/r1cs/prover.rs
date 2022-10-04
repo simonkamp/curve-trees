@@ -522,6 +522,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         n
     }
 
+    pub fn number_of_constraints(&self) -> usize {
+        self.secrets.a_L.len()
+    }
+
     /// Consume this `ConstraintSystem` to produce a proof. Returns the proof and the transcript passed in `Prover::new`.
     pub fn prove_and_return_transcript(
         mut self,
