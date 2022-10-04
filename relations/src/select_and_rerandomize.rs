@@ -231,6 +231,7 @@ impl<
         odd_verifier: &mut Verifier<T, GroupAffine<P1>>,
         mut randomized_path: SelectAndRerandomizePath<P0, P1>,
         parameters: &SelRerandParameters<P0, P1>,
+        branching_factor: usize,
     ) -> GroupAffine<P0> {
         // todo split into two functions for parallelizability?
         // todo benchmark time of building circuit vs final verification to estimate gain of parallelizing one or both.
@@ -263,7 +264,7 @@ impl<
             } else {
                 i
             };
-            let variables = even_verifier.commit_vec(256, even_commitments[i]); // committing to public value in first iteration
+            let variables = even_verifier.commit_vec(branching_factor, even_commitments[i]); // committing to public value in first iteration
             single_level_select_and_rerandomize(
                 even_verifier,
                 &parameters.c1_parameters,
@@ -280,7 +281,7 @@ impl<
             } else {
                 i + 1
             };
-            let variables = odd_verifier.commit_vec(256, odd_commitments[i]);
+            let variables = odd_verifier.commit_vec(branching_factor, odd_commitments[i]);
             single_level_select_and_rerandomize(
                 odd_verifier,
                 &parameters.c0_parameters,
@@ -632,6 +633,7 @@ mod tests {
                 &mut vesta_verifier,
                 path_commitments,
                 &sr_params,
+                256,
             );
             let vesta_res = vesta_verifier.verify(
                 &vesta_proof,
@@ -665,11 +667,8 @@ mod tests {
             .uh
             .permissible_commitment(&some_point, &sr_params.c0_parameters.pc_gens.B_blinding);
         let set = vec![permissible_point];
-        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
-            &set,
-            &sr_params,
-            Some(4),
-        );
+        let curve_tree =
+            CurveTree::<32, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
         assert_eq!(curve_tree.height(), 4);
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -705,6 +704,7 @@ mod tests {
                 &mut vesta_verifier,
                 path_commitments.clone(),
                 &sr_params,
+                32,
             );
             let vesta_verification_tuples = vesta_verifier
                 .verification_scalars_and_points(&vesta_proof)
@@ -725,6 +725,7 @@ mod tests {
                 &mut vesta_verifier,
                 path_commitments,
                 &sr_params,
+                32,
             );
             let vesta_verification_tuples = vesta_verifier
                 .verification_scalars_and_points(&vesta_proof)

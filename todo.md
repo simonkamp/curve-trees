@@ -2,14 +2,11 @@
 
 ## Benchmarks
 - Select and rerandomize
-    - [] 2ˆ20ish, with ???^4
-    - [] 2ˆ24, with 256ˆ3?
+    - [] 2ˆ20, with (2^10)^2
+    - [] 2ˆ20, with (2^5)^4
     - [x] 2ˆ32, with 256ˆ4
-    - [] 2ˆ64, with 256ˆ8?
 - Pour
     - [x] 2-2, 2ˆ32
-    - [] 2-2, 2ˆ24?
-    - [] 2-2, 2ˆ16?
 - Pour PRF 
     - [] 2-2, 2ˆ32
 - Stacked trees?

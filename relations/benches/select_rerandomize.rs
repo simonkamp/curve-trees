@@ -21,10 +21,22 @@ use ark_std::UniformRand;
 use merlin::Transcript;
 
 fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Verification of select and randomize proofs");
+    bench_select_and_rerandomize_with_parameters::<256>(c, 4, 12);
+    bench_select_and_rerandomize_with_parameters::<32>(c, 4, 11);
+    bench_select_and_rerandomize_with_parameters::<1024>(c, 2, 11);
+}
+
+fn bench_select_and_rerandomize_with_parameters<const L: usize>(
+    // `L` is the branching factor of the curve tree
+    c: &mut Criterion,
+    depth: usize,                   // the depth of the curve tree
+    generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
+) {
+    let group_name = format!("Select&Rerandomize. Branching: {}, Depth: {}.", L, depth);
+    let mut group = c.benchmark_group(group_name);
 
     let mut rng = rand::thread_rng();
-    let generators_length = 1 << 12; // minimum sufficient power of 2
+    let generators_length = 1 << generators_length_log_2;
 
     let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
         generators_length,
@@ -39,7 +51,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
         .permissible_commitment(&some_point, &sr_params.c0_parameters.pc_gens.B_blinding);
     let set = vec![permissible_point];
     let curve_tree =
-        CurveTree::<256, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
+        CurveTree::<L, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(depth));
 
     let (path, pallas_proof, vesta_proof) = {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -82,6 +94,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
                 &mut vesta_verifier,
                 path.clone(),
                 &sr_params,
+                L,
             );
         })
     });
@@ -97,6 +110,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
                 &mut vesta_verifier,
                 path.clone(),
                 &sr_params,
+                L,
             );
 
             let _ = pallas_verifier
@@ -119,6 +133,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
                 &mut vesta_verifier,
                 path.clone(),
                 &sr_params,
+                L,
             );
 
             let pallas_vt = pallas_verifier
@@ -146,9 +161,9 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
 
     use std::iter;
 
-    for n in [1, 10, 50, 100, 150, 200] {
+    for n in [2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
-            format!("Batch verification of {} proofs.", n),
+            format!("Batch verify {} proofs.", n),
             &iter::repeat(path.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
@@ -167,6 +182,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
                             &mut vesta_verifier,
                             path.clone(),
                             &sr_params,
+                            L,
                         );
 
                         let pallas_vt = pallas_verifier
@@ -199,7 +215,7 @@ fn bench_select_and_rerandomize_verify(c: &mut Criterion) {
 
 criterion_group! {
     name = select_and_rerandomize_verify;
-    config = Criterion::default().sample_size(50);
+    config = Criterion::default().sample_size(20);
     targets =
     bench_select_and_rerandomize_verify,
 }

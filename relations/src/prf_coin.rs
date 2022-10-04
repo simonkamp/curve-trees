@@ -5,7 +5,7 @@ use digest::generic_array::typenum::Gr;
 use merlin::Transcript;
 use rand::Rng;
 
-use crate::{coin, select_and_rerandomize::*};
+use crate::{coin, range_proof::range_proof, select_and_rerandomize::*};
 
 use ark_ec::{
     models::short_weierstrass_jacobian::GroupAffine, AffineCurve, ProjectiveCurve,
@@ -49,20 +49,19 @@ where
         prover: &mut Prover<Transcript, GroupAffine<P0>>,
     ) -> (
         Coin<P0, P1>,
-        GroupAffine<P0>,
-        GroupAffine<P1>,
+        MintingOutput<P0, P1>,
         Variable<P0::ScalarField>,
     ) {
-        let (coin, _, rerandomized_pk) = Self::new(value, pk, sr_parameters, rng);
+        let (coin, minting_output) = Self::new(value, pk, sr_parameters, rng);
 
-        let (value_commitment, variables) = prover.commit_vec(
+        let (_, variables) = prover.commit_vec(
             &[P0::ScalarField::from(value)],
             coin.value_randomness,
             &sr_parameters.c0_parameters.bp_gens,
         );
         range_proof(prover, variables[0].into(), Some(value), 64).unwrap(); // todo what range do we want to enforce? Table of benchmarks for different powers?
 
-        (coin, value_commitment, rerandomized_pk, variables[0])
+        (coin, minting_output, variables[0])
     }
 
     pub fn new<R: Rng>(
@@ -70,7 +69,7 @@ where
         pk: &PublicKey<P1>,
         sr_parameters: &SelRerandParameters<P0, P1>,
         rng: &mut R,
-    ) -> (Coin<P0, P1>, GroupAffine<P0>, GroupAffine<P1>) {
+    ) -> (Coin<P0, P1>, MintingOutput<P0, P1>) {
         let pk_rerandomization = P1::ScalarField::rand(rng);
         let randomized_pk = Self::rerandomized_pk(pk, &pk_rerandomization, sr_parameters);
 
@@ -85,17 +84,11 @@ where
                 value_randomness,
                 pk_randomness: pk_rerandomization,
             },
-            value_commitment,
-            randomized_pk.0,
+            MintingOutput {
+                value_commitment,
+                public_key: randomized_pk.0,
+            },
         )
-    }
-
-    /// Used to hash the commitment to the value of the coin into the scalarfield of the `odd curve`
-    /// in order to homomorphically add it to the commitment to the PRF key, i.e. the public key.
-    fn hash_of_value_commitment(value_commitment: GroupAffine<P0>) -> P1::ScalarField {
-        let mut bytes = Vec::new();
-        value_commitment.write(&mut bytes).unwrap();
-        element_from_bytes_stat::<P1::ScalarField>(&bytes)
     }
 
     pub fn rerandomized_pk(
@@ -112,20 +105,40 @@ where
                 .into_affine(),
         )
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct MintingOutput<P0: SWModelParameters, P1: SWModelParameters> {
+    pub value_commitment: GroupAffine<P0>,
+    pub public_key: GroupAffine<P1>,
+}
+
+impl<P0, P1> MintingOutput<P0, P1>
+where
+    P0: SWModelParameters + Clone,
+    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    P0::BaseField: PrimeField,
+{
+    /// Used to hash the commitment to the value of the coin into the scalarfield of the `odd curve`
+    /// in order to homomorphically add it to the commitment to the PRF key, i.e. the public key.
+    fn hash_of_value_commitment(&self) -> P1::ScalarField {
+        let mut bytes = Vec::new();
+        self.value_commitment.write(&mut bytes).unwrap();
+        element_from_bytes_stat::<P1::ScalarField>(&bytes)
+    }
 
     pub fn combine_into_permissible(
-        rerandomized_pk: GroupAffine<P1>,
-        value_commitment: GroupAffine<P0>,
+        &self,
         parameters: &SelRerandParameters<P0, P1>,
-    ) -> PermissibleCoinFromTxAndPK<P0, P1> {
-        let hash_of_value_commitments = Self::hash_of_value_commitment(value_commitment);
+    ) -> PermissibleCoin<P0, P1> {
+        let hash_of_value_commitments = self.hash_of_value_commitment();
         // the secret key uses the generator for single value commitments
         let g_to_hash = parameters
             .c1_parameters
             .pc_gens
             .B
             .mul(hash_of_value_commitments);
-        let pre_permissible_pk = rerandomized_pk + g_to_hash.into_affine();
+        let pre_permissible_pk = self.public_key + g_to_hash.into_affine();
         let (permissible_pk, r_permissible_pk) =
             parameters.c1_parameters.uh.permissible_commitment(
                 &pre_permissible_pk,
@@ -139,13 +152,13 @@ where
             .share(0)
             .G(2)
             .collect::<Vec<_>>()[1]; // todo: not this unreadable garbage
-        let per_permissible_coin = value_commitment + prf_generator.mul(pk_x).into();
+        let per_permissible_coin = self.value_commitment + prf_generator.mul(pk_x).into();
         let (permissible_coin, r_permissible_coin) =
             parameters.c0_parameters.uh.permissible_commitment(
                 &per_permissible_coin,
                 &parameters.c0_parameters.pc_gens.B_blinding,
             );
-        PermissibleCoinFromTxAndPK {
+        PermissibleCoin {
             permissible_pk,
             r_permissible_pk,
             permissible_coin,
@@ -154,7 +167,9 @@ where
     }
 }
 
-pub struct PermissibleCoinFromTxAndPK<P0: SWModelParameters, P1: SWModelParameters> {
+// todo naming. Keeps track of all the randomness offsets when combining the output of mint into a permissible coin
+// only the `permissible_coin` field is relevant unless you need to spend the coin.
+pub struct PermissibleCoin<P0: SWModelParameters, P1: SWModelParameters> {
     pub permissible_pk: GroupAffine<P1>,
     pub r_permissible_pk: P1::ScalarField,
     pub permissible_coin: GroupAffine<P0>,
@@ -168,41 +183,6 @@ pub fn verify_mint<P: SWModelParameters>(
     let variables = verifier.commit_vec(2, commitment);
     range_proof(verifier, variables[0].into(), None, 64).unwrap(); // todo range?
     variables[0]
-}
-
-/// Enforces that the quantity of v is in the range [0, 2^n).
-pub fn range_proof<F: Field, CS: ConstraintSystem<F>>(
-    cs: &mut CS,
-    mut v: LinearCombination<F>,
-    v_assignment: Option<u64>,
-    n: usize,
-) -> Result<(), R1CSError> {
-    let mut exp_2 = F::one();
-    for i in 0..n {
-        // Create low-level variables and add them to constraints
-        let (a, b, o) = cs.allocate_multiplier(v_assignment.map(|q| {
-            let bit: u64 = (q >> i) & 1;
-            ((1 - bit).into(), bit.into())
-        }))?;
-
-        // Enforce a * b = 0, so one of (a,b) is zero
-        cs.constrain(o.into());
-
-        // Enforce that a = 1 - b, so they both are 1 or 0.
-        cs.constrain(a + (b - constant(1u64)));
-
-        // Add `-b_i*2^i` to the linear combination
-        // in order to form the following constraint by the end of the loop:
-        // v = Sum(b_i * 2^i, i = 0..n-1)
-        v = v - b * exp_2;
-
-        exp_2 = exp_2 + exp_2;
-    }
-
-    // Enforce that v = Sum(b_i * 2^i, i = 0..n-1)
-    cs.constrain(v);
-
-    Ok(())
 }
 
 pub fn element_from_bytes_stat<F: PrimeField>(bytes: &[u8]) -> F {
@@ -226,7 +206,8 @@ where
 {
     pub index: usize,
     pub coin_aux: Coin<P0, P1>,
-    pub combined_coin: PermissibleCoinFromTxAndPK<P0, P1>,
+    pub minting_output: MintingOutput<P0, P1>,
+    pub combined_coin: PermissibleCoin<P0, P1>,
     pub randomized_pk: PublicKey<P1>,
     pub sk: SecretKey<P1>,
 }
@@ -238,7 +219,7 @@ where
     P0::BaseField: PrimeField,
 {
     pub fn prove_spend<const L: usize, R: Rng>(
-        &self,
+        self,
         even_prover: &mut Prover<Transcript, GroupAffine<P0>>,
         odd_prover: &mut Prover<Transcript, GroupAffine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
@@ -265,8 +246,6 @@ where
         assert_eq!(path.even_commitments.len(), 2);
         assert_eq!(path.even_commitments[1], rerandomized_point);
 
-        // even_prover.constrain(variables[1] - self.tag);
-        // todo extract rerandomization of the public key + h(tx) thing, and show opening and tag stuff
         let fresh_pk_randomness = P1::ScalarField::rand(rng);
         let permissible_pk = self.combined_coin.permissible_pk;
         let rerandomized_public_key = permissible_pk.mul(fresh_pk_randomness).into_affine();
@@ -279,11 +258,19 @@ where
             Some(fresh_pk_randomness),
         );
 
-        // let x = self.sk;
-        // let _ = odd_prover.commit(
-        //     x,
-        //     parameters.c1_parameters.pc_gens.B_blinding
-        // );
+        //show opening of rerandomized public key to x = prf_key + H(tx)
+        let x = self.sk.prf_key + self.minting_output.hash_of_value_commitment();
+        let (rerandomized_pk_alt, x_var) = odd_prover.commit(
+            x,
+            self.sk.randomness // initial randomness of commitment to the PRF key
+                + self.coin_aux.pk_randomness // rerandomization done by the sender
+                + self.combined_coin.r_permissible_pk // rerandomization done the network (to get a permissible point)
+                + fresh_pk_randomness, // randomness from select and rerandomize
+        );
+        assert_eq!(rerandomized_public_key, rerandomized_pk_alt);
+        let x_inverse = x.inverse().unwrap();
+        //prove that t = [x^-1] * G
+        let (spending_tag, x_inverse_var) = odd_prover.commit(x_inverse, P1::ScalarField::zero());
 
         // the first entry of the coin variables is the value of the coin.
         (path, coin_variables[0])
