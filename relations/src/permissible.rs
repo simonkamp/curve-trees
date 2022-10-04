@@ -68,8 +68,8 @@ impl<F: SquareRootField> UniversalHash<F> {
         cs: &mut Cs,
         x: LinearCombination<F>,
         y: Option<F>,
+        y_var: Variable<F>,
     ) {
-        let y_var = cs.allocate(y).expect("Prover must supply witness");
         curve_check(cs, x, y_var.into(), self.a, self.b);
         let (_, _, w2) = cs
             .allocate_multiplier(y.map(|y| {
@@ -116,18 +116,20 @@ mod tests {
             let mut transcript = Transcript::new(b"Permissible");
             let mut prover = Prover::new(&pc_gens, &mut transcript);
             let (x_comm, x_var) = prover.commit(c2.x, VestaScalar::rand(&mut rng));
-
-            uh.permissible_gadget(&mut prover, x_var.into(), Some(c2.y));
-
+            let y_var = prover.allocate(Some(c2.y)).unwrap();
+            
+            uh.permissible_gadget(&mut prover, x_var.into(), Some(c2.y), y_var);
+            
             let proof = prover.prove(&bp_gens).unwrap();
             (proof, x_comm)
         };
-
+        
         let mut transcript = Transcript::new(b"Permissible");
         let mut verifier = Verifier::new(&mut transcript);
         let x_var = verifier.commit(x_comm);
-
-        uh.permissible_gadget(&mut verifier, x_var.into(), None);
+        let y_var = verifier.allocate(None).unwrap();
+        
+        uh.permissible_gadget(&mut verifier, x_var.into(), None, y_var);
 
         verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
     }

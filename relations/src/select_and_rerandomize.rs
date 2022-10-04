@@ -504,6 +504,7 @@ pub fn single_level_select_and_rerandomize<
     randomness_offset: Option<Fb>,       // the scalar used for randomizing
 ) {
     let x_var = cs.allocate(xy_witness.map(|xy| xy.x)).unwrap();
+    let y_var = cs.allocate(xy_witness.map(|xy| xy.y)).unwrap();
     // show that leaf is in c0
     select(
         cs,
@@ -513,14 +514,13 @@ pub fn single_level_select_and_rerandomize<
     // proof that l0 is a permissible
     parameters
         .uh
-        .permissible_gadget(cs, x_var.into(), xy_witness.map(|xy| xy.y)); // todo this allocates a variable for y in addition to the one below
-                                                                          // show that leaf_rerand, is a rerandomization of leaf
-    let leaf_y = cs.allocate(xy_witness.map(|xy| xy.y)).unwrap();
+        .permissible_gadget(cs, x_var.into(), xy_witness.map(|xy| xy.y), y_var);
+    // show that leaf_rerand, is a rerandomization of leaf
     re_randomize(
         cs,
         &parameters.tables,
         x_var.into(),
-        leaf_y.into(),
+        y_var.into(),
         constant(rerandomized.x),
         constant(rerandomized.y),
         xy_witness,
