@@ -27,7 +27,7 @@ use blake2::Blake2s;
 use rayon::prelude::*;
 
 fn bench_pour(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Pour proofs");
+    let mut group = c.benchmark_group("Pour");
 
     let mut rng = rand::thread_rng();
     let generators_length = 1 << 13; // minimum sufficient power of 2
@@ -147,7 +147,7 @@ fn bench_pour(c: &mut Criterion) {
 
     for n in [2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
-            format!("Batch verification of {} proofs.", n),
+            format!("batch{}", n),
             &iter::repeat(proof.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {

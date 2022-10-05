@@ -27,11 +27,11 @@ fn bench_select_and_rerandomize(c: &mut Criterion) {
     let threaded = {
         #[cfg(feature = "parallel")]
         {
-            "Multi threaded"
+            "Multi_threaded"
         }
         #[cfg(not(feature = "parallel"))]
         {
-            "Single threaded"
+            "Single_threaded"
         }
     };
     bench_select_and_rerandomize_with_parameters::<256>(c, 4, 12, threaded);
@@ -46,7 +46,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
     threaded: &str,
 ) {
-    let group_name = format!("{} Select&Rerandomize. L={}, d={}.", threaded, L, depth);
+    let group_name = format!("{}_Select&Rerandomize.L={},d={}.", threaded, L, depth);
     let mut group = c.benchmark_group(group_name);
 
     let mut rng = rand::thread_rng();
@@ -217,7 +217,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
 
     for n in [2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
-            format!("Batch verify {} proofs.", n),
+            format!("batch{}", n),
             &iter::repeat(path.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
@@ -322,7 +322,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
 
 criterion_group! {
     name = select_and_rerandomize;
-    config = Criterion::default().sample_size(20);
+    config = Criterion::default().sample_size(50);
     targets =
     bench_select_and_rerandomize,
 }
