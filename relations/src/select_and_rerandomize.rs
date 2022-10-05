@@ -15,6 +15,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Serializatio
 use ark_std::{UniformRand, Zero};
 use merlin::Transcript;
 use rand::Rng;
+use rayon::prelude::*;
 use std::{borrow::BorrowMut, iter};
 
 pub struct SingleLayerParameters<P: SWModelParameters> {
@@ -68,8 +69,8 @@ pub enum CurveTree<const L: usize, P0: SWModelParameters, P1: SWModelParameters>
 
 impl<
         const L: usize,
-        P0: SWModelParameters + Clone,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        P0: SWModelParameters + Clone + Send,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone + Send,
     > CurveTree<L, P0, P1>
 {
     /// Build a curve tree from a set of commitments assumed to be permissible
@@ -225,18 +226,13 @@ impl<
         )
     }
 
-    pub fn select_and_rerandomize_verifier_gadget<T: BorrowMut<Transcript>>(
+    pub fn select_and_rerandomize_verification_commitments(
         &self,
-        even_verifier: &mut Verifier<T, GroupAffine<P0>>,
-        odd_verifier: &mut Verifier<T, GroupAffine<P1>>,
         mut randomized_path: SelectAndRerandomizePath<P0, P1>,
-        parameters: &SelRerandParameters<P0, P1>,
-        branching_factor: usize,
-    ) -> GroupAffine<P0> {
-        // todo split into two functions for parallelizability?
-        // todo benchmark time of building circuit vs final verification to estimate gain of parallelizing one or both.
-
+    ) -> SRVerificicationCommitments<P0, P1> {
         let (even_commitments, odd_commitments) = match self {
+            // todo we are committing to public values in the first iteration.
+            // could allocate variables for each entry instead of using the vector commitment machinery needed for the next levels
             Self::Odd(ct) => {
                 assert_eq!(
                     randomized_path.even_commitments.len(),
@@ -257,42 +253,27 @@ impl<
             }
         };
 
-        // The last even commitment is a leaf.
-        for i in 0..even_commitments.len() - 1 {
-            let odd_index = if even_commitments.len() == odd_commitments.len() {
-                i + 1
-            } else {
-                i
-            };
-            let variables = even_verifier.commit_vec(branching_factor, even_commitments[i]); // committing to public value in first iteration
-            single_level_select_and_rerandomize(
-                even_verifier,
-                &parameters.c1_parameters,
-                &odd_commitments[odd_index],
-                variables,
-                None,
-                None,
-            );
+        SRVerificicationCommitments {
+            leaf: even_commitments[even_commitments.len() - 1].clone(),
+            even_commitments,
+            odd_commitments,
+            branching_factor: L,
         }
+    }
 
-        for i in 0..odd_commitments.len() {
-            let even_index = if even_commitments.len() == odd_commitments.len() {
-                i
-            } else {
-                i + 1
-            };
-            let variables = odd_verifier.commit_vec(branching_factor, odd_commitments[i]);
-            single_level_select_and_rerandomize(
-                odd_verifier,
-                &parameters.c0_parameters,
-                &even_commitments[even_index],
-                variables,
-                None,
-                None,
-            );
-        }
+    pub fn select_and_rerandomize_verifier_gadget<T: BorrowMut<Transcript>>(
+        &self,
+        even_verifier: &mut Verifier<T, GroupAffine<P0>>,
+        odd_verifier: &mut Verifier<T, GroupAffine<P1>>,
+        randomized_path: SelectAndRerandomizePath<P0, P1>,
+        parameters: &SelRerandParameters<P0, P1>,
+    ) -> GroupAffine<P0> {
+        let commitments = self.select_and_rerandomize_verification_commitments(randomized_path);
 
-        even_commitments[even_commitments.len() - 1]
+        commitments.even_verifier_gadget(even_verifier, parameters);
+        commitments.odd_verifier_gadget(odd_verifier, parameters);
+
+        commitments.leaf
     }
 
     pub fn height(&self) -> usize {
@@ -303,6 +284,66 @@ impl<
     }
 
     //todo add a function to add a single/several commitments
+}
+pub struct SRVerificicationCommitments<P0: SWModelParameters, P1: SWModelParameters> {
+    pub even_commitments: Vec<GroupAffine<P0>>,
+    pub odd_commitments: Vec<GroupAffine<P1>>,
+    pub leaf: GroupAffine<P0>,
+    pub branching_factor: usize,
+}
+
+impl<
+        P0: SWModelParameters + Clone + Send,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone + Send,
+    > SRVerificicationCommitments<P0, P1>
+{
+    fn even_verifier_gadget<T: BorrowMut<Transcript>>(
+        &self,
+        even_verifier: &mut Verifier<T, GroupAffine<P0>>,
+        parameters: &SelRerandParameters<P0, P1>,
+    ) {
+        // The last even commitment is a leaf.
+        for i in 0..self.even_commitments.len() - 1 {
+            let odd_index = if self.even_commitments.len() == self.odd_commitments.len() {
+                i + 1
+            } else {
+                i
+            };
+            let variables =
+                even_verifier.commit_vec(self.branching_factor, self.even_commitments[i]);
+            single_level_select_and_rerandomize(
+                even_verifier,
+                &parameters.c1_parameters,
+                &self.odd_commitments[odd_index],
+                variables,
+                None,
+                None,
+            );
+        }
+    }
+
+    fn odd_verifier_gadget<T: BorrowMut<Transcript>>(
+        &self,
+        odd_verifier: &mut Verifier<T, GroupAffine<P1>>,
+        parameters: &SelRerandParameters<P0, P1>,
+    ) {
+        for i in 0..self.odd_commitments.len() {
+            let even_index = if self.even_commitments.len() == self.odd_commitments.len() {
+                i
+            } else {
+                i + 1
+            };
+            let variables = odd_verifier.commit_vec(self.branching_factor, self.odd_commitments[i]);
+            single_level_select_and_rerandomize(
+                odd_verifier,
+                &parameters.c0_parameters,
+                &self.even_commitments[even_index],
+                variables,
+                None,
+                None,
+            );
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -577,9 +618,21 @@ mod tests {
     type PallasP = pasta::pallas::Projective;
 
     #[test]
-    pub fn test_curve_tree() {
+    pub fn test_curve_tree_even_depth() {
+        test_curve_tree_with_parameters::<32>(4, 11);
+    }
+
+    #[test]
+    pub fn test_curve_tree_odd_depth() {
+        test_curve_tree_with_parameters::<32>(3, 11);
+    }
+
+    pub fn test_curve_tree_with_parameters<const L: usize>(
+        depth: usize,
+        generators_length_log_2: usize,
+    ) {
         let mut rng = rand::thread_rng();
-        let generators_length = 1 << 12;
+        let generators_length = 1 << generators_length_log_2;
 
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
@@ -601,12 +654,12 @@ mod tests {
             .uh
             .permissible_commitment(&some_point, &sr_params.c0_parameters.pc_gens.B_blinding);
         let set = vec![permissible_point];
-        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+        let curve_tree = CurveTree::<L, PallasParameters, VestaParameters>::from_set(
             &set,
             &sr_params,
-            Some(4),
+            Some(depth),
         );
-        assert_eq!(curve_tree.height(), 4);
+        assert_eq!(curve_tree.height(), depth);
 
         let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
             0,
@@ -633,7 +686,6 @@ mod tests {
                 &mut vesta_verifier,
                 path_commitments,
                 &sr_params,
-                256,
             );
             let vesta_res = vesta_verifier.verify(
                 &vesta_proof,
@@ -704,7 +756,6 @@ mod tests {
                 &mut vesta_verifier,
                 path_commitments.clone(),
                 &sr_params,
-                32,
             );
             let vesta_verification_tuples = vesta_verifier
                 .verification_scalars_and_points(&vesta_proof)
@@ -725,7 +776,6 @@ mod tests {
                 &mut vesta_verifier,
                 path_commitments,
                 &sr_params,
-                32,
             );
             let vesta_verification_tuples = vesta_verifier
                 .verification_scalars_and_points(&vesta_proof)

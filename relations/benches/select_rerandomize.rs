@@ -98,7 +98,6 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 &mut vesta_verifier,
                 path.clone(),
                 &sr_params,
-                L,
             );
         })
     });
@@ -114,7 +113,6 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 &mut vesta_verifier,
                 path.clone(),
                 &sr_params,
-                L,
             );
 
             let _ = pallas_verifier
@@ -137,7 +135,6 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 &mut vesta_verifier,
                 path.clone(),
                 &sr_params,
-                L,
             );
 
             let pallas_vt = pallas_verifier
@@ -186,7 +183,6 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                             &mut vesta_verifier,
                             path.clone(),
                             &sr_params,
-                            L,
                         );
 
                         let pallas_vt = pallas_verifier

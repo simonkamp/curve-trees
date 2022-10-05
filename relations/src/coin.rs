@@ -370,7 +370,6 @@ fn verify_spend<
         odd_verifier,
         randomized_path,
         sr_parameters,
-        L,
     );
     let vars = even_verifier.commit_vec(L, rerandomized_coin);
 
