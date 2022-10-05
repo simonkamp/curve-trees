@@ -229,7 +229,7 @@ impl<
     pub fn select_and_rerandomize_verification_commitments(
         &self,
         mut randomized_path: SelectAndRerandomizePath<P0, P1>,
-    ) -> SRVerificicationCommitments<P0, P1> {
+    ) -> SRVerificationCommitments<P0, P1> {
         let (even_commitments, odd_commitments) = match self {
             // todo we are committing to public values in the first iteration.
             // could allocate variables for each entry instead of using the vector commitment machinery needed for the next levels
@@ -253,7 +253,7 @@ impl<
             }
         };
 
-        SRVerificicationCommitments {
+        SRVerificationCommitments {
             leaf: even_commitments[even_commitments.len() - 1].clone(),
             even_commitments,
             odd_commitments,
@@ -285,7 +285,8 @@ impl<
 
     //todo add a function to add a single/several commitments
 }
-pub struct SRVerificicationCommitments<P0: SWModelParameters, P1: SWModelParameters> {
+
+pub struct SRVerificationCommitments<P0: SWModelParameters, P1: SWModelParameters> {
     pub even_commitments: Vec<GroupAffine<P0>>,
     pub odd_commitments: Vec<GroupAffine<P1>>,
     pub leaf: GroupAffine<P0>,
@@ -295,9 +296,9 @@ pub struct SRVerificicationCommitments<P0: SWModelParameters, P1: SWModelParamet
 impl<
         P0: SWModelParameters + Clone + Send,
         P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone + Send,
-    > SRVerificicationCommitments<P0, P1>
+    > SRVerificationCommitments<P0, P1>
 {
-    fn even_verifier_gadget<T: BorrowMut<Transcript>>(
+    pub fn even_verifier_gadget<T: BorrowMut<Transcript>>(
         &self,
         even_verifier: &mut Verifier<T, GroupAffine<P0>>,
         parameters: &SelRerandParameters<P0, P1>,
@@ -322,7 +323,7 @@ impl<
         }
     }
 
-    fn odd_verifier_gadget<T: BorrowMut<Transcript>>(
+    pub fn odd_verifier_gadget<T: BorrowMut<Transcript>>(
         &self,
         odd_verifier: &mut Verifier<T, GroupAffine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
