@@ -15,6 +15,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Serializatio
 use ark_std::{UniformRand, Zero};
 use merlin::Transcript;
 use rand::Rng;
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::{borrow::BorrowMut, iter};
 

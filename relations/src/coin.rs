@@ -109,8 +109,10 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
             self.permissible_randomness + rerandomization,
             &parameters.c0_parameters.bp_gens,
         );
-        assert_eq!(path.even_commitments.len(), 2);
-        assert_eq!(path.even_commitments[1], rerandomized_point);
+        assert_eq!(
+            path.even_commitments[path.even_commitments.len() - 1],
+            rerandomized_point
+        );
 
         even_prover.constrain(variables[1] - self.tag);
 

@@ -40,6 +40,7 @@ fn bench_pour(c: &mut Criterion) {
         }
     };
     bench_pour_with_parameters::<32>(c, 4, 12, threaded, bench_prover);
+    bench_pour_with_parameters::<1024>(c, 2, 12, threaded, bench_prover);
     bench_pour_with_parameters::<256>(c, 4, 13, threaded, bench_prover);
 }
 

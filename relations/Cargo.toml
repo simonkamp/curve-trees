@@ -15,7 +15,7 @@ rust-crypto = "^0.2"
 ark-crypto-primitives = { version = "0.3.0" } 
 digest = "0.9"
 blake2 = "0.9"
-rayon = "1.5.3"
+rayon = {verison = "1.5.3", optional = true}
 
 [dev-dependencies]
 criterion = "0.3"
@@ -24,7 +24,7 @@ pasta = { path = "../pasta" }
 [features]
 default = ["asm", "parallel"]
 asm = ["ark-ff/asm", "bulletproofs/asm"]
-parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "bulletproofs/parallel"]
+parallel = ["rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "bulletproofs/parallel"]
 
 [[bench]]
 name = "select_rerandomize"
