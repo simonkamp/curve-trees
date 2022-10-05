@@ -2,6 +2,7 @@
 
 #[macro_use]
 extern crate criterion;
+use criterion::BenchmarkId;
 use criterion::Criterion;
 
 extern crate bulletproofs;
@@ -27,10 +28,30 @@ use blake2::Blake2s;
 use rayon::prelude::*;
 
 fn bench_pour(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Pour");
+    let bench_prover = true;
+    let threaded = {
+        #[cfg(feature = "parallel")]
+        {
+            "Multi_threaded"
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            "Single_threaded"
+        }
+    };
+    bench_pour_with_parameters::<32>(c, 4, 12, threaded, bench_prover);
+    bench_pour_with_parameters::<256>(c, 4, 13, threaded, bench_prover);
+}
 
+fn bench_pour_with_parameters<const L: usize>(
+    c: &mut Criterion,
+    depth: usize,                   // the depth of the curve tree
+    generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
+    threaded: &str,
+    bench_prover: bool,
+) {
     let mut rng = rand::thread_rng();
-    let generators_length = 1 << 13; // minimum sufficient power of 2
+    let generators_length = 1 << generators_length_log_2; // minimum sufficient power of 2
 
     let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
         generators_length,
@@ -58,7 +79,7 @@ fn bench_pour(c: &mut Criterion) {
     // Curve tree with two coins
     let set = vec![coin_0, coin_1];
     let curve_tree =
-        CurveTree::<256, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
+        CurveTree::<L, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(depth));
 
     let randomized_pk_0 = Coin::<PallasParameters, PallasP>::rerandomized_pk(
         &pk,
@@ -82,7 +103,7 @@ fn bench_pour(c: &mut Criterion) {
         randomized_pk: randomized_pk_1,
         sk: sk,
     };
-    let proof = {
+    let prove = || {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
             Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
@@ -106,48 +127,61 @@ fn bench_pour(c: &mut Criterion) {
             31,
             receiver_pk_1,
             &schnorr_parameters,
-            &mut rng,
+            &mut rand::thread_rng(),
         )
     };
+    let proof = prove();
 
     println!("Proof size in bytes {}", proof.serialized_size());
 
-    group.bench_function("verification_gadget", |b| {
-        b.iter(|| {
-            proof
-                .clone()
-                .verification_gadget(b"select_and_rerandomize", &sr_params, &curve_tree);
-        })
-    });
-    group.bench_function("verify_single", |b| {
-        b.iter(|| {
-            let (pallas_vt, vesta_vt) = proof.clone().verification_gadget(
-                b"select_and_rerandomize",
-                &sr_params,
-                &curve_tree,
-            );
+    {
+        let group_name = format!("{}_pour.L={},d={}.", threaded, L, depth);
+        let mut group = c.benchmark_group(group_name);
 
-            // todo benchmark gadget vs msm time
-            batch_verify(
-                vec![pallas_vt],
-                &sr_params.c0_parameters.pc_gens,
-                &sr_params.c0_parameters.bp_gens,
-            )
-            .unwrap();
-            batch_verify(
-                vec![vesta_vt],
-                &sr_params.c1_parameters.pc_gens,
-                &sr_params.c1_parameters.bp_gens,
-            )
-            .unwrap();
-        })
-    });
+        if bench_prover {
+            group.bench_function("prove", |b| b.iter(|| prove()));
+        }
+
+        group.bench_function("verification_gadget", |b| {
+            b.iter(|| {
+                proof.clone().verification_gadget(
+                    b"select_and_rerandomize",
+                    &sr_params,
+                    &curve_tree,
+                );
+            })
+        });
+        group.bench_function("verify_single", |b| {
+            b.iter(|| {
+                let (pallas_vt, vesta_vt) = proof.clone().verification_gadget(
+                    b"select_and_rerandomize",
+                    &sr_params,
+                    &curve_tree,
+                );
+
+                // todo benchmark gadget vs msm time
+                batch_verify(
+                    vec![pallas_vt],
+                    &sr_params.c0_parameters.pc_gens,
+                    &sr_params.c0_parameters.bp_gens,
+                )
+                .unwrap();
+                batch_verify(
+                    vec![vesta_vt],
+                    &sr_params.c1_parameters.pc_gens,
+                    &sr_params.c1_parameters.bp_gens,
+                )
+                .unwrap();
+            })
+        });
+    }
 
     use std::iter;
-
-    for n in [2, 10, 50, 100, 150, 200] {
+    let group_name = format!("{}_pour_batch_verification.L={},d={}.", threaded, L, depth);
+    let mut group = c.benchmark_group(group_name);
+    for n in [1, 2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
-            format!("batch{}", n),
+            BenchmarkId::from_parameter(n),
             &iter::repeat(proof.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {

@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate criterion;
-use criterion::Criterion;
+use criterion::{BenchmarkId, Criterion};
 
 extern crate bulletproofs;
 use bulletproofs::r1cs::{batch_verify, Prover, Verifier};
@@ -24,6 +24,7 @@ use merlin::Transcript;
 use rayon::prelude::*;
 
 fn bench_select_and_rerandomize(c: &mut Criterion) {
+    let bench_prover = true;
     let threaded = {
         #[cfg(feature = "parallel")]
         {
@@ -34,9 +35,9 @@ fn bench_select_and_rerandomize(c: &mut Criterion) {
             "Single_threaded"
         }
     };
-    bench_select_and_rerandomize_with_parameters::<256>(c, 4, 12, threaded);
-    bench_select_and_rerandomize_with_parameters::<32>(c, 4, 11, threaded);
-    bench_select_and_rerandomize_with_parameters::<1024>(c, 2, 11, threaded);
+    bench_select_and_rerandomize_with_parameters::<32>(c, 4, 11, threaded, bench_prover);
+    bench_select_and_rerandomize_with_parameters::<1024>(c, 2, 11, threaded, bench_prover);
+    bench_select_and_rerandomize_with_parameters::<256>(c, 4, 12, threaded, bench_prover);
 }
 
 // `L` is the branching factor of the curve tree
@@ -45,10 +46,8 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     depth: usize,                   // the depth of the curve tree
     generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
     threaded: &str,
+    bench_prover: bool,
 ) {
-    let group_name = format!("{}_Select&Rerandomize.L={},d={}.", threaded, L, depth);
-    let mut group = c.benchmark_group(group_name);
-
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
@@ -67,7 +66,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     let curve_tree =
         CurveTree::<L, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(depth));
 
-    let (path, pallas_proof, vesta_proof) = {
+    let prove = |print| {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
             Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
@@ -82,142 +81,161 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
             &mut vesta_prover,
             &sr_params,
         );
-        println!(
-            "Number of constraints: {}",
-            pallas_prover.number_of_constraints()
+        if print {
+            println!(
+                "Number of constraints: {}",
+                pallas_prover.number_of_constraints()
+            );
+        }
+        let (pallas_proof, vesta_proof) = (
+            pallas_prover
+                .prove(&sr_params.c0_parameters.bp_gens)
+                .unwrap(),
+            vesta_prover
+                .prove(&sr_params.c1_parameters.bp_gens)
+                .unwrap(),
         );
-        let pallas_proof = pallas_prover
-            .prove(&sr_params.c0_parameters.bp_gens)
-            .unwrap();
-        let vesta_proof = vesta_prover
-            .prove(&sr_params.c1_parameters.bp_gens)
-            .unwrap();
         (path, pallas_proof, vesta_proof)
     };
+    let (path, pallas_proof, vesta_proof) = prove(true);
 
     println!(
         "Proof size in bytes: {}",
         path.serialized_size() + pallas_proof.serialized_size() + vesta_proof.serialized_size()
     );
 
-    group.bench_function("verification_gadget", |b| {
-        b.iter(|| {
-            // Common part
-            let srv = curve_tree.select_and_rerandomize_verification_commitments(path.clone());
+    {
+        let group_name = format!("{}_Select&Rerandomize.L={},d={}.", threaded, L, depth);
+        let mut group = c.benchmark_group(group_name);
 
-            let even_verification_gadget = || {
-                let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-                let mut pallas_verifier = Verifier::new(pallas_transcript);
-                srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
-            };
+        if bench_prover {
+            group.bench_function("prover", |b| b.iter(|| prove(false)));
+        }
 
-            let odd_verification_gadget = || {
-                let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-                let mut vesta_verifier = Verifier::new(vesta_transcript);
-                srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
-            };
+        group.bench_function("verification_gadget", |b| {
+            b.iter(|| {
+                // Common part
+                let srv = curve_tree.select_and_rerandomize_verification_commitments(path.clone());
 
-            #[cfg(not(feature = "parallel"))]
-            {
-                even_verification_gadget();
-                odd_verification_gadget()
-            }
-            #[cfg(feature = "parallel")]
-            {
-                rayon::join(even_verification_gadget, odd_verification_gadget);
-            }
-        })
-    });
+                let even_verification_gadget = || {
+                    let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+                    let mut pallas_verifier = Verifier::new(pallas_transcript);
+                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                };
 
-    group.bench_function("verification_tuples", |b| {
-        b.iter(|| {
-            // Common part
-            let srv = curve_tree.select_and_rerandomize_verification_commitments(path.clone());
+                let odd_verification_gadget = || {
+                    let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+                    let mut vesta_verifier = Verifier::new(vesta_transcript);
+                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                };
 
-            let even_verification_gadget = || {
-                let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-                let mut pallas_verifier = Verifier::new(pallas_transcript);
-                srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
-                let _ = pallas_verifier
-                    .verification_scalars_and_points(&pallas_proof)
-                    .unwrap();
-            };
+                #[cfg(not(feature = "parallel"))]
+                {
+                    even_verification_gadget();
+                    odd_verification_gadget()
+                }
+                #[cfg(feature = "parallel")]
+                {
+                    rayon::join(even_verification_gadget, odd_verification_gadget);
+                }
+            })
+        });
 
-            let odd_verification_gadget = || {
-                let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-                let mut vesta_verifier = Verifier::new(vesta_transcript);
-                srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
-                let _ = vesta_verifier
-                    .verification_scalars_and_points(&vesta_proof)
-                    .unwrap();
-            };
+        group.bench_function("verification_tuples", |b| {
+            b.iter(|| {
+                // Common part
+                let srv = curve_tree.select_and_rerandomize_verification_commitments(path.clone());
 
-            #[cfg(not(feature = "parallel"))]
-            {
-                even_verification_gadget();
-                odd_verification_gadget()
-            }
-            #[cfg(feature = "parallel")]
-            {
-                rayon::join(even_verification_gadget, odd_verification_gadget);
-            }
-        })
-    });
-    group.bench_function("verify_single", |b| {
-        b.iter(|| {
-            // Common part
-            let srv = curve_tree.select_and_rerandomize_verification_commitments(path.clone());
+                let even_verification_gadget = || {
+                    let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+                    let mut pallas_verifier = Verifier::new(pallas_transcript);
+                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                    let _ = pallas_verifier
+                        .verification_scalars_and_points(&pallas_proof)
+                        .unwrap();
+                };
 
-            let even_verification_gadget = || {
-                let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-                let mut pallas_verifier = Verifier::new(pallas_transcript);
-                srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
-                let pallas_vt = pallas_verifier
-                    .verification_scalars_and_points(&pallas_proof)
-                    .unwrap();
+                let odd_verification_gadget = || {
+                    let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+                    let mut vesta_verifier = Verifier::new(vesta_transcript);
+                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                    let _ = vesta_verifier
+                        .verification_scalars_and_points(&vesta_proof)
+                        .unwrap();
+                };
 
-                let res = batch_verify(
-                    vec![pallas_vt],
-                    &sr_params.c0_parameters.pc_gens,
-                    &sr_params.c0_parameters.bp_gens,
-                );
-                assert_eq!(res, Ok(()))
-            };
+                #[cfg(not(feature = "parallel"))]
+                {
+                    even_verification_gadget();
+                    odd_verification_gadget()
+                }
+                #[cfg(feature = "parallel")]
+                {
+                    rayon::join(even_verification_gadget, odd_verification_gadget);
+                }
+            })
+        });
+        group.bench_function("verify_single", |b| {
+            b.iter(|| {
+                // Common part
+                let srv = curve_tree.select_and_rerandomize_verification_commitments(path.clone());
 
-            let odd_verification_gadget = || {
-                let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-                let mut vesta_verifier = Verifier::new(vesta_transcript);
-                srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                let even_verification_gadget = || {
+                    let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+                    let mut pallas_verifier = Verifier::new(pallas_transcript);
+                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                    let pallas_vt = pallas_verifier
+                        .verification_scalars_and_points(&pallas_proof)
+                        .unwrap();
 
-                let vesta_vt = vesta_verifier
-                    .verification_scalars_and_points(&vesta_proof)
-                    .unwrap();
+                    let res = batch_verify(
+                        vec![pallas_vt],
+                        &sr_params.c0_parameters.pc_gens,
+                        &sr_params.c0_parameters.bp_gens,
+                    );
+                    assert_eq!(res, Ok(()))
+                };
 
-                let res = batch_verify(
-                    vec![vesta_vt],
-                    &sr_params.c1_parameters.pc_gens,
-                    &sr_params.c1_parameters.bp_gens,
-                );
-                assert_eq!(res, Ok(()))
-            };
+                let odd_verification_gadget = || {
+                    let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+                    let mut vesta_verifier = Verifier::new(vesta_transcript);
+                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
 
-            #[cfg(not(feature = "parallel"))]
-            {
-                even_verification_gadget();
-                odd_verification_gadget()
-            }
-            #[cfg(feature = "parallel")]
-            {
-                rayon::join(even_verification_gadget, odd_verification_gadget);
-            }
-        })
-    });
+                    let vesta_vt = vesta_verifier
+                        .verification_scalars_and_points(&vesta_proof)
+                        .unwrap();
 
+                    let res = batch_verify(
+                        vec![vesta_vt],
+                        &sr_params.c1_parameters.pc_gens,
+                        &sr_params.c1_parameters.bp_gens,
+                    );
+                    assert_eq!(res, Ok(()))
+                };
+
+                #[cfg(not(feature = "parallel"))]
+                {
+                    even_verification_gadget();
+                    odd_verification_gadget()
+                }
+                #[cfg(feature = "parallel")]
+                {
+                    rayon::join(even_verification_gadget, odd_verification_gadget);
+                }
+            })
+        });
+    }
+
+    let group_name = format!(
+        "{}_select&rerandomize_batch_verification.L={},d={}.",
+        threaded, L, depth
+    );
+    let mut group = c.benchmark_group(group_name);
     use std::iter;
 
-    for n in [2, 10, 50, 100, 150, 200] {
+    for n in [1, 2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
-            format!("batch{}", n),
+            BenchmarkId::from_parameter(n),
             &iter::repeat(path.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
