@@ -23,6 +23,9 @@ use ark_ec::models::short_weierstrass_jacobian::GroupAffine;
 use ark_serialize::CanonicalSerialize;
 use blake2::Blake2s;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 fn bench_pour(c: &mut Criterion) {
     let mut group = c.benchmark_group("Pour proofs");
 
@@ -111,29 +114,15 @@ fn bench_pour(c: &mut Criterion) {
 
     group.bench_function("verification_gadget", |b| {
         b.iter(|| {
-            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-            let pallas_verifier = Verifier::new(pallas_transcript);
-            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-            let vesta_verifier = Verifier::new(vesta_transcript);
-
-            proof.clone().verification_gadget(
-                pallas_verifier,
-                vesta_verifier,
-                &sr_params,
-                &curve_tree,
-            );
+            proof
+                .clone()
+                .verification_gadget(b"select_and_rerandomize", &sr_params, &curve_tree);
         })
     });
     group.bench_function("verify_single", |b| {
         b.iter(|| {
-            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-            let pallas_verifier = Verifier::new(pallas_transcript);
-            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-            let vesta_verifier = Verifier::new(vesta_transcript);
-
             let (pallas_vt, vesta_vt) = proof.clone().verification_gadget(
-                pallas_verifier,
-                vesta_verifier,
+                b"select_and_rerandomize",
                 &sr_params,
                 &curve_tree,
             );
@@ -156,45 +145,95 @@ fn bench_pour(c: &mut Criterion) {
 
     use std::iter;
 
-    for n in [1, 10, 50, 100, 150, 200] {
+    for n in [2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
             format!("Batch verification of {} proofs.", n),
             &iter::repeat(proof.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
-                    let mut pallas_verification_scalars_and_points =
-                        Vec::with_capacity(proofs.len());
-                    let mut vesta_verification_scalars_and_points =
-                        Vec::with_capacity(proofs.len());
-                    for proof in proofs {
-                        let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-                        let pallas_verifier = Verifier::new(pallas_transcript);
-                        let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-                        let vesta_verifier = Verifier::new(vesta_transcript);
+                    #[cfg(not(feature = "parallel"))]
+                    {
+                        let mut pallas_verification_scalars_and_points =
+                            Vec::with_capacity(proofs.len());
+                        let mut vesta_verification_scalars_and_points =
+                            Vec::with_capacity(proofs.len());
+                        for proof in proofs {
+                            let p = proof.clone();
+                            let (pallas_vt, vesta_vt) = p.verification_gadget(
+                                b"select_and_rerandomize",
+                                &sr_params,
+                                &curve_tree,
+                            );
 
-                        let p = proof.clone();
-                        let (pallas_vt, vesta_vt) = p.verification_gadget(
-                            pallas_verifier,
-                            vesta_verifier,
-                            &sr_params,
-                            &curve_tree,
-                        );
-
-                        pallas_verification_scalars_and_points.push(pallas_vt);
-                        vesta_verification_scalars_and_points.push(vesta_vt);
+                            pallas_verification_scalars_and_points.push(pallas_vt);
+                            vesta_verification_scalars_and_points.push(vesta_vt);
+                        }
+                        batch_verify(
+                            pallas_verification_scalars_and_points,
+                            &sr_params.c0_parameters.pc_gens,
+                            &sr_params.c0_parameters.bp_gens,
+                        )
+                        .unwrap();
+                        batch_verify(
+                            vesta_verification_scalars_and_points,
+                            &sr_params.c1_parameters.pc_gens,
+                            &sr_params.c1_parameters.bp_gens,
+                        )
+                        .unwrap();
                     }
-                    batch_verify(
-                        pallas_verification_scalars_and_points,
-                        &sr_params.c0_parameters.pc_gens,
-                        &sr_params.c0_parameters.bp_gens,
-                    )
-                    .unwrap();
-                    batch_verify(
-                        vesta_verification_scalars_and_points,
-                        &sr_params.c1_parameters.pc_gens,
-                        &sr_params.c1_parameters.bp_gens,
-                    )
-                    .unwrap();
+                    #[cfg(feature = "parallel")]
+                    {
+                        let proofs_and_commitment_paths = proofs.par_iter().map(|proof| {
+                            let cp0 = curve_tree.select_and_rerandomize_verification_commitments(
+                                proof.randomized_path_0.clone(),
+                            );
+                            let cp1 = curve_tree.select_and_rerandomize_verification_commitments(
+                                proof.randomized_path_1.clone(),
+                            );
+                            (proof, cp0, cp1)
+                        });
+                        let proofs_and_commitment_paths_clone = proofs_and_commitment_paths.clone();
+                        rayon::join(
+                            || {
+                                // even verification tuples
+                                let event_vts: Vec<_> = proofs_and_commitment_paths
+                                    .map(|(proof, path0, path1)| {
+                                        proof.even_verification_gadget(
+                                            b"select_and_rerandomize",
+                                            &sr_params,
+                                            &path0,
+                                            &path1,
+                                        )
+                                    })
+                                    .collect();
+                                batch_verify(
+                                    event_vts,
+                                    &sr_params.c0_parameters.pc_gens,
+                                    &sr_params.c0_parameters.bp_gens,
+                                )
+                                .unwrap();
+                            },
+                            || {
+                                // odd verification tuples
+                                let odd_vts: Vec<_> = proofs_and_commitment_paths_clone
+                                    .map(|(proof, path0, path1)| {
+                                        proof.odd_verification_gadget(
+                                            b"select_and_rerandomize",
+                                            &sr_params,
+                                            &path0,
+                                            &path1,
+                                        )
+                                    })
+                                    .collect();
+                                batch_verify(
+                                    odd_vts,
+                                    &sr_params.c1_parameters.pc_gens,
+                                    &sr_params.c1_parameters.bp_gens,
+                                )
+                                .unwrap();
+                            },
+                        )
+                    }
                 })
             },
         );

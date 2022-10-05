@@ -10,7 +10,7 @@ use ark_crypto_primitives::{
     SignatureScheme,
 };
 use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, ProjectiveCurve, SWModelParameters};
-use ark_ff::{Field, PrimeField, ToBytes};
+use ark_ff::{PrimeField, ToBytes};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::UniformRand;
 use blake2::Blake2s;
@@ -302,35 +302,29 @@ impl<
     > Pour<P0, P1, C>
 {
     // verification
-    pub fn verification_gadget<const L: usize>(
-        self,
-        mut even_verifier: Verifier<Transcript, GroupAffine<P0>>,
-        mut odd_verifier: Verifier<Transcript, GroupAffine<P1>>,
+    pub fn even_verification_gadget(
+        &self,
+        ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
-    ) -> (
-        VerificationTuple<GroupAffine<P0>>,
-        VerificationTuple<GroupAffine<P1>>,
-    ) {
+        spend_commitments_0: &SRVerificationCommitments<P0, P1>,
+        spend_commitments_1: &SRVerificationCommitments<P0, P1>,
+    ) -> VerificationTuple<GroupAffine<P0>> {
+        let mut even_verifier = Verifier::new(Transcript::new(ro_domain));
         // mint
         let minted_amount_var_0 = verify_mint(&mut even_verifier, self.minted_coin_commitment_0);
         let minted_amount_var_1 = verify_mint(&mut even_verifier, self.minted_coin_commitment_1);
 
         // spend
-        let spent_amount_var_0 = verify_spend::<L, _, _, C>(
-            self.randomized_path_0,
+        let spent_amount_var_0 = verify_spend_even::<_, _, C>(
             &mut even_verifier,
-            &mut odd_verifier,
+            spend_commitments_0,
             sr_parameters,
-            curve_tree,
             &self.pk0,
         );
-        let spent_amount_var_1 = verify_spend::<L, _, _, C>(
-            self.randomized_path_1,
+        let spent_amount_var_1 = verify_spend_even::<_, _, C>(
             &mut even_verifier,
-            &mut odd_verifier,
+            spend_commitments_1,
             sr_parameters,
-            curve_tree,
             &self.pk1,
         );
 
@@ -342,14 +336,140 @@ impl<
         let even_vt = even_verifier
             .verification_scalars_and_points(&self.even_proof)
             .unwrap();
+        even_vt
+    }
+
+    // verification
+    pub fn odd_verification_gadget(
+        &self,
+        ro_domain: &'static [u8],
+        sr_parameters: &SelRerandParameters<P0, P1>,
+        spend_commitments_0: &SRVerificationCommitments<P0, P1>,
+        spend_commitments_1: &SRVerificationCommitments<P0, P1>,
+    ) -> VerificationTuple<GroupAffine<P1>> {
+        let mut odd_verifier = Verifier::new(Transcript::new(ro_domain));
+        // spend
+        verify_spend_odd(&mut odd_verifier, spend_commitments_0, sr_parameters);
+        verify_spend_odd(&mut odd_verifier, spend_commitments_1, sr_parameters);
+
         let odd_vt = odd_verifier
             .verification_scalars_and_points(&self.odd_proof)
             .unwrap();
+        odd_vt
+    }
+
+    // verification
+    pub fn verification_gadget<const L: usize>(
+        self,
+        ro_domain: &'static [u8],
+        sr_parameters: &SelRerandParameters<P0, P1>,
+        curve_tree: &CurveTree<L, P0, P1>,
+    ) -> (
+        VerificationTuple<GroupAffine<P0>>,
+        VerificationTuple<GroupAffine<P1>>,
+    ) {
+        #[cfg(feature = "parallel")]
+        let (spend_commitments_0, spend_commitments_1) = {
+            // todo this might not be worth the overhead
+            rayon::join(
+                || {
+                    curve_tree.select_and_rerandomize_verification_commitments(
+                        self.randomized_path_0.clone(),
+                    )
+                },
+                || {
+                    curve_tree.select_and_rerandomize_verification_commitments(
+                        self.randomized_path_1.clone(),
+                    )
+                },
+            )
+        };
+        #[cfg(not(feature = "parallel"))]
+        let (spend_commitments_0, spend_commitments_1) = {
+            (
+                curve_tree.select_and_rerandomize_verification_commitments(
+                    self.randomized_path_0.clone(),
+                ),
+                curve_tree.select_and_rerandomize_verification_commitments(
+                    self.randomized_path_1.clone(),
+                ),
+            )
+        };
+
+        #[cfg(feature = "parallel")]
+        let (even_vt, odd_vt) = {
+            rayon::join(
+                || {
+                    self.even_verification_gadget(
+                        ro_domain,
+                        sr_parameters,
+                        &spend_commitments_0,
+                        &spend_commitments_1,
+                    )
+                },
+                || {
+                    self.odd_verification_gadget(
+                        ro_domain,
+                        sr_parameters,
+                        &spend_commitments_0,
+                        &spend_commitments_1,
+                    )
+                },
+            )
+        };
+        #[cfg(not(feature = "parallel"))]
+        let (even_vt, odd_vt) = {
+            (
+                self.even_verification_gadget(
+                    ro_domain,
+                    sr_parameters,
+                    &spend_commitments_0,
+                    &spend_commitments_1,
+                ),
+                self.odd_verification_gadget(
+                    ro_domain,
+                    sr_parameters,
+                    &spend_commitments_0,
+                    &spend_commitments_1,
+                ),
+            )
+        };
 
         // todo check signatures
 
         (even_vt, odd_vt)
     }
+}
+
+fn verify_spend_even<
+    P0: SWModelParameters + Clone,
+    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    C: ProjectiveCurve,
+>(
+    even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
+    commitments: &SRVerificationCommitments<P0, P1>,
+    sr_parameters: &SelRerandParameters<P0, P1>,
+    pk: &PublicKey<C>,
+) -> Variable<P0::ScalarField> {
+    commitments.even_verifier_gadget(even_verifier, sr_parameters);
+    let vars = even_verifier.commit_vec(commitments.branching_factor, commitments.leaf);
+
+    // enforce equality of tag with hash of public key
+    even_verifier.constrain(vars[1] - Coin::<P0, C>::pk_to_scalar(pk));
+
+    // return value to constrain spending balance
+    vars[0]
+}
+
+fn verify_spend_odd<
+    P0: SWModelParameters + Clone,
+    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+>(
+    odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
+    commitments: &SRVerificationCommitments<P0, P1>,
+    sr_parameters: &SelRerandParameters<P0, P1>,
+) {
+    commitments.odd_verifier_gadget(odd_verifier, sr_parameters);
 }
 
 fn verify_spend<
@@ -365,19 +485,9 @@ fn verify_spend<
     curve_tree: &CurveTree<L, P0, P1>,
     pk: &PublicKey<C>,
 ) -> Variable<P0::ScalarField> {
-    let rerandomized_coin = curve_tree.select_and_rerandomize_verifier_gadget(
-        even_verifier,
-        odd_verifier,
-        randomized_path,
-        sr_parameters,
-    );
-    let vars = even_verifier.commit_vec(L, rerandomized_coin);
-
-    // enforce equality of tag with hash of public key
-    even_verifier.constrain(vars[1] - Coin::<P0, C>::pk_to_scalar(pk));
-
-    // return value to constrain spending balance
-    vars[0]
+    let commitments = curve_tree.select_and_rerandomize_verification_commitments(randomized_path);
+    verify_spend_odd(odd_verifier, &commitments, sr_parameters);
+    verify_spend_even::<_, _, C>(even_verifier, &commitments, sr_parameters, pk)
 }
 
 pub struct SignedTx<
@@ -631,13 +741,8 @@ mod tests {
         );
 
         {
-            let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-            let pallas_verifier = Verifier::new(pallas_transcript);
-            let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-            let vesta_verifier = Verifier::new(vesta_transcript);
-
             let (pallas_vt, vesta_vt) =
-                proof.verification_gadget(pallas_verifier, vesta_verifier, &sr_params, &curve_tree);
+                proof.verification_gadget(b"select_and_rerandomize", &sr_params, &curve_tree);
 
             batch_verify(
                 vec![pallas_vt],

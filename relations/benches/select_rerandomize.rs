@@ -215,8 +215,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
 
     use std::iter;
 
-    // for n in [2, 10, 50, 100, 150, 200] {
-    for n in [2, 10, 50] {
+    for n in [2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
             format!("Batch verify {} proofs.", n),
             &iter::repeat(path.clone()).take(n).collect::<Vec<_>>(),
