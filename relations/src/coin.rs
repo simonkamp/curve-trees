@@ -566,27 +566,56 @@ impl<
         sig_parameters: &Parameters<C, Blake2s>,
     ) -> Pour<P0, P1, C> {
         let pour = Pour::<P0, P1, C>::deserialize(self.pour_bytes.as_slice()).unwrap();
-
-        Schnorr::verify(
-            sig_parameters,
-            &pour.pk0,
-            self.pour_bytes.as_slice(),
-            &Signature {
-                verifier_challenge: self.signature_verifier_challenge_0,
-                prover_response: self.signature_prover_response_0,
+        #[cfg(feature = "parallel")]
+        rayon::join(
+            || {
+                Schnorr::verify(
+                    sig_parameters,
+                    &pour.pk0,
+                    self.pour_bytes.as_slice(),
+                    &Signature {
+                        verifier_challenge: self.signature_verifier_challenge_0,
+                        prover_response: self.signature_prover_response_0,
+                    },
+                )
+                .unwrap()
             },
-        )
-        .unwrap();
-        Schnorr::verify(
-            sig_parameters,
-            &pour.pk1,
-            self.pour_bytes.as_slice(),
-            &Signature {
-                verifier_challenge: self.signature_verifier_challenge_1,
-                prover_response: self.signature_prover_response_1,
+            || {
+                Schnorr::verify(
+                    sig_parameters,
+                    &pour.pk1,
+                    self.pour_bytes.as_slice(),
+                    &Signature {
+                        verifier_challenge: self.signature_verifier_challenge_1,
+                        prover_response: self.signature_prover_response_1,
+                    },
+                )
+                .unwrap()
             },
-        )
-        .unwrap();
+        );
+        #[cfg(not(feature = "parallel"))]
+        {
+            Schnorr::verify(
+                sig_parameters,
+                &pour.pk0,
+                self.pour_bytes.as_slice(),
+                &Signature {
+                    verifier_challenge: self.signature_verifier_challenge_0,
+                    prover_response: self.signature_prover_response_0,
+                },
+            )
+            .unwrap();
+            Schnorr::verify(
+                sig_parameters,
+                &pour.pk1,
+                self.pour_bytes.as_slice(),
+                &Signature {
+                    verifier_challenge: self.signature_verifier_challenge_1,
+                    prover_response: self.signature_prover_response_1,
+                },
+            )
+            .unwrap();
+        }
         pour
     }
 }
