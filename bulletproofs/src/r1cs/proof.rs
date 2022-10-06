@@ -74,36 +74,38 @@ impl<C: AffineCurve> R1CSProof<C> {
 impl<C: AffineCurve> CanonicalSerialize for R1CSProof<C> {
     /// Returns the size in bytes required to serialize the `R1CSProof`.
     fn serialized_size(&self) -> usize {
+        let number_of_points = if self.missing_phase2_commitments() {
+            3
+        } else {
+            6
+        };
         // allocate space for the 6 points
-        let points_size = 6 * self.A_I1.serialized_size();
+        let points_size = number_of_points * self.A_I1.serialized_size();
         // allocate space for the T vector
         let t_size = self.T.serialized_size();
         // size of 3 scalars
         let scalars_size = 3 * self.t_x.serialized_size();
         // size of the inner product proof
         let ipp_size = self.ipp_proof.serialized_size();
-        points_size + t_size + scalars_size + ipp_size
+        points_size + t_size + scalars_size + ipp_size + 1
     }
-    // todo: reintroduce this and save 3*32-1 bytes
-    // pub fn serialized_size(&self) -> usize {
-    //     // version tag + (11 or 14) elements + the ipp
-    //     let elements = if self.missing_phase2_commitments() {
-    //         11
-    //     } else {
-    //         14
-    //     };
-    //     1 + elements * 32 + self.ipp_proof.serialized_size()
-    // }
 
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        // serialize points
-        self.A_I1.serialize(&mut writer)?;
+        // serialize first phase commitments.
         self.A_I1.serialize(&mut writer)?;
         self.A_O1.serialize(&mut writer)?;
         self.S1.serialize(&mut writer)?;
-        self.A_I2.serialize(&mut writer)?;
-        self.A_O2.serialize(&mut writer)?;
-        self.S2.serialize(&mut writer)?;
+
+        // serialize second phase commitments, if present.
+        if self.missing_phase2_commitments() {
+            ONE_PHASE_COMMITMENTS.serialize(&mut writer)?;
+        } else {
+            TWO_PHASE_COMMITMENTS.serialize(&mut writer)?;
+            self.A_I2.serialize(&mut writer)?;
+            self.A_O2.serialize(&mut writer)?;
+            self.S2.serialize(&mut writer)?;
+        }
+
         // Serialize T
         self.T.serialize(&mut writer)?;
         // serialize scalars
@@ -119,13 +121,26 @@ impl<C: AffineCurve> CanonicalSerialize for R1CSProof<C> {
 
 impl<C: AffineCurve> CanonicalDeserialize for R1CSProof<C> {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let A_I1 = C::deserialize(&mut reader)?;
+        let A_O1 = C::deserialize(&mut reader)?;
+        let S1 = C::deserialize(&mut reader)?;
+        let flag = u8::deserialize(&mut reader)?;
+        let (A_I2, A_O2, S2) = if flag == TWO_PHASE_COMMITMENTS {
+            (
+                C::deserialize(&mut reader)?,
+                C::deserialize(&mut reader)?,
+                C::deserialize(&mut reader)?,
+            )
+        } else {
+            (C::zero(), C::zero(), C::zero())
+        };
         Ok(Self {
-            A_I1: C::deserialize(&mut reader)?,
-            A_O1: C::deserialize(&mut reader)?,
-            S1: C::deserialize(&mut reader)?,
-            A_I2: C::deserialize(&mut reader)?,
-            A_O2: C::deserialize(&mut reader)?,
-            S2: C::deserialize(&mut reader)?,
+            A_I1,
+            A_O1,
+            S1,
+            A_I2,
+            A_O2,
+            S2,
             T: Vec::<C>::deserialize(&mut reader)?,
             t_x: C::ScalarField::deserialize(&mut reader)?,
             t_x_blinding: C::ScalarField::deserialize(&mut reader)?,
