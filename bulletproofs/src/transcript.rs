@@ -101,7 +101,6 @@ impl TranscriptProtocol for Transcript {
         let mut bytes = [0u8; 64];
         self.challenge_bytes(label, &mut bytes);
 
-        // todo this should be handled by the curve, but is not implemented in ark?
         for i in 0..=u8::max_value() {
             let mut sha = Sha3::sha3_256();
             sha.input(&bytes);

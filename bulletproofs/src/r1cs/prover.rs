@@ -361,8 +361,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
     ) -> (C, Vec<Variable<C::ScalarField>>) {
         use std::iter;
 
-        // TODO: debug
-
         // compute the commitment:
         // comm = <v, G> + <v_blinding> B_blinding
         let gens = bp_gens.share(0);
@@ -1007,7 +1005,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let mut r_vec = r_poly.eval(x);
         r_vec.append(&mut vec![C::ScalarField::zero(); pad]);
         for i in n..padded_n {
-            r_vec[i] = -exp_y[i]; // TODO: wtf is this? is it affected by the degree (which we change)
+            r_vec[i] = -exp_y[i];
         }
 
         // sanity check

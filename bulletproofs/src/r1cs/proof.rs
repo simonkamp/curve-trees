@@ -84,7 +84,7 @@ impl<C: AffineCurve> CanonicalSerialize for R1CSProof<C> {
         let ipp_size = self.ipp_proof.serialized_size();
         points_size + t_size + scalars_size + ipp_size
     }
-    // todo account for this?
+    // todo: reintroduce this and save 3*32-1 bytes
     // pub fn serialized_size(&self) -> usize {
     //     // version tag + (11 or 14) elements + the ipp
     //     let elements = if self.missing_phase2_commitments() {

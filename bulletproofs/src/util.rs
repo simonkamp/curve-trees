@@ -16,7 +16,6 @@ pub struct VecPoly1<F: Field>(pub Vec<F>, pub Vec<F>);
 
 /// Represents a degree-3 vector polynomial
 /// \\(\mathbf{a} + \mathbf{b} \cdot x + \mathbf{c} \cdot x^2 + \mathbf{d} \cdot x^3 \\).
-#[cfg(feature = "yoloproofs")]
 pub struct VecPoly3<F: Field>(pub Vec<F>, pub Vec<F>, pub Vec<F>, pub Vec<F>);
 
 pub const T_LABELS: [&[u8]; 25] = [
@@ -119,7 +118,6 @@ pub struct Poly2<F: Field>(pub F, pub F, pub F);
 
 /// Represents a degree-6 scalar polynomial, without the zeroth degree
 /// \\(a \cdot x + b \cdot x^2 + c \cdot x^3 + d \cdot x^4 + e \cdot x^5 + f \cdot x^6\\)
-#[cfg(feature = "yoloproofs")]
 pub struct Poly6<F: Field> {
     pub t1: F,
     pub t2: F,
@@ -200,7 +198,6 @@ impl<F: Field> VecPoly1<F> {
     }
 }
 
-#[cfg(feature = "yoloproofs")]
 impl<F: Field> VecPoly3<F> {
     pub fn zero(n: usize) -> Self {
         VecPoly3(
@@ -251,7 +248,6 @@ impl<F: Field> Poly2<F> {
     }
 }
 
-#[cfg(feature = "yoloproofs")]
 impl<F: Field> Poly6<F> {
     pub fn eval(&self, x: F) -> F {
         x * (self.t1 + x * (self.t2 + x * (self.t3 + x * (self.t4 + x * (self.t5 + x * self.t6)))))
@@ -277,7 +273,6 @@ impl<F: Field> Drop for Poly2<F> {
     }
 }
 
-#[cfg(feature = "yoloproofs")]
 impl<F: Field> Drop for VecPoly3<F> {
     fn drop(&mut self) {
         for e in self.0.iter_mut() {
@@ -295,7 +290,6 @@ impl<F: Field> Drop for VecPoly3<F> {
     }
 }
 
-#[cfg(feature = "yoloproofs")]
 impl<F: Field> Drop for Poly6<F> {
     fn drop(&mut self) {
         self.t1.clear();
@@ -363,7 +357,6 @@ pub fn affine_from_bytes_tai<C: AffineCurve>(bytes: &[u8]) -> C {
     use crypto::digest::Digest;
     use crypto::sha3::Sha3;
 
-    // todo this should be handled by the curve, but is not implemented in ark
     for i in 0..=u8::max_value() {
         let mut sha = Sha3::sha3_256();
         sha.input(bytes);

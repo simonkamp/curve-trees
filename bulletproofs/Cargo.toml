@@ -1,10 +1,5 @@
 [package]
 name = "bulletproofs"
-# Before doing a release:
-# - update version field 
-# - update html_root_url
-# - ensure yoloproofs was disabled in an atomic (revertable) commit
-# - update CHANGELOG
 version = "2.0.0"
 authors = ["Cathie Yun <cathieyun@gmail.com>", 
            "Henry de Valence <hdevalence@hdevalence.ca>",
@@ -30,23 +25,21 @@ ark-ff = { version = "0.3.0"}
 ark-serialize = { version = "0.3.0" } 
 ark-std = { version = "0.3.0" } 
 rust-crypto = "^0.2"
-pasta = { path = "../pasta" }
 
 [dev-dependencies]
 criterion = "0.3"
 ark-algebra-test-templates = "0.3.0"
+pasta = { path = "../pasta", default-features = false }
 
 [features]
-default = ["std", "yoloproofs", "parallel", "asm"]
+default = ["std", "parallel", "asm"]
 std = ["rand", "rand/std", "thiserror"]
-asm = ["ark-ff/asm"]
-parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel"]
-yoloproofs = []
+asm = ["ark-ff/asm", "pasta/asm"]
+parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "pasta/parallel"]
 nightly = ["clear_on_drop/nightly"]
 
 [[test]]
 name = "r1cs"
-required-features = ["yoloproofs"]
 
 [[bench]]
 name = "generators"
@@ -55,4 +48,3 @@ harness = false
 [[bench]]
 name = "r1cs"
 harness = false
-required-features = ["yoloproofs"]
