@@ -21,7 +21,7 @@ use pasta::{
 
 use ark_crypto_primitives::{signature::schnorr::Schnorr, SignatureScheme};
 use ark_ec::models::short_weierstrass_jacobian::GroupAffine;
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use blake2::Blake2s;
 
 #[cfg(feature = "parallel")]
@@ -39,7 +39,7 @@ fn bench_pour(c: &mut Criterion) {
             "Single_threaded"
         }
     };
-    bench_pour_with_parameters::<32>(c, 4, 12, threaded, bench_prover);
+    bench_pour_with_parameters::<256>(c, 2, 13, threaded, bench_prover);
     bench_pour_with_parameters::<1024>(c, 2, 12, threaded, bench_prover);
     bench_pour_with_parameters::<256>(c, 4, 13, threaded, bench_prover);
 }
@@ -131,9 +131,9 @@ fn bench_pour_with_parameters<const L: usize>(
             &mut rand::thread_rng(),
         )
     };
-    let proof = prove();
+    let tx = prove();
 
-    println!("Proof size in bytes {}", proof.serialized_size());
+    println!("Proof size in bytes {}", tx.serialized_size());
 
     {
         let group_name = format!("{}_pour.L={},d={}.", threaded, L, depth);
@@ -145,22 +145,23 @@ fn bench_pour_with_parameters<const L: usize>(
 
         group.bench_function("verification_gadget", |b| {
             b.iter(|| {
-                proof.clone().verification_gadget(
+                tx.clone().verification_gadget(
                     b"select_and_rerandomize",
                     &sr_params,
                     &curve_tree,
+                    &schnorr_parameters,
                 );
             })
         });
         group.bench_function("verify_single", |b| {
             b.iter(|| {
-                let (pallas_vt, vesta_vt) = proof.clone().verification_gadget(
+                let (pallas_vt, vesta_vt) = tx.clone().verification_gadget(
                     b"select_and_rerandomize",
                     &sr_params,
                     &curve_tree,
+                    &schnorr_parameters,
                 );
 
-                // todo benchmark gadget vs msm time
                 batch_verify(
                     vec![pallas_vt],
                     &sr_params.c0_parameters.pc_gens,
@@ -183,7 +184,7 @@ fn bench_pour_with_parameters<const L: usize>(
     for n in [1, 2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
             BenchmarkId::from_parameter(n),
-            &iter::repeat(proof.clone()).take(n).collect::<Vec<_>>(),
+            &iter::repeat(tx.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
                     #[cfg(not(feature = "parallel"))]
@@ -219,13 +220,15 @@ fn bench_pour_with_parameters<const L: usize>(
                     #[cfg(feature = "parallel")]
                     {
                         let proofs_and_commitment_paths = proofs.par_iter().map(|proof| {
+                            let pour = proof.verify_signature_and_deserialize(&schnorr_parameters);
+
                             let cp0 = curve_tree.select_and_rerandomize_verification_commitments(
-                                proof.randomized_path_0.clone(),
+                                pour.randomized_path_0.clone(),
                             );
                             let cp1 = curve_tree.select_and_rerandomize_verification_commitments(
-                                proof.randomized_path_1.clone(),
+                                pour.randomized_path_1.clone(),
                             );
-                            (proof, cp0, cp1)
+                            (pour, cp0, cp1)
                         });
                         let proofs_and_commitment_paths_clone = proofs_and_commitment_paths.clone();
                         rayon::join(

@@ -6,7 +6,7 @@ use crate::range_proof::*;
 use crate::select_and_rerandomize::*;
 
 use ark_crypto_primitives::{
-    signature::schnorr::{Parameters, PublicKey, Schnorr, SecretKey},
+    signature::schnorr::{Parameters, PublicKey, Schnorr, SecretKey, Signature},
     SignatureScheme,
 };
 use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, ProjectiveCurve, SWModelParameters};
@@ -14,6 +14,7 @@ use ark_ff::{PrimeField, ToBytes};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::UniformRand;
 use blake2::Blake2s;
+use std::marker::PhantomData;
 
 pub struct Coin<P0: SWModelParameters + Clone, C: ProjectiveCurve> {
     pub value: u64,
@@ -168,7 +169,7 @@ pub fn prove_pour<
     receiver_pk_1: PublicKey<C>,
     sig_parameters: &Parameters<C, Blake2s>,
     rng: &mut R, // todo input spending pks
-) -> Pour<P0, P1, C> {
+) -> SignedTx<P0, P1, C> {
     // mint coins
     let (coin_opening_0, minted_coin_commitment_0, minted_amount_var_0) = Coin::<P0, C>::mint(
         receiver_value_0,
@@ -217,7 +218,7 @@ pub fn prove_pour<
         .unwrap();
 
     // todo serialize tx's and sign using both of the secret keys
-    Pour {
+    let proof = Pour::<P0, P1, C> {
         even_proof,
         odd_proof,
         randomized_path_0: path_0,
@@ -226,8 +227,42 @@ pub fn prove_pour<
         pk1: input_1.randomized_pk,
         minted_coin_commitment_0,
         minted_coin_commitment_1,
-    }
-    // todo output minted coins
+    };
+    // double sign
+    let mut proof_bytes = Vec::with_capacity(proof.serialized_size());
+    proof.serialize(&mut proof_bytes).unwrap();
+    let sig_0 = Schnorr::sign(sig_parameters, &input_0.sk, proof_bytes.as_slice(), rng).unwrap();
+    let mut randomization_bytes = Vec::new();
+    input_0
+        .coin_aux
+        .pk_randomness
+        .write(&mut randomization_bytes)
+        .unwrap();
+    let sig_0 =
+        Schnorr::randomize_signature(sig_parameters, &sig_0, randomization_bytes.as_slice())
+            .unwrap();
+
+    let sig_1 = Schnorr::sign(sig_parameters, &input_1.sk, proof_bytes.as_slice(), rng).unwrap();
+    let mut randomization_bytes = Vec::new();
+    input_1
+        .coin_aux
+        .pk_randomness
+        .write(&mut randomization_bytes)
+        .unwrap();
+    let sig_1 =
+        Schnorr::randomize_signature(sig_parameters, &sig_1, randomization_bytes.as_slice())
+            .unwrap();
+
+    let signed_pour = SignedTx::<P0, P1, _> {
+        signature_prover_response_0: sig_0.prover_response,
+        signature_verifier_challenge_0: sig_0.verifier_challenge,
+        signature_prover_response_1: sig_1.prover_response,
+        signature_verifier_challenge_1: sig_1.verifier_challenge,
+        pour_bytes: proof_bytes,
+        _pour_type: PhantomData,
+    };
+
+    signed_pour
 }
 
 // todo do an n to m pour with arrays?
@@ -492,16 +527,68 @@ fn verify_spend<
     verify_spend_even::<_, _, C>(even_verifier, &commitments, sr_parameters, pk)
 }
 
+#[derive(Clone)]
 pub struct SignedTx<
     P0: SWModelParameters + Clone,
     P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
     C: ProjectiveCurve,
 > {
-    pub pour: Pour<P0, P1, C>,
     pub signature_prover_response_0: C::ScalarField,
     pub signature_verifier_challenge_0: C::ScalarField,
     pub signature_prover_response_1: C::ScalarField,
     pub signature_verifier_challenge_1: C::ScalarField,
+    pub pour_bytes: Vec<u8>,
+    _pour_type: PhantomData<(P0, P1)>,
+}
+
+impl<
+        P0: SWModelParameters + Clone,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        C: ProjectiveCurve,
+    > SignedTx<P0, P1, C>
+{
+    pub fn verification_gadget<const L: usize>(
+        self,
+        ro_domain: &'static [u8],
+        sr_parameters: &SelRerandParameters<P0, P1>,
+        curve_tree: &CurveTree<L, P0, P1>,
+        sig_parameters: &Parameters<C, Blake2s>,
+    ) -> (
+        VerificationTuple<GroupAffine<P0>>,
+        VerificationTuple<GroupAffine<P1>>,
+    ) {
+        let pour = self.verify_signature_and_deserialize(sig_parameters);
+        pour.verification_gadget(ro_domain, sr_parameters, curve_tree)
+    }
+
+    pub fn verify_signature_and_deserialize(
+        &self,
+        sig_parameters: &Parameters<C, Blake2s>,
+    ) -> Pour<P0, P1, C> {
+        let pour = Pour::<P0, P1, C>::deserialize(self.pour_bytes.as_slice()).unwrap();
+
+        Schnorr::verify(
+            sig_parameters,
+            &pour.pk0,
+            self.pour_bytes.as_slice(),
+            &Signature {
+                verifier_challenge: self.signature_verifier_challenge_0,
+                prover_response: self.signature_prover_response_0,
+            },
+        )
+        .unwrap();
+        Schnorr::verify(
+            sig_parameters,
+            &pour.pk1,
+            self.pour_bytes.as_slice(),
+            &Signature {
+                verifier_challenge: self.signature_verifier_challenge_1,
+                prover_response: self.signature_prover_response_1,
+            },
+        )
+        .unwrap();
+        pour
+    }
 }
 
 impl<
@@ -511,7 +598,7 @@ impl<
     > CanonicalSerialize for SignedTx<P0, P1, C>
 {
     fn serialized_size(&self) -> usize {
-        self.pour.serialized_size()
+        self.pour_bytes.serialized_size()
             + self.signature_prover_response_0.serialized_size()
             + self.signature_verifier_challenge_0.serialized_size()
             + self.signature_prover_response_1.serialized_size()
@@ -519,11 +606,11 @@ impl<
     }
 
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        self.pour.serialize(&mut writer)?;
         self.signature_prover_response_0.serialize(&mut writer)?;
         self.signature_verifier_challenge_0.serialize(&mut writer)?;
         self.signature_prover_response_1.serialize(&mut writer)?;
         self.signature_verifier_challenge_1.serialize(&mut writer)?;
+        self.pour_bytes.serialize(&mut writer)?;
         Ok(())
     }
 }
@@ -536,11 +623,12 @@ impl<
 {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         Ok(Self {
-            pour: Pour::<P0, P1, C>::deserialize(&mut reader)?,
             signature_prover_response_0: C::ScalarField::deserialize(&mut reader)?,
             signature_verifier_challenge_0: C::ScalarField::deserialize(&mut reader)?,
             signature_prover_response_1: C::ScalarField::deserialize(&mut reader)?,
             signature_verifier_challenge_1: C::ScalarField::deserialize(&mut reader)?,
+            pour_bytes: Vec::<u8>::deserialize(&mut reader)?,
+            _pour_type: PhantomData,
         })
     }
 }
@@ -743,8 +831,12 @@ mod tests {
         );
 
         {
-            let (pallas_vt, vesta_vt) =
-                proof.verification_gadget(b"select_and_rerandomize", &sr_params, &curve_tree);
+            let (pallas_vt, vesta_vt) = proof.verification_gadget(
+                b"select_and_rerandomize",
+                &sr_params,
+                &curve_tree,
+                &schnorr_parameters,
+            );
 
             batch_verify(
                 vec![pallas_vt],

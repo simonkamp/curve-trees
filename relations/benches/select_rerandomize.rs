@@ -35,7 +35,7 @@ fn bench_select_and_rerandomize(c: &mut Criterion) {
             "Single_threaded"
         }
     };
-    bench_select_and_rerandomize_with_parameters::<32>(c, 4, 11, threaded, bench_prover);
+    bench_select_and_rerandomize_with_parameters::<256>(c, 2, 11, threaded, bench_prover);
     bench_select_and_rerandomize_with_parameters::<1024>(c, 2, 11, threaded, bench_prover);
     bench_select_and_rerandomize_with_parameters::<256>(c, 4, 12, threaded, bench_prover);
 }
