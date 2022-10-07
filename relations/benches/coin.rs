@@ -6,7 +6,7 @@ use criterion::BenchmarkId;
 use criterion::Criterion;
 
 extern crate bulletproofs;
-use bulletproofs::r1cs::{batch_verify, Prover, Verifier};
+use bulletproofs::r1cs::{batch_verify, Prover};
 
 extern crate relations;
 use merlin::Transcript;
@@ -39,7 +39,7 @@ fn bench_pour(c: &mut Criterion) {
             "Single_threaded"
         }
     };
-    bench_pour_with_parameters::<256>(c, 2, 13, threaded, bench_prover);
+    bench_pour_with_parameters::<256>(c, 2, 12, threaded, bench_prover);
     bench_pour_with_parameters::<1024>(c, 2, 12, threaded, bench_prover);
     bench_pour_with_parameters::<256>(c, 4, 13, threaded, bench_prover);
 }
@@ -199,6 +199,7 @@ fn bench_pour_with_parameters<const L: usize>(
                                 b"select_and_rerandomize",
                                 &sr_params,
                                 &curve_tree,
+                                &schnorr_parameters,
                             );
 
                             pallas_verification_scalars_and_points.push(pallas_vt);
@@ -220,7 +221,9 @@ fn bench_pour_with_parameters<const L: usize>(
                     #[cfg(feature = "parallel")]
                     {
                         let proofs_and_commitment_paths = proofs.par_iter().map(|proof| {
-                            let pour = proof.verify_signature_and_deserialize(&schnorr_parameters);
+                            let pour = Pour::<PallasParameters, VestaParameters, PallasP>::deserialize(proof.pour_bytes.as_slice()).unwrap();
+
+                            proof.verify_signatures(&schnorr_parameters, &pour.pk0, &pour.pk1);
 
                             let cp0 = curve_tree.select_and_rerandomize_verification_commitments(
                                 pour.randomized_path_0.clone(),
