@@ -386,37 +386,12 @@ impl<C: AffineCurve> InnerProductProof<C> {
 
     /// Returns the size in bytes required to serialize the inner
     /// product proof.
-    ///
-    /// For vectors of length `n` the proof size is
-    /// \\(32 \cdot (2\lg n+2)\\) bytes.
     pub fn serialized_size(&self) -> usize {
         // size of the two scalars
         let scalars_size = self.a.serialized_size() * 2;
         // size of the 2 point vectors (should be equal)
         let l_and_r_size = self.L_vec.serialized_size() * 2;
         scalars_size + l_and_r_size
-    }
-
-    /// Serializes the proof into a byte array of \\(2n+2\\) 32-byte elements.
-    /// The layout of the inner product proof is:
-    /// * \\(n\\) pairs of compressed Ristretto points \\(L_0, R_0 \dots, L_{n-1}, R_{n-1}\\),
-    /// * two scalars \\(a, b\\).
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.serialized_size());
-        if let Err(e) = self.serialize(&mut buf) {
-            panic!("{}", e)
-        }
-        buf
-    }
-
-    /// Deserializes the proof from a byte slice.
-    /// Returns an error in the following cases:
-    /// * the slice does not have \\(2n+2\\) 32-byte elements,
-    /// * \\(n\\) is larger or equal to 32 (proof is too big),
-    /// * any of \\(2n\\) points are not valid compressed Ristretto points,
-    /// * any of 2 scalars are not canonical scalars modulo Ristretto group order.
-    pub fn from_bytes(slice: &[u8]) -> Result<InnerProductProof<C>, ProofError> {
-        Self::deserialize(slice).map_err(|_| ProofError::FormatError)
     }
 }
 
@@ -565,7 +540,9 @@ mod tests {
             )
             .is_ok());
 
-        let proof = InnerProductProof::from_bytes(proof.to_bytes().as_slice()).unwrap();
+        let mut buf = Vec::with_capacity(proof.serialized_size());
+        proof.serialize(&mut buf).unwrap();
+        let proof = InnerProductProof::deserialize(&buf[..]).unwrap();
         let mut verifier = Transcript::new(b"innerproducttest");
         assert!(proof
             .verify(

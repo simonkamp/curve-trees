@@ -171,7 +171,7 @@ pub fn prove_pour<
     rng: &mut R, // todo input spending pks
 ) -> SignedTx<P0, P1, C> {
     // mint coins
-    let (coin_opening_0, minted_coin_commitment_0, minted_amount_var_0) = Coin::<P0, C>::mint(
+    let (_, minted_coin_commitment_0, minted_amount_var_0) = Coin::<P0, C>::mint(
         receiver_value_0,
         &receiver_pk_0,
         sig_parameters,
@@ -179,7 +179,7 @@ pub fn prove_pour<
         rng,
         &mut even_prover,
     );
-    let (coin_opening_1, minted_coin_commitment_1, minted_amount_var_1) = Coin::<P0, C>::mint(
+    let (_, minted_coin_commitment_1, minted_amount_var_1) = Coin::<P0, C>::mint(
         receiver_value_1,
         &receiver_pk_1,
         sig_parameters,
@@ -253,16 +253,14 @@ pub fn prove_pour<
         Schnorr::randomize_signature(sig_parameters, &sig_1, randomization_bytes.as_slice())
             .unwrap();
 
-    let signed_pour = SignedTx::<P0, P1, _> {
+    SignedTx::<P0, P1, _> {
         signature_prover_response_0: sig_0.prover_response,
         signature_verifier_challenge_0: sig_0.verifier_challenge,
         signature_prover_response_1: sig_1.prover_response,
         signature_verifier_challenge_1: sig_1.verifier_challenge,
         pour_bytes: proof_bytes,
         _pour_type: PhantomData,
-    };
-
-    signed_pour
+    }
 }
 
 // todo do an n to m pour with arrays?
@@ -370,10 +368,9 @@ impl<
             minted_amount_var_0 + minted_amount_var_1 - spent_amount_var_0 - spent_amount_var_1,
         );
 
-        let even_vt = even_verifier
+        even_verifier
             .verification_scalars_and_points(&self.even_proof)
-            .unwrap();
-        even_vt
+            .unwrap()
     }
 
     // verification
@@ -389,10 +386,9 @@ impl<
         verify_spend_odd(&mut odd_verifier, spend_commitments_0, sr_parameters);
         verify_spend_odd(&mut odd_verifier, spend_commitments_1, sr_parameters);
 
-        let odd_vt = odd_verifier
+        odd_verifier
             .verification_scalars_and_points(&self.odd_proof)
-            .unwrap();
-        odd_vt
+            .unwrap()
     }
 
     // verification
@@ -509,24 +505,6 @@ fn verify_spend_odd<
     commitments.odd_verifier_gadget(odd_verifier, sr_parameters);
 }
 
-fn verify_spend<
-    const L: usize,
-    P0: SWModelParameters + Clone,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
-    C: ProjectiveCurve,
->(
-    randomized_path: SelectAndRerandomizePath<P0, P1>,
-    even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
-    odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
-    sr_parameters: &SelRerandParameters<P0, P1>,
-    curve_tree: &CurveTree<L, P0, P1>,
-    pk: &PublicKey<C>,
-) -> Variable<P0::ScalarField> {
-    let commitments = curve_tree.select_and_rerandomize_verification_commitments(randomized_path);
-    verify_spend_odd(odd_verifier, &commitments, sr_parameters);
-    verify_spend_even::<_, _, C>(even_verifier, &commitments, sr_parameters, pk)
-}
-
 #[derive(Clone)]
 pub struct SignedTx<
     P0: SWModelParameters + Clone,
@@ -581,7 +559,7 @@ impl<
     ) {
         Schnorr::verify(
             sig_parameters,
-            &pk0,
+            pk0,
             self.pour_bytes.as_slice(),
             &Signature {
                 verifier_challenge: self.signature_verifier_challenge_0,
@@ -591,7 +569,7 @@ impl<
         .unwrap();
         Schnorr::verify(
             sig_parameters,
-            &pk1,
+            pk1,
             self.pour_bytes.as_slice(),
             &Signature {
                 verifier_challenge: self.signature_verifier_challenge_1,
@@ -731,12 +709,12 @@ mod tests {
             let vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            let _ = verify_spend::<256, _, _, PallasP>(
-                path,
+            let commitments = curve_tree.select_and_rerandomize_verification_commitments(path);
+            verify_spend_odd(&mut vesta_verifier, &commitments, &sr_params);
+            verify_spend_even::<_, _, PallasP>(
                 &mut pallas_verifier,
-                &mut vesta_verifier,
+                &commitments,
                 &sr_params,
-                &curve_tree,
                 &rerandomized_pk,
             );
 

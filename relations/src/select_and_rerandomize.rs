@@ -15,8 +15,6 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Serializatio
 use ark_std::{UniformRand, Zero};
 use merlin::Transcript;
 use rand::Rng;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 use std::{borrow::BorrowMut, iter};
 
 pub struct SingleLayerParameters<P: SWModelParameters> {
@@ -255,7 +253,7 @@ impl<
         };
 
         SRVerificationCommitments {
-            leaf: even_commitments[even_commitments.len() - 1].clone(),
+            leaf: even_commitments[even_commitments.len() - 1],
             even_commitments,
             odd_commitments,
             branching_factor: L,
