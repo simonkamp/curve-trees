@@ -221,7 +221,11 @@ fn bench_pour_with_parameters<const L: usize>(
                     #[cfg(feature = "parallel")]
                     {
                         let proofs_and_commitment_paths = proofs.par_iter().map(|proof| {
-                            let pour = Pour::<PallasParameters, VestaParameters, PallasP>::deserialize(proof.pour_bytes.as_slice()).unwrap();
+                            let pour =
+                                Pour::<PallasParameters, VestaParameters, PallasP>::deserialize(
+                                    proof.pour_bytes.as_slice(),
+                                )
+                                .unwrap();
 
                             proof.verify_signatures(&schnorr_parameters, &pour.pk0, &pour.pk1);
 

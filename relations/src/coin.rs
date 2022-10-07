@@ -563,7 +563,7 @@ impl<
         #[cfg(feature = "parallel")]
         let (_, vts) = rayon::join(
             || self.verify_signatures(sig_parameters, &pk0, &pk1),
-            || pour.verification_gadget(ro_domain, sr_parameters, curve_tree)
+            || pour.verification_gadget(ro_domain, sr_parameters, curve_tree),
         );
         #[cfg(not(feature = "parallel"))]
         let vts = {
