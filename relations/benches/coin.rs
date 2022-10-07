@@ -28,7 +28,6 @@ use blake2::Blake2s;
 use rayon::prelude::*;
 
 fn bench_pour(c: &mut Criterion) {
-    let bench_prover = true;
     let threaded = {
         #[cfg(feature = "parallel")]
         {
@@ -39,9 +38,9 @@ fn bench_pour(c: &mut Criterion) {
             "Single_threaded"
         }
     };
-    bench_pour_with_parameters::<256>(c, 2, 12, threaded, bench_prover);
-    bench_pour_with_parameters::<1024>(c, 2, 12, threaded, bench_prover);
-    bench_pour_with_parameters::<256>(c, 4, 13, threaded, bench_prover);
+    bench_pour_with_parameters::<1024>(c, 2, 12, threaded);
+    bench_pour_with_parameters::<256>(c, 4, 13, threaded);
+    bench_pour_with_parameters::<1024>(c, 4, 13, threaded);
 }
 
 fn bench_pour_with_parameters<const L: usize>(
@@ -49,7 +48,6 @@ fn bench_pour_with_parameters<const L: usize>(
     depth: usize,                   // the depth of the curve tree
     generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
     threaded: &str,
-    bench_prover: bool,
 ) {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2; // minimum sufficient power of 2
@@ -132,6 +130,9 @@ fn bench_pour_with_parameters<const L: usize>(
         )
     };
     let tx = prove();
+    let pour_proof =
+        Pour::<PallasParameters, VestaParameters, PallasP>::deserialize(&tx.pour_bytes[..])
+            .unwrap();
 
     println!("Proof size in bytes {}", tx.serialized_size());
 
@@ -139,9 +140,8 @@ fn bench_pour_with_parameters<const L: usize>(
         let group_name = format!("{}_pour.L={},d={}.", threaded, L, depth);
         let mut group = c.benchmark_group(group_name);
 
-        if bench_prover {
-            group.bench_function("prove", |b| b.iter(|| prove()));
-        }
+        #[cfg(feature = "bench_prover")]
+        group.bench_function("prove", |b| b.iter(|| prove()));
 
         group.bench_function("verification_gadget", |b| {
             b.iter(|| {
@@ -153,7 +153,15 @@ fn bench_pour_with_parameters<const L: usize>(
                 );
             })
         });
-        group.bench_function("verify_single", |b| {
+        group.bench_function("deserialize", |b| {
+            b.iter(|| {
+                let pour = Pour::<PallasParameters, VestaParameters, PallasP>::deserialize(
+                    &tx.pour_bytes[..],
+                )
+                .unwrap();
+            })
+        });
+        group.bench_function("verify_single_with_deserialization", |b| {
             b.iter(|| {
                 let (pallas_vt, vesta_vt) = tx.clone().verification_gadget(
                     b"select_and_rerandomize",
@@ -184,7 +192,7 @@ fn bench_pour_with_parameters<const L: usize>(
     for n in [1, 2, 10, 50, 100, 150, 200] {
         group.bench_with_input(
             BenchmarkId::from_parameter(n),
-            &iter::repeat(tx.clone()).take(n).collect::<Vec<_>>(),
+            &iter::repeat(pour_proof.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
                     #[cfg(not(feature = "parallel"))]
@@ -199,7 +207,6 @@ fn bench_pour_with_parameters<const L: usize>(
                                 b"select_and_rerandomize",
                                 &sr_params,
                                 &curve_tree,
-                                &schnorr_parameters,
                             );
 
                             pallas_verification_scalars_and_points.push(pallas_vt);
@@ -221,21 +228,13 @@ fn bench_pour_with_parameters<const L: usize>(
                     #[cfg(feature = "parallel")]
                     {
                         let proofs_and_commitment_paths = proofs.par_iter().map(|proof| {
-                            let pour =
-                                Pour::<PallasParameters, VestaParameters, PallasP>::deserialize(
-                                    proof.pour_bytes.as_slice(),
-                                )
-                                .unwrap();
-
-                            proof.verify_signatures(&schnorr_parameters, &pour.pk0, &pour.pk1);
-
                             let cp0 = curve_tree.select_and_rerandomize_verification_commitments(
-                                pour.randomized_path_0.clone(),
+                                proof.clone().randomized_path_0.clone(),
                             );
                             let cp1 = curve_tree.select_and_rerandomize_verification_commitments(
-                                pour.randomized_path_1.clone(),
+                                proof.clone().randomized_path_1.clone(),
                             );
-                            (pour, cp0, cp1)
+                            (proof, cp0, cp1)
                         });
                         let proofs_and_commitment_paths_clone = proofs_and_commitment_paths.clone();
                         rayon::join(

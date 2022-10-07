@@ -25,6 +25,7 @@ pasta = { path = "../pasta", default-features = false }
 default = ["asm", "parallel"]
 asm = ["ark-ff/asm", "bulletproofs/asm", "pasta/asm"]
 parallel = ["rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "bulletproofs/parallel", "pasta/parallel"]
+bench_prover = []
 
 [[bench]]
 name = "select_rerandomize"

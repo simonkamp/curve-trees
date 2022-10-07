@@ -24,7 +24,6 @@ use merlin::Transcript;
 use rayon::prelude::*;
 
 fn bench_select_and_rerandomize(c: &mut Criterion) {
-    let bench_prover = true;
     let threaded = {
         #[cfg(feature = "parallel")]
         {
@@ -35,9 +34,9 @@ fn bench_select_and_rerandomize(c: &mut Criterion) {
             "Single_threaded"
         }
     };
-    bench_select_and_rerandomize_with_parameters::<256>(c, 2, 11, threaded, bench_prover);
-    bench_select_and_rerandomize_with_parameters::<1024>(c, 2, 11, threaded, bench_prover);
-    bench_select_and_rerandomize_with_parameters::<256>(c, 4, 12, threaded, bench_prover);
+    bench_select_and_rerandomize_with_parameters::<1024>(c, 2, 11, threaded);
+    bench_select_and_rerandomize_with_parameters::<256>(c, 4, 12, threaded);
+    bench_select_and_rerandomize_with_parameters::<1024>(c, 4, 12, threaded);
 }
 
 // `L` is the branching factor of the curve tree
@@ -46,7 +45,6 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     depth: usize,                   // the depth of the curve tree
     generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
     threaded: &str,
-    bench_prover: bool,
 ) {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
@@ -108,9 +106,8 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
         let group_name = format!("{}_Select&Rerandomize.L={},d={}.", threaded, L, depth);
         let mut group = c.benchmark_group(group_name);
 
-        if bench_prover {
-            group.bench_function("prover", |b| b.iter(|| prove(false)));
-        }
+        #[cfg(feature = "bench_prover")]
+        group.bench_function("prover", |b| b.iter(|| prove(false)));
 
         group.bench_function("verification_gadget", |b| {
             b.iter(|| {
