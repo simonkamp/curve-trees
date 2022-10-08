@@ -26,9 +26,9 @@ jobs:
       run: cargo fmt --all -- --check
     - name: Run tests
       run: cargo test --release --verbose
-    - name: Build benchmarks
-      run: cargo bench --all-features --verbose DONTRUNBENCHMARKS
-    - name: Build benchmarks
+    - name: Build benchmarks with bench_prover
+      run: cargo bench --features bench_prover --verbose DONTRUNBENCHMARKS
+    - name: Build benchmarks no default features
       run: cargo bench --no-default-features --verbose DONTRUNBENCHMARKS 
 
   check-nightly:
