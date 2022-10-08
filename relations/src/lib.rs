@@ -13,7 +13,9 @@ pub mod select;
 // prove that a commitment to x defines a canonical point (x,y)
 pub mod permissible;
 
-pub mod select_and_rerandomize;
+pub mod single_level_select_and_rerandomize;
+
+pub mod curve_tree;
 
 pub mod range_proof;
 

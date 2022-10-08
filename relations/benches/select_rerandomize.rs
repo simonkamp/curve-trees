@@ -6,7 +6,7 @@ extern crate bulletproofs;
 use bulletproofs::r1cs::{batch_verify, Prover, Verifier};
 
 extern crate relations;
-use relations::select_and_rerandomize::*;
+use relations::curve_tree::*;
 
 extern crate pasta;
 use pasta::{
@@ -57,9 +57,9 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
 
     let some_point = PallasP::rand(&mut rng).into_affine();
     let (permissible_point, _) = sr_params
-        .c0_parameters
+        .even_parameters
         .uh
-        .permissible_commitment(&some_point, &sr_params.c0_parameters.pc_gens.B_blinding);
+        .permissible_commitment(&some_point, &sr_params.even_parameters.pc_gens.B_blinding);
     let set = vec![permissible_point];
     let curve_tree =
         CurveTree::<L, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(depth));
@@ -67,11 +67,11 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     let prove = |print| {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
-            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+            Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
-            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+            Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let (path, _) = curve_tree.select_and_rerandomize_prover_gadget(
             0,
@@ -87,10 +87,10 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
         }
         let (pallas_proof, vesta_proof) = (
             pallas_prover
-                .prove(&sr_params.c0_parameters.bp_gens)
+                .prove(&sr_params.even_parameters.bp_gens)
                 .unwrap(),
             vesta_prover
-                .prove(&sr_params.c1_parameters.bp_gens)
+                .prove(&sr_params.odd_parameters.bp_gens)
                 .unwrap(),
         );
         (path, pallas_proof, vesta_proof)
@@ -187,8 +187,8 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
 
                     let res = batch_verify(
                         vec![pallas_vt],
-                        &sr_params.c0_parameters.pc_gens,
-                        &sr_params.c0_parameters.bp_gens,
+                        &sr_params.even_parameters.pc_gens,
+                        &sr_params.even_parameters.bp_gens,
                     );
                     assert_eq!(res, Ok(()))
                 };
@@ -204,8 +204,8 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
 
                     let res = batch_verify(
                         vec![vesta_vt],
-                        &sr_params.c1_parameters.pc_gens,
-                        &sr_params.c1_parameters.bp_gens,
+                        &sr_params.odd_parameters.pc_gens,
+                        &sr_params.odd_parameters.bp_gens,
                     );
                     assert_eq!(res, Ok(()))
                 };
@@ -258,8 +258,8 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                                     .collect();
                                 batch_verify(
                                     pallas_verification_scalars_and_points,
-                                    &sr_params.c0_parameters.pc_gens,
-                                    &sr_params.c0_parameters.bp_gens,
+                                    &sr_params.even_parameters.pc_gens,
+                                    &sr_params.even_parameters.bp_gens,
                                 )
                                 .unwrap()
                             },
@@ -279,8 +279,8 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                                     .collect();
                                 batch_verify(
                                     vesta_verification_scalars_and_points,
-                                    &sr_params.c1_parameters.pc_gens,
-                                    &sr_params.c1_parameters.bp_gens,
+                                    &sr_params.odd_parameters.pc_gens,
+                                    &sr_params.odd_parameters.bp_gens,
                                 )
                                 .unwrap()
                             },
@@ -318,14 +318,14 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                         }
                         batch_verify(
                             pallas_verification_scalars_and_points,
-                            &sr_params.c0_parameters.pc_gens,
-                            &sr_params.c0_parameters.bp_gens,
+                            &sr_params.even_parameters.pc_gens,
+                            &sr_params.even_parameters.bp_gens,
                         )
                         .unwrap();
                         batch_verify(
                             vesta_verification_scalars_and_points,
-                            &sr_params.c1_parameters.pc_gens,
-                            &sr_params.c1_parameters.bp_gens,
+                            &sr_params.odd_parameters.pc_gens,
+                            &sr_params.odd_parameters.bp_gens,
                         )
                         .unwrap()
                     }

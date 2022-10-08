@@ -1,65 +1,19 @@
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
 
-use crate::lookup::*;
 use crate::permissible::*;
 use crate::rerandomize::*;
-use crate::select::*;
+use crate::single_level_select_and_rerandomize::*;
 
 use ark_ec::{
-    models::short_weierstrass_jacobian::GroupAffine, msm::VariableBaseMSM, AffineCurve,
-    ProjectiveCurve, SWModelParameters,
+    models::short_weierstrass_jacobian::GroupAffine, AffineCurve, ProjectiveCurve,
+    SWModelParameters,
 };
-use ark_ff::{PrimeField, SquareRootField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::{UniformRand, Zero};
 use merlin::Transcript;
 use rand::Rng;
-use std::{borrow::BorrowMut, iter};
-
-pub struct SingleLayerParameters<P: SWModelParameters> {
-    pub bp_gens: BulletproofGens<GroupAffine<P>>,
-    pub pc_gens: PedersenGens<GroupAffine<P>>,
-    pub uh: UniversalHash<P::BaseField>,
-    pub tables: Vec<Lookup3Bit<2, P::BaseField>>,
-}
-
-impl<P: SWModelParameters> SingleLayerParameters<P> {
-    // todo refactor with bases as parameter for stackable curve trees (independent generators)
-    pub fn commit(&self, v: &[P::ScalarField], v_blinding: P::ScalarField) -> GroupAffine<P> {
-        let gens = self.bp_gens.share(0);
-
-        let generators: Vec<_> = iter::once(&self.pc_gens.B_blinding)
-            .chain(gens.G(v.len()))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let scalars: Vec<<P::ScalarField as PrimeField>::BigInt> = iter::once(&v_blinding)
-            .chain(v.iter())
-            .map(|s| {
-                let s: <P::ScalarField as PrimeField>::BigInt = (*s).into();
-                s
-            })
-            .collect();
-
-        assert_eq!(generators.len(), scalars.len());
-
-        let comm = VariableBaseMSM::multi_scalar_mul(generators.as_slice(), scalars.as_slice());
-        comm.into_affine()
-    }
-
-    pub fn permissible_commitment(
-        &self,
-        v: &[P::ScalarField],
-        v_blinding: P::ScalarField,
-    ) -> (GroupAffine<P>, P::ScalarField) {
-        let commitment = self.commit(v, v_blinding);
-        let (permissible_commitment, offset) = self
-            .uh
-            .permissible_commitment(&commitment, &self.pc_gens.B_blinding);
-        (permissible_commitment, v_blinding + offset)
-    }
-}
+use std::borrow::BorrowMut;
 
 pub enum CurveTree<const L: usize, P0: SWModelParameters, P1: SWModelParameters> {
     Even(CurveTreeNode<L, P0, P1>),
@@ -101,7 +55,7 @@ impl<
                 }
                 odd_forest.push(CurveTreeNode::<L, P1, P0>::combine(
                     chunk,
-                    &parameters.c1_parameters,
+                    &parameters.odd_parameters,
                 ));
             }
             forest_length = next_forest_length;
@@ -123,7 +77,7 @@ impl<
                 }
                 even_forest.push(CurveTreeNode::<L, P0, P1>::combine(
                     chunk,
-                    &parameters.c0_parameters,
+                    &parameters.even_parameters,
                 ));
             }
             forest_length = next_forest_length;
@@ -146,13 +100,13 @@ impl<
                         Self::Even(ct) => {
                             res = Self::Odd(CurveTreeNode::<L, P1, P0>::combine(
                                 vec![ct],
-                                &parameters.c1_parameters,
+                                &parameters.odd_parameters,
                             ));
                         }
                         Self::Odd(ct) => {
                             res = Self::Even(CurveTreeNode::<L, P0, P1>::combine(
                                 vec![ct],
-                                &parameters.c0_parameters,
+                                &parameters.even_parameters,
                             ));
                         }
                     }
@@ -181,8 +135,8 @@ impl<
                 index,
                 odd_prover,
                 &mut even_commitments,
-                &parameters.c1_parameters,
-                &parameters.c0_parameters,
+                &parameters.odd_parameters,
+                &parameters.even_parameters,
                 P1::ScalarField::zero(),
                 &mut rng,
             ),
@@ -196,8 +150,8 @@ impl<
                     index,
                     even_prover,
                     &mut odd_commitments,
-                    &parameters.c0_parameters,
-                    &parameters.c1_parameters,
+                    &parameters.even_parameters,
+                    &parameters.odd_parameters,
                     rerandomization_scalar,
                     &mut rng,
                 );
@@ -208,8 +162,8 @@ impl<
                     index,
                     odd_prover,
                     &mut even_commitments,
-                    &parameters.c1_parameters,
-                    &parameters.c0_parameters,
+                    &parameters.odd_parameters,
+                    &parameters.even_parameters,
                     child_rerandomization_scalar,
                     &mut rng,
                 );
@@ -313,7 +267,7 @@ impl<
                 even_verifier.commit_vec(self.branching_factor, self.even_commitments[i]);
             single_level_select_and_rerandomize(
                 even_verifier,
-                &parameters.c1_parameters,
+                &parameters.odd_parameters,
                 &self.odd_commitments[odd_index],
                 variables,
                 None,
@@ -336,7 +290,7 @@ impl<
             let variables = odd_verifier.commit_vec(self.branching_factor, self.odd_commitments[i]);
             single_level_select_and_rerandomize(
                 odd_verifier,
-                &parameters.c0_parameters,
+                &parameters.even_parameters,
                 &self.even_commitments[even_index],
                 variables,
                 None,
@@ -473,7 +427,6 @@ impl<
             Some(child_rerandomization_scalar),
         );
 
-        // todo would be prettier to call it recursively, but the return type would need to be known
         (child, child_rerandomization_scalar)
     }
 
@@ -531,47 +484,9 @@ impl<
     }
 }
 
-pub fn single_level_select_and_rerandomize<
-    Fb: SquareRootField,
-    Fs: SquareRootField,
-    C2: SWModelParameters<BaseField = Fs, ScalarField = Fb>,
-    Cs: ConstraintSystem<Fs>,
->(
-    cs: &mut Cs,
-    parameters: &SingleLayerParameters<C2>,
-    rerandomized: &GroupAffine<C2>, // the public rerandomization of witness
-    c0_vars: Vec<Variable<Fs>>,     // variables representing members of the vector commitment
-    xy_witness: Option<GroupAffine<C2>>, // witness of the commitment we wish to select and rerandomize
-    randomness_offset: Option<Fb>,       // the scalar used for randomizing
-) {
-    let x_var = cs.allocate(xy_witness.map(|xy| xy.x)).unwrap();
-    let y_var = cs.allocate(xy_witness.map(|xy| xy.y)).unwrap();
-    // show that leaf is in c0
-    select(
-        cs,
-        x_var.into(),
-        c0_vars.into_iter().map(|v| v.into()).collect(),
-    );
-    // proof that l0 is a permissible
-    parameters
-        .uh
-        .permissible_gadget(cs, x_var.into(), xy_witness.map(|xy| xy.y), y_var);
-    // show that leaf_rerand, is a rerandomization of leaf
-    re_randomize(
-        cs,
-        &parameters.tables,
-        x_var.into(),
-        y_var.into(),
-        constant(rerandomized.x),
-        constant(rerandomized.y),
-        xy_witness,
-        randomness_offset,
-    );
-}
-
 pub struct SelRerandParameters<P0: SWModelParameters, P1: SWModelParameters> {
-    pub c0_parameters: SingleLayerParameters<P0>,
-    pub c1_parameters: SingleLayerParameters<P1>,
+    pub even_parameters: SingleLayerParameters<P0>,
+    pub odd_parameters: SingleLayerParameters<P1>,
 }
 
 impl<P0: SWModelParameters, P1: SWModelParameters> SelRerandParameters<P0, P1> {
@@ -580,27 +495,9 @@ impl<P0: SWModelParameters, P1: SWModelParameters> SelRerandParameters<P0, P1> {
         odd_generators_length: usize,
         rng: &mut R,
     ) -> Self {
-        // todo clean up naming and dead code
-        let c0_pc_gens = PedersenGens::<GroupAffine<P0>>::default();
-        let c0_scalar_tables = build_tables(c0_pc_gens.B_blinding);
-        let c2_pc_gens = PedersenGens::<GroupAffine<P1>>::default();
-
-        let c1_scalar_tables = build_tables(c2_pc_gens.B_blinding);
-        let c0_parameters = SingleLayerParameters {
-            bp_gens: BulletproofGens::<GroupAffine<P0>>::new(even_generators_length, 1),
-            pc_gens: PedersenGens::<GroupAffine<P0>>::default(),
-            uh: UniversalHash::new(rng, P0::COEFF_A, P0::COEFF_B),
-            tables: c0_scalar_tables,
-        };
-        let c1_parameters = SingleLayerParameters {
-            bp_gens: BulletproofGens::<GroupAffine<P1>>::new(odd_generators_length, 1),
-            pc_gens: PedersenGens::<GroupAffine<P1>>::default(),
-            uh: UniversalHash::new(rng, P1::COEFF_A, P1::COEFF_B),
-            tables: c1_scalar_tables,
-        };
         SelRerandParameters {
-            c0_parameters,
-            c1_parameters,
+            even_parameters: SingleLayerParameters::<P0>::new::<_, P1>(even_generators_length, rng),
+            odd_parameters: SingleLayerParameters::<P1>::new::<_, P0>(odd_generators_length, rng),
         }
     }
 }
@@ -642,17 +539,17 @@ mod tests {
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
-            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+            Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
-            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+            Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let some_point = PallasP::rand(&mut rng).into_affine();
         let (permissible_point, _) = sr_params
-            .c0_parameters
+            .even_parameters
             .uh
-            .permissible_commitment(&some_point, &sr_params.c0_parameters.pc_gens.B_blinding);
+            .permissible_commitment(&some_point, &sr_params.even_parameters.pc_gens.B_blinding);
         let set = vec![permissible_point];
         let curve_tree = CurveTree::<L, PallasParameters, VestaParameters>::from_set(
             &set,
@@ -669,10 +566,10 @@ mod tests {
         );
 
         let pallas_proof = pallas_prover
-            .prove(&sr_params.c0_parameters.bp_gens)
+            .prove(&sr_params.even_parameters.bp_gens)
             .unwrap();
         let vesta_proof = vesta_prover
-            .prove(&sr_params.c1_parameters.bp_gens)
+            .prove(&sr_params.odd_parameters.bp_gens)
             .unwrap();
 
         {
@@ -689,13 +586,13 @@ mod tests {
             );
             let vesta_res = vesta_verifier.verify(
                 &vesta_proof,
-                &sr_params.c1_parameters.pc_gens,
-                &sr_params.c1_parameters.bp_gens,
+                &sr_params.odd_parameters.pc_gens,
+                &sr_params.odd_parameters.bp_gens,
             );
             let pallas_res = pallas_verifier.verify(
                 &pallas_proof,
-                &sr_params.c0_parameters.pc_gens,
-                &sr_params.c0_parameters.bp_gens,
+                &sr_params.even_parameters.pc_gens,
+                &sr_params.even_parameters.bp_gens,
             );
             assert_eq!(vesta_res, pallas_res);
             assert_eq!(vesta_res, Ok(()));
@@ -715,9 +612,9 @@ mod tests {
 
         let some_point = PallasP::rand(&mut rng).into_affine();
         let (permissible_point, _) = sr_params
-            .c0_parameters
+            .even_parameters
             .uh
-            .permissible_commitment(&some_point, &sr_params.c0_parameters.pc_gens.B_blinding);
+            .permissible_commitment(&some_point, &sr_params.even_parameters.pc_gens.B_blinding);
         let set = vec![permissible_point];
         let curve_tree =
             CurveTree::<32, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
@@ -725,11 +622,11 @@ mod tests {
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
-            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+            Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
-            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+            Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
             0,
@@ -739,10 +636,10 @@ mod tests {
         );
 
         let pallas_proof = pallas_prover
-            .prove(&sr_params.c0_parameters.bp_gens)
+            .prove(&sr_params.even_parameters.bp_gens)
             .unwrap();
         let vesta_proof = vesta_prover
-            .prove(&sr_params.c1_parameters.bp_gens)
+            .prove(&sr_params.odd_parameters.bp_gens)
             .unwrap();
 
         let (pvt1, vvt1) = {
@@ -787,13 +684,13 @@ mod tests {
         };
         let pallas_res = batch_verify(
             vec![pvt1, pvt2],
-            &sr_params.c0_parameters.pc_gens,
-            &sr_params.c0_parameters.bp_gens,
+            &sr_params.even_parameters.pc_gens,
+            &sr_params.even_parameters.bp_gens,
         );
         let vesta_res = batch_verify(
             vec![vvt1, vvt2],
-            &sr_params.c1_parameters.pc_gens,
-            &sr_params.c1_parameters.bp_gens,
+            &sr_params.odd_parameters.pc_gens,
+            &sr_params.odd_parameters.bp_gens,
         );
         assert_eq!(pallas_res, vesta_res);
         assert_eq!(pallas_res, Ok(()));

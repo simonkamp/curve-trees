@@ -2,8 +2,9 @@ use bulletproofs::r1cs::*;
 use merlin::Transcript;
 use rand::Rng;
 
+use crate::curve_tree::*;
 use crate::range_proof::*;
-use crate::select_and_rerandomize::*;
+use crate::single_level_select_and_rerandomize::*;
 
 use ark_crypto_primitives::{
     signature::schnorr::{Parameters, PublicKey, Schnorr, SecretKey, Signature},
@@ -108,7 +109,7 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
         let (rerandomized_point, variables) = even_prover.commit_vec(
             &[P0::ScalarField::from(self.value), self.tag],
             self.permissible_randomness + rerandomization,
-            &parameters.c0_parameters.bp_gens,
+            &parameters.even_parameters.bp_gens,
         );
         assert_eq!(
             path.even_commitments[path.even_commitments.len() - 1],
@@ -175,7 +176,7 @@ pub fn prove_pour<
         receiver_value_0,
         &receiver_pk_0,
         sig_parameters,
-        &sr_parameters.c0_parameters,
+        &sr_parameters.even_parameters,
         rng,
         &mut even_prover,
     );
@@ -183,7 +184,7 @@ pub fn prove_pour<
         receiver_value_1,
         &receiver_pk_1,
         sig_parameters,
-        &sr_parameters.c0_parameters,
+        &sr_parameters.even_parameters,
         rng,
         &mut even_prover,
     );
@@ -211,10 +212,10 @@ pub fn prove_pour<
 
     // prove
     let even_proof = even_prover
-        .prove(&sr_parameters.c0_parameters.bp_gens)
+        .prove(&sr_parameters.even_parameters.bp_gens)
         .unwrap();
     let odd_proof = odd_prover
-        .prove(&sr_parameters.c1_parameters.bp_gens)
+        .prove(&sr_parameters.odd_parameters.bp_gens)
         .unwrap();
 
     // todo serialize tx's and sign using both of the secret keys
@@ -659,11 +660,11 @@ mod tests {
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
-            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+            Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
-            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+            Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
         let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
@@ -672,7 +673,7 @@ mod tests {
             19,
             &pk,
             &schnorr_parameters,
-            &sr_params.c0_parameters,
+            &sr_params.even_parameters,
             &mut rng,
         );
         let rerandomized_pk = Coin::<PallasParameters, PallasP>::rerandomized_pk(
@@ -697,10 +698,10 @@ mod tests {
         );
 
         let pallas_proof = pallas_prover
-            .prove(&sr_params.c0_parameters.bp_gens)
+            .prove(&sr_params.even_parameters.bp_gens)
             .unwrap();
         let vesta_proof = vesta_prover
-            .prove(&sr_params.c1_parameters.bp_gens)
+            .prove(&sr_params.odd_parameters.bp_gens)
             .unwrap();
 
         {
@@ -721,15 +722,15 @@ mod tests {
             vesta_verifier
                 .verify(
                     &vesta_proof,
-                    &sr_params.c1_parameters.pc_gens,
-                    &sr_params.c1_parameters.bp_gens,
+                    &sr_params.odd_parameters.pc_gens,
+                    &sr_params.odd_parameters.bp_gens,
                 )
                 .unwrap();
             pallas_verifier
                 .verify(
                     &pallas_proof,
-                    &sr_params.c0_parameters.pc_gens,
-                    &sr_params.c0_parameters.bp_gens,
+                    &sr_params.even_parameters.pc_gens,
+                    &sr_params.even_parameters.bp_gens,
                 )
                 .unwrap();
         }
@@ -748,11 +749,11 @@ mod tests {
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
-            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+            Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
-            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+            Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
         let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
@@ -761,14 +762,14 @@ mod tests {
             19,
             &pk,
             &schnorr_parameters,
-            &sr_params.c0_parameters,
+            &sr_params.even_parameters,
             &mut rng,
         );
         let (coin_aux_1, coin_1) = Coin::<PallasParameters, PallasP>::new(
             23,
             &pk,
             &schnorr_parameters,
-            &sr_params.c0_parameters,
+            &sr_params.even_parameters,
             &mut rng,
         );
         // Curve tree with two coins
@@ -829,14 +830,14 @@ mod tests {
 
             batch_verify(
                 vec![pallas_vt],
-                &sr_params.c0_parameters.pc_gens,
-                &sr_params.c0_parameters.bp_gens,
+                &sr_params.even_parameters.pc_gens,
+                &sr_params.even_parameters.bp_gens,
             )
             .unwrap();
             batch_verify(
                 vec![vesta_vt],
-                &sr_params.c1_parameters.pc_gens,
-                &sr_params.c1_parameters.bp_gens,
+                &sr_params.odd_parameters.pc_gens,
+                &sr_params.odd_parameters.bp_gens,
             )
             .unwrap();
         }

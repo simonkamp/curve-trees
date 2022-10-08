@@ -27,7 +27,9 @@ jobs:
     - name: Run tests
       run: cargo test --release --verbose
     - name: Build benchmarks
-      run: cargo bench --verbose DONTRUNBENCHMARKS
+      run: cargo bench --all-features --verbose DONTRUNBENCHMARKS
+    - name: Build benchmarks
+      run: cargo bench --no-default-features --verbose DONTRUNBENCHMARKS 
 
   check-nightly:
 

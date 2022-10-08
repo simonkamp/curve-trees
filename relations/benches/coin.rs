@@ -11,7 +11,7 @@ use bulletproofs::r1cs::{batch_verify, Prover};
 extern crate relations;
 use merlin::Transcript;
 use relations::coin::*;
-use relations::select_and_rerandomize::*;
+use relations::curve_tree::*;
 
 extern crate pasta;
 use pasta::{
@@ -65,14 +65,14 @@ fn bench_pour_with_parameters<const L: usize>(
         19,
         &pk,
         &schnorr_parameters,
-        &sr_params.c0_parameters,
+        &sr_params.even_parameters,
         &mut rng,
     );
     let (coin_aux_1, coin_1) = Coin::<PallasParameters, PallasP>::new(
         23,
         &pk,
         &schnorr_parameters,
-        &sr_params.c0_parameters,
+        &sr_params.even_parameters,
         &mut rng,
     );
     // Curve tree with two coins
@@ -105,11 +105,11 @@ fn bench_pour_with_parameters<const L: usize>(
     let prove = || {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
-            Prover::new(&sr_params.c0_parameters.pc_gens, pallas_transcript);
+            Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
-            Prover::new(&sr_params.c1_parameters.pc_gens, vesta_transcript);
+            Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let receiver_pk_0 = pk;
         let receiver_pk_1 = pk;
@@ -172,14 +172,14 @@ fn bench_pour_with_parameters<const L: usize>(
 
                 batch_verify(
                     vec![pallas_vt],
-                    &sr_params.c0_parameters.pc_gens,
-                    &sr_params.c0_parameters.bp_gens,
+                    &sr_params.even_parameters.pc_gens,
+                    &sr_params.even_parameters.bp_gens,
                 )
                 .unwrap();
                 batch_verify(
                     vec![vesta_vt],
-                    &sr_params.c1_parameters.pc_gens,
-                    &sr_params.c1_parameters.bp_gens,
+                    &sr_params.odd_parameters.pc_gens,
+                    &sr_params.odd_parameters.bp_gens,
                 )
                 .unwrap();
             })
@@ -214,14 +214,14 @@ fn bench_pour_with_parameters<const L: usize>(
                         }
                         batch_verify(
                             pallas_verification_scalars_and_points,
-                            &sr_params.c0_parameters.pc_gens,
-                            &sr_params.c0_parameters.bp_gens,
+                            &sr_params.even_parameters.pc_gens,
+                            &sr_params.even_parameters.bp_gens,
                         )
                         .unwrap();
                         batch_verify(
                             vesta_verification_scalars_and_points,
-                            &sr_params.c1_parameters.pc_gens,
-                            &sr_params.c1_parameters.bp_gens,
+                            &sr_params.odd_parameters.pc_gens,
+                            &sr_params.odd_parameters.bp_gens,
                         )
                         .unwrap();
                     }
@@ -252,8 +252,8 @@ fn bench_pour_with_parameters<const L: usize>(
                                     .collect();
                                 batch_verify(
                                     event_vts,
-                                    &sr_params.c0_parameters.pc_gens,
-                                    &sr_params.c0_parameters.bp_gens,
+                                    &sr_params.even_parameters.pc_gens,
+                                    &sr_params.even_parameters.bp_gens,
                                 )
                                 .unwrap();
                             },
@@ -271,8 +271,8 @@ fn bench_pour_with_parameters<const L: usize>(
                                     .collect();
                                 batch_verify(
                                     odd_vts,
-                                    &sr_params.c1_parameters.pc_gens,
-                                    &sr_params.c1_parameters.bp_gens,
+                                    &sr_params.odd_parameters.pc_gens,
+                                    &sr_params.odd_parameters.bp_gens,
                                 )
                                 .unwrap();
                             },
