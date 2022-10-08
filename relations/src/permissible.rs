@@ -70,7 +70,9 @@ impl<F: SquareRootField> UniversalHash<F> {
         y: Option<F>,
         y_var: Variable<F>,
     ) {
+        // prove that (x,y) is a point on the curve
         curve_check(cs, x, y_var.into(), self.a, self.b);
+        // prove that the y coordinate hashes to a quadratic residue
         let (_, _, w2) = cs
             .allocate_multiplier(y.map(|y| {
                 let w = self.witness(y);

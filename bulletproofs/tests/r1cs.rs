@@ -6,7 +6,7 @@ extern crate rand;
 
 use ark_ec::AffineCurve;
 use ark_ff::Field;
-use ark_std::{One, UniformRand};
+use ark_std::UniformRand;
 
 use pasta::pallas::Affine;
 

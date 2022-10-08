@@ -40,59 +40,6 @@ mod tests {
         let mut rng = rand::thread_rng();
         let pg = PedersenGens::default();
         let bpg = BulletproofGens::new(1024, 1);
-        let (proof, xs_comms, x_comm) = {
-            // have a prover commit to a vector of random elements in Pallas base field
-            // (will be x-coordinates of permissible points in the end)
-            let xs: Vec<_> = iter::from_fn(|| Some(VestaScalar::rand(&mut rng)))
-                .take(256)
-                .collect();
-            let index = 42;
-            let x = xs[index];
-
-            let mut transcript = Transcript::new(b"select");
-            let mut prover: Prover<_, VestaA> = Prover::new(&pg, &mut transcript);
-            let mut xs_comms = Vec::with_capacity(256);
-            let mut xs_vars = Vec::with_capacity(256);
-            for i in 0..256 {
-                let (c, v) = prover.commit(xs[i], PallasBase::rand(&mut rng));
-                xs_comms.push(c);
-                xs_vars.push(v);
-            }
-            let (x_comm, x_var) = prover.commit(x, PallasBase::rand(&mut rng));
-
-            select(
-                &mut prover,
-                x_var.into(),
-                xs_vars.into_iter().map(|v| v.into()).collect(),
-            );
-
-            let proof = prover.prove(&bpg).unwrap();
-            (proof, xs_comms, x_comm)
-        };
-
-        let mut transcript = Transcript::new(b"select");
-        let mut verifier = Verifier::new(&mut transcript);
-
-        let mut xs_vars = Vec::with_capacity(256);
-        for i in 0..256 {
-            xs_vars.push(verifier.commit(xs_comms[i]));
-        }
-        let x_var = verifier.commit(x_comm);
-
-        select(
-            &mut verifier,
-            x_var.into(),
-            xs_vars.into_iter().map(|v| v.into()).collect(),
-        );
-
-        verifier.verify(&proof, &pg, &bpg).unwrap();
-    }
-
-    #[test]
-    fn test_select_vec_commit() {
-        let mut rng = rand::thread_rng();
-        let pg = PedersenGens::default();
-        let bpg = BulletproofGens::new(1024, 1);
         let (proof, xs_comm, x_comm) = {
             // have a prover commit to a vector of random elements in Pallas base field
             // (will be x-coordinates of permissible points in the end)

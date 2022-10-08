@@ -91,11 +91,11 @@ pub fn single_level_select_and_rerandomize<
         x_var.into(),
         c0_vars.into_iter().map(|v| v.into()).collect(),
     );
-    // proof that l0 is a permissible
+    // proof that l0 is a permissible point
     parameters
         .uh
         .permissible_gadget(cs, x_var.into(), xy_witness.map(|xy| xy.y), y_var);
-    // show that leaf_rerand, is a rerandomization of leaf
+    // show that `rerandomized`, is a rerandomization of leaf
     re_randomize(
         cs,
         &parameters.tables,
