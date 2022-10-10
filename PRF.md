@@ -2,7 +2,7 @@
 The coins are commitments in the curve $E_{even}$. $E_{even}$ and $E_{odd}$ form a 2-cycle.
 
 A public key is a rerandomizable commitments to PRF key: $$C_{sk} = [sk] \cdot G + [r_{sk}] \cdot H_{odd} $$
-(Could $r_{sk}$ just be zero?)
+<!-- Todo (Could $r_{sk}$ just be zero?) -->
 
 ### Minting
 When minting a coin to a receiver with public key $C_{sk}$:
@@ -36,8 +36,6 @@ The prover:
 3. Proves that $C^*_{sk+H(tx)} = [x] \cdot G + [r^*] \cdot H_{odd} \land [x^{-1}] \cdot G = t$. Only revealing $t$.
 Concretely:
     - show opening of commitment $C^*_{sk+H(tx)}$ obtaining variable for $x$
-    - then either:
-        - treat $t$ as a commitment (not vector) with randomness zero, show opening, obtaining variable for $x^{-1}$ and constrain $x\cdot x^{-1}-1 = 0$.
-        - constrain a free variable to be inverse of $x$. ($x\cdot x^{-1}-1$) and relate $t$ to $x^{-1}$ using ???
+    - treat $t$ as a commitment (not vector) with randomness zero, show opening, obtaining variable for $x^{-1}$ and constrain $x\cdot x^{-1}-1 = 0$.
 
 
