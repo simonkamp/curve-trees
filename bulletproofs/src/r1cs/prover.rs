@@ -48,6 +48,9 @@ pub struct Prover<'g, T: BorrowMut<Transcript>, C: AffineCurve> {
     pending_multiplier: Option<usize>,
 }
 
+// todo I assume this would be automatically implemented by the compiler if it did not have a a mutable borrow of a transcript
+unsafe impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Send for Prover<'g, T, C> {} // todo fix
+
 /// Separate struct to implement Drop trait for (for zeroing),
 /// so that compiler does not prohibit us from moving the Transcript out of `prove()`.
 struct Secrets<F: Field> {
@@ -607,57 +610,133 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         let mut s_R1: Vec<C::ScalarField> =
             (0..n1).map(|_| C::ScalarField::rand(&mut rng)).collect();
 
-        // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
-        let A_I1 = VariableBaseMSM::multi_scalar_mul(
-            iter::once(&self.pc_gens.B_blinding)
-                .chain(gens.G(n1))
-                .chain(gens.H(n1))
-                .cloned()
-                .collect::<Vec<C>>()
-                .as_slice(),
-            iter::once(&i_blinding1)
+        #[cfg(feature = "parallel")]
+        let (A_I1, A_O1, S1) = {
+            // todo clean up when send is safely implemented
+            let blinding = self.pc_gens.B_blinding;
+            let A_I1_scalars = iter::once(&i_blinding1)
                 .chain(self.secrets.a_L.iter())
                 .chain(self.secrets.a_R.iter())
                 .map(|s| (*s).into())
-                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
-                .as_slice(),
-        )
-        .into();
-
-        // A_O = <a_O, G> + o_blinding * B_blinding
-        let A_O1 = VariableBaseMSM::multi_scalar_mul(
-            iter::once(&self.pc_gens.B_blinding)
-                .chain(gens.G(n1))
-                .cloned()
-                .collect::<Vec<C>>()
-                .as_slice(),
-            iter::once(&o_blinding1)
+                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>();
+            let A_O1_scalars = iter::once(&o_blinding1)
                 .chain(self.secrets.a_O.iter())
                 .map(|s| (*s).into())
-                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
-                .as_slice(),
-        )
-        .into();
+                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>();
+            let (mut A_I1, mut A_O1, mut S1) = (None, None, None);
+            rayon::scope(|s| {
+                // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
+                s.spawn(|_| {
+                    A_I1 = Some(
+                        VariableBaseMSM::multi_scalar_mul(
+                            iter::once(&blinding)
+                                .chain(gens.G(n1))
+                                .chain(gens.H(n1))
+                                .cloned()
+                                .collect::<Vec<C>>()
+                                .as_slice(),
+                            A_I1_scalars.as_slice(),
+                        )
+                        .into(),
+                    )
+                });
+                // A_O = <a_O, G> + o_blinding * B_blinding
+                s.spawn(|_| {
+                    A_O1 = Some(
+                        VariableBaseMSM::multi_scalar_mul(
+                            iter::once(&blinding)
+                                .chain(gens.G(n1))
+                                .cloned()
+                                .collect::<Vec<C>>()
+                                .as_slice(),
+                            A_O1_scalars.as_slice(),
+                        )
+                        .into(),
+                    )
+                });
 
-        // Vector commitments of the form
-        // <Vi, G> + vi_blinding * B:blinding
+                // Vector commitments of the form
+                // <Vi, G> + vi_blinding * B:blinding
 
-        // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
-        let S1 = VariableBaseMSM::multi_scalar_mul(
-            iter::once(&self.pc_gens.B_blinding)
-                .chain(gens.G(n1))
-                .chain(gens.H(n1))
-                .cloned()
-                .collect::<Vec<C>>()
-                .as_slice(),
-            iter::once(&s_blinding1)
-                .chain(s_L1.iter())
-                .chain(s_R1.iter())
-                .map(|s| (*s).into())
-                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
-                .as_slice(),
-        )
-        .into();
+                // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
+                s.spawn(|_| {
+                    S1 = Some(
+                        VariableBaseMSM::multi_scalar_mul(
+                            iter::once(&blinding)
+                                .chain(gens.G(n1))
+                                .chain(gens.H(n1))
+                                .cloned()
+                                .collect::<Vec<C>>()
+                                .as_slice(),
+                            iter::once(&s_blinding1)
+                                .chain(s_L1.iter())
+                                .chain(s_R1.iter())
+                                .map(|s| (*s).into())
+                                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                                .as_slice(),
+                        )
+                        .into(),
+                    )
+                });
+            });
+
+            (A_I1.unwrap(), A_O1.unwrap(), S1.unwrap())
+        };
+        #[cfg(not(feature = "parallel"))]
+        let (A_I1, A_O1, S1) = {
+            // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
+            let A_I1 = VariableBaseMSM::multi_scalar_mul(
+                iter::once(&self.pc_gens.B_blinding)
+                    .chain(gens.G(n1))
+                    .chain(gens.H(n1))
+                    .cloned()
+                    .collect::<Vec<C>>()
+                    .as_slice(),
+                iter::once(&i_blinding1)
+                    .chain(self.secrets.a_L.iter())
+                    .chain(self.secrets.a_R.iter())
+                    .map(|s| (*s).into())
+                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .as_slice(),
+            )
+            .into();
+
+            // A_O = <a_O, G> + o_blinding * B_blinding
+            let A_O1 = VariableBaseMSM::multi_scalar_mul(
+                iter::once(&self.pc_gens.B_blinding)
+                    .chain(gens.G(n1))
+                    .cloned()
+                    .collect::<Vec<C>>()
+                    .as_slice(),
+                iter::once(&o_blinding1)
+                    .chain(self.secrets.a_O.iter())
+                    .map(|s| (*s).into())
+                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .as_slice(),
+            )
+            .into();
+
+            // Vector commitments of the form
+            // <Vi, G> + vi_blinding * B:blinding
+
+            // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
+            let S1 = VariableBaseMSM::multi_scalar_mul(
+                iter::once(&self.pc_gens.B_blinding)
+                    .chain(gens.G(n1))
+                    .chain(gens.H(n1))
+                    .cloned()
+                    .collect::<Vec<C>>()
+                    .as_slice(),
+                iter::once(&s_blinding1)
+                    .chain(s_L1.iter())
+                    .chain(s_R1.iter())
+                    .map(|s| (*s).into())
+                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .as_slice(),
+            )
+            .into();
+            (A_I1, A_O1, S1)
+        };
 
         let transcript = self.transcript.borrow_mut();
         transcript.append_point(b"A_I1", &A_I1);
@@ -706,6 +785,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         assert!(!has_2nd_phase_commitments || self.secrets.vec_open.is_empty());
 
         let (A_I2, A_O2, S2) = if has_2nd_phase_commitments {
+            println!("second phase");
             (
                 // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
                 VariableBaseMSM::multi_scalar_mul(

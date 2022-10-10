@@ -169,7 +169,7 @@ pub fn prove_pour<
     receiver_value_1: u64,
     receiver_pk_1: PublicKey<C>,
     sig_parameters: &Parameters<C, Blake2s>,
-    rng: &mut R, // todo input spending pks
+    rng: &mut R,
 ) -> SignedTx<P0, P1, C> {
     // mint coins
     let (_, minted_coin_commitment_0, minted_amount_var_0) = Coin::<P0, C>::mint(
@@ -211,12 +211,28 @@ pub fn prove_pour<
     );
 
     // prove
-    let even_proof = even_prover
-        .prove(&sr_parameters.even_parameters.bp_gens)
-        .unwrap();
-    let odd_proof = odd_prover
-        .prove(&sr_parameters.odd_parameters.bp_gens)
-        .unwrap();
+    #[cfg(not(feature = "parallel"))]
+    let (even_proof, odd_proof) = (
+        even_prover
+            .prove(&sr_parameters.even_parameters.bp_gens)
+            .unwrap(),
+        odd_prover
+            .prove(&sr_parameters.odd_parameters.bp_gens)
+            .unwrap(),
+    );
+    #[cfg(feature = "parallel")]
+    let (even_proof, odd_proof) = rayon::join(
+        || {
+            even_prover
+                .prove(&sr_parameters.even_parameters.bp_gens)
+                .unwrap()
+        },
+        || {
+            odd_prover
+                .prove(&sr_parameters.odd_parameters.bp_gens)
+                .unwrap()
+        },
+    );
 
     // todo serialize tx's and sign using both of the secret keys
     let proof = Pour::<P0, P1, C> {
