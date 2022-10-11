@@ -42,10 +42,10 @@ nightly = ["clear_on_drop/nightly"]
 [[test]]
 name = "r1cs"
 
-[[bench]]
-name = "generators"
-harness = false
+# [[bench]]
+# name = "generators"
+# harness = false
 
-[[bench]]
-name = "r1cs"
-harness = false
+# [[bench]]
+# name = "r1cs"
+# harness = false
