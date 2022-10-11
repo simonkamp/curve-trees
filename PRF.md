@@ -2,7 +2,6 @@
 The coins are commitments in the curve $E_{even}$. $E_{even}$ and $E_{odd}$ form a 2-cycle.
 
 A public key is a rerandomizable commitments to PRF key: $$C_{sk} = [sk] \cdot G + [r_{sk}] \cdot H_{odd} $$
-<!-- Todo (Could $r_{sk}$ just be zero?) -->
 
 ### Minting
 When minting a coin to a receiver with public key $C_{sk}$:
@@ -31,8 +30,7 @@ Assume a prover knows the opening of a coin $tx'$ as described above.
 The prover:
 1. Computes the tag $t = [(sk + H(tx))^{-1}] \cdot G$.
 2. Selects and rerandomizes $tx'$ as $tx^* = tx' + [r_{coin}] \cdot H_{even}$ from the curve tree.
-3. It then selects and rerandomizes $C_{sk+H(tx)}$ as $C^*_{sk+H(tx)} = C_{sk+H(tx)} + [r_{t}] \cdot H_{odd}$  from $tx^*$.
-(This is a bit overkill, the index does not need to be secret. In fact it could cause soundness issues or at least complicate the proof. It should be selected with public index).
+3. It then selects and rerandomizes "with fixed index" $C_{sk+H(tx)}$ as $C^*_{sk+H(tx)} = C_{sk+H(tx)} + [r_{t}] \cdot H_{odd}$  from $tx^*$.
 3. Proves that $C^*_{sk+H(tx)} = [x] \cdot G + [r^*] \cdot H_{odd} \land [x^{-1}] \cdot G = t$. Only revealing $t$.
 Concretely:
     - show opening of commitment $C^*_{sk+H(tx)}$ obtaining variable for $x$
