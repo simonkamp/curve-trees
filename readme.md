@@ -19,7 +19,7 @@ To get single core benchmarks disable default features: `cargo bench --features 
 
 The bulletproofs implementation is based on [dalek bulletproofs](https://github.com/dalek/bulletproofs) and the [arkworks algebra library](https://github.com/arkworks-rs/algebra).
 
-The implementation of the pasta curves are copied from [the Mina proof-systems repo](https://github.com/o1-labs/proof-systems/tree/master/curves).
+The implementation of the pasta curves copied from [the Mina proof-systems repo](https://github.com/o1-labs/proof-systems/tree/master/curves).
 
 
 ## LICENSE
