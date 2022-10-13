@@ -20,3 +20,5 @@ pub mod curve_tree;
 pub mod range_proof;
 
 pub mod coin;
+
+pub mod prf_coin;
