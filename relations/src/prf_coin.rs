@@ -1,4 +1,4 @@
-use bulletproofs::r1cs::*;
+use bulletproofs::{r1cs::*, PedersenGens};
 use merlin::Transcript;
 use rand::Rng;
 
@@ -20,6 +20,19 @@ pub struct PublicKey<P: SWModelParameters>(pub GroupAffine<P>);
 pub struct SecretKey<P: SWModelParameters> {
     pub prf_key: P::ScalarField,
     pub randomness: P::ScalarField, // could this just be zero?
+}
+
+impl<P: SWModelParameters> SecretKey<P> {
+    pub fn new<R: Rng>(rng: &mut R) -> Self {
+        Self {
+            prf_key: P::ScalarField::rand(rng),
+            randomness: P::ScalarField::rand(rng),
+        }
+    }
+
+    pub fn public_key(&self, pc_gens: &PedersenGens<GroupAffine<P>>) -> PublicKey<P> {
+        PublicKey(pc_gens.commit(self.prf_key, self.randomness))
+    }
 }
 
 pub struct Coin<
@@ -66,9 +79,11 @@ where
         sr_parameters: &SelRerandParameters<P0, P1>,
         rng: &mut R,
     ) -> (Coin<P0, P1>, MintingOutput<P0, P1>) {
+        // pick a random scalar and rerandomize the public key
         let pk_rerandomization = P1::ScalarField::rand(rng);
         let randomized_pk = Self::rerandomized_pk(pk, &pk_rerandomization, sr_parameters);
 
+        // pick a random scalar to hide the coin value.
         let value_randomness = P0::ScalarField::rand(rng);
         let value_commitment = sr_parameters
             .even_parameters
@@ -82,7 +97,7 @@ where
             },
             MintingOutput {
                 value_commitment,
-                public_key: randomized_pk.0,
+                public_key: randomized_pk,
             },
         )
     }
@@ -106,7 +121,7 @@ where
 #[derive(Clone, Copy)]
 pub struct MintingOutput<P0: SWModelParameters, P1: SWModelParameters> {
     pub value_commitment: GroupAffine<P0>,
-    pub public_key: GroupAffine<P1>,
+    pub public_key: PublicKey<P1>,
 }
 
 impl<P0, P1> MintingOutput<P0, P1>
@@ -134,7 +149,7 @@ where
             .pc_gens
             .B
             .mul(hash_of_value_commitments);
-        let pre_permissible_pk = self.public_key + g_to_hash.into_affine();
+        let pre_permissible_pk = self.public_key.0 + g_to_hash.into_affine();
         let (permissible_pk, r_permissible_pk) =
             parameters.odd_parameters.uh.permissible_commitment(
                 &pre_permissible_pk,
@@ -204,7 +219,7 @@ where
     pub coin_aux: Coin<P0, P1>,
     pub minting_output: MintingOutput<P0, P1>,
     pub combined_coin: PermissibleCoin<P0, P1>,
-    pub randomized_pk: PublicKey<P1>,
+    // pub randomized_pk: PublicKey<P1>,
     pub sk: SecretKey<P1>,
 }
 
@@ -239,8 +254,7 @@ where
                 + rerandomization,
             &parameters.even_parameters.bp_gens,
         );
-        assert_eq!(path.even_commitments.len(), 2);
-        assert_eq!(path.even_commitments[1], rerandomized_point);
+        assert_eq!(path.even_commitments[path.even_commitments.len() - 1], rerandomized_point);
 
         let fresh_pk_randomness = P1::ScalarField::rand(rng);
         let permissible_pk = self.combined_coin.permissible_pk;
@@ -275,13 +289,55 @@ where
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use merlin::Transcript;
-    use pasta;
+    use pasta::{self, pallas};
     type PallasParameters = pasta::pallas::PallasParameters;
     type VestaParameters = pasta::vesta::VestaParameters;
     type PallasP = pasta::pallas::Projective;
 
     #[test]
-    fn test_spend() {}
+    fn test_spend() {
+        let domain_string = b"prf_coin";
+        let mut rng = rand::thread_rng();
+        let generators_length = 1 << 13;
+
+
+        let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+            generators_length,
+            generators_length,
+            &mut rng,
+        );
+        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+            Prover::new(&sr_params.even_parameters.pc_gens, Transcript::new(domain_string));
+        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+            Prover::new(&sr_params.odd_parameters.pc_gens, Transcript::new(domain_string));
+
+        let sk = SecretKey::<VestaParameters>::new(&mut rng);
+        let pk = sk.public_key(&sr_params.odd_parameters.pc_gens);
+        
+        let (coin_aux_0, mint_output_0) = Coin::<PallasParameters, VestaParameters>::new(2, &pk, &sr_params, &mut rng);
+        let permissible_coin_0 = mint_output_0.combine_into_permissible(&sr_params);
+        let (coin_aux_1, mint_output_1) = Coin::<PallasParameters, VestaParameters>::new(2, &pk, &sr_params, &mut rng);
+        let permissible_coin_1 = mint_output_1.combine_into_permissible(&sr_params);
+
+
+        let set = vec![permissible_coin_0.permissible_coin, permissible_coin_1.permissible_coin];
+        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(2));
+
+        let spending_info_0 = SpendingInfo::<PallasParameters, VestaParameters> {
+            index: 0,
+            coin_aux: coin_aux_0,
+            minting_output: mint_output_0,
+            combined_coin: permissible_coin_0,
+            sk: sk,
+        };
+
+        let (path, _val_var) = spending_info_0.prove_spend(&mut pallas_prover, &mut vesta_prover, &sr_params, &curve_tree, &mut rng);
+        let pallas_proof = pallas_prover.prove(&sr_params.even_parameters.bp_gens).unwrap();
+        let vesta_proof = vesta_prover.prove(&sr_params.odd_parameters.bp_gens).unwrap();
+
+
+    }
 }
