@@ -78,11 +78,11 @@ pub fn single_level_select_and_rerandomize<
     Cs: ConstraintSystem<Fs>,
 >(
     cs: &mut Cs, // Prover or verifier
-    parameters: &SingleLayerParameters<C2>, 
+    parameters: &SingleLayerParameters<C2>,
     rerandomized: &GroupAffine<C2>, // The public rerandomization of the witness
-    c0_vars: Vec<Variable<Fs>>,     // Variables representing members of the (parent) vector commitment
+    c0_vars: Vec<Variable<Fs>>, // Variables representing members of the (parent) vector commitment
     xy_witness: Option<GroupAffine<C2>>, // Witness of the commitment being selected and rerandomized
-    randomness_offset: Option<Fb>,       // The scalar used for randomizing, i.e. xy_witness * randomness_offset = rerandomized
+    randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. xy_witness * randomness_offset = rerandomized
 ) {
     let x_var = cs.allocate(xy_witness.map(|xy| xy.x)).unwrap();
     let y_var = cs.allocate(xy_witness.map(|xy| xy.y)).unwrap();
