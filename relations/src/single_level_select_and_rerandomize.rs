@@ -70,18 +70,19 @@ impl<P: SWModelParameters> SingleLayerParameters<P> {
     }
 }
 
+/// Circuit for the single level version of the select and rerandomize relation.
 pub fn single_level_select_and_rerandomize<
     Fb: SquareRootField,
     Fs: SquareRootField,
     C2: SWModelParameters<BaseField = Fs, ScalarField = Fb>,
     Cs: ConstraintSystem<Fs>,
 >(
-    cs: &mut Cs,
-    parameters: &SingleLayerParameters<C2>,
-    rerandomized: &GroupAffine<C2>, // the public rerandomization of witness
-    c0_vars: Vec<Variable<Fs>>,     // variables representing members of the vector commitment
-    xy_witness: Option<GroupAffine<C2>>, // witness of the commitment we wish to select and rerandomize
-    randomness_offset: Option<Fb>,       // the scalar used for randomizing
+    cs: &mut Cs, // Prover or verifier
+    parameters: &SingleLayerParameters<C2>, 
+    rerandomized: &GroupAffine<C2>, // The public rerandomization of the witness
+    c0_vars: Vec<Variable<Fs>>,     // Variables representing members of the (parent) vector commitment
+    xy_witness: Option<GroupAffine<C2>>, // Witness of the commitment being selected and rerandomized
+    randomness_offset: Option<Fb>,       // The scalar used for randomizing, i.e. xy_witness * randomness_offset = rerandomized
 ) {
     let x_var = cs.allocate(xy_witness.map(|xy| xy.x)).unwrap();
     let y_var = cs.allocate(xy_witness.map(|xy| xy.y)).unwrap();
