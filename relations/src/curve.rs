@@ -24,6 +24,7 @@ pub fn curve_check<F: Field, Cs: ConstraintSystem<F>>(
 
 /// A point represented by variables corresponding to its affine coordinates and optionally the value of those,
 /// which must be known by the prover.
+#[derive(Clone)]
 pub struct PointRepresentation<F: Field, C: AffineCurve<BaseField = F>> {
     pub x: LinearCombination<F>,
     pub y: LinearCombination<F>,

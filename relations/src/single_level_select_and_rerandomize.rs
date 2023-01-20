@@ -1,6 +1,7 @@
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
 
+use crate::curve::{checked_curve_addition_helper, PointRepresentation};
 use crate::lookup::*;
 use crate::permissible::*;
 use crate::rerandomize::*;
@@ -11,8 +12,10 @@ use ark_ec::{
     SWModelParameters,
 };
 use ark_ff::{PrimeField, SquareRootField};
+use ark_std::Zero;
 use rand::Rng;
 use std::iter;
+use std::marker::PhantomData;
 
 pub struct SingleLayerParameters<P: SWModelParameters> {
     pub bp_gens: BulletproofGens<GroupAffine<P>>,
@@ -79,24 +82,24 @@ pub fn single_level_select_and_rerandomize<
 >(
     cs: &mut Cs, // Prover or verifier
     parameters: &SingleLayerParameters<C2>,
-    rerandomized: &GroupAffine<C2>, // The public rerandomization of the witness
+    rerandomized: &GroupAffine<C2>, // The public rerandomization of the selected child
     c0_vars: Vec<Variable<Fs>>, // Variables representing members of the (parent) vector commitment
-    xy_witness: Option<GroupAffine<C2>>, // Witness of the commitment being selected and rerandomized
-    randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. xy_witness * randomness_offset = rerandomized
+    selected_witness: Option<GroupAffine<C2>>, // Witness of the commitment being selected and rerandomized
+    randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. selected_witness * randomness_offset = rerandomized
 ) {
-    let x_var = cs.allocate(xy_witness.map(|xy| xy.x)).unwrap();
-    let y_var = cs.allocate(xy_witness.map(|xy| xy.y)).unwrap();
-    // show that leaf is in c0
+    let x_var = cs.allocate(selected_witness.map(|xy| xy.x)).unwrap();
+    let y_var = cs.allocate(selected_witness.map(|xy| xy.y)).unwrap();
+    // Show that the parent is committed to the child's x-coordinate
     select(
         cs,
         x_var.into(),
         c0_vars.into_iter().map(|v| v.into()).collect(),
     );
-    // proof that l0 is a permissible point
+    // Proof that the child is a permissible point
     parameters
         .uh
-        .permissible_gadget(cs, x_var.into(), xy_witness.map(|xy| xy.y), y_var);
-    // show that `rerandomized`, is a rerandomization of leaf
+        .permissible_gadget(cs, x_var.into(), selected_witness.map(|xy| xy.y), y_var);
+    // Show that `rerandomized` is a rerandomization of the selected child
     re_randomize(
         cs,
         &parameters.tables,
@@ -104,7 +107,77 @@ pub fn single_level_select_and_rerandomize<
         y_var.into(),
         constant(rerandomized.x),
         constant(rerandomized.y),
-        xy_witness,
+        selected_witness,
+        randomness_offset,
+    );
+}
+
+/// Circuit for the single level version of the batched select and rerandomize relation.
+/// Facilitates showing M instances of the select and rerandomize relation with only a single rerandomization.
+pub fn single_level_batched_select_and_rerandomize<
+    Fb: SquareRootField,
+    Fs: SquareRootField,
+    C2: SWModelParameters<BaseField = Fs, ScalarField = Fb>,
+    Cs: ConstraintSystem<Fs>,
+    const M: usize, // The number of parallel selections
+>(
+    cs: &mut Cs, // Prover or verifier
+    parameters: &SingleLayerParameters<C2>,
+    rerandomized: GroupAffine<C2>, // The public rerandomization of the sum of selected children
+    c0_vars: Vec<Variable<Fs>>, // Variables representing members of the vector commitment (i.e. the sum of M parents)
+    selected_witnesses: Option<[&GroupAffine<C2>; M]>, // Witnesses of the commitments being selected and rerandomized
+    randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. \sum selected_witnesses * randomness_offset = rerandomized
+) {
+    // Initialize the accumulated sum of the selected children to dummy values.
+    let mut sum_of_selected = PointRepresentation {
+        x: Variable::One(PhantomData).into(),
+        y: Variable::One(PhantomData).into(),
+        witness: selected_witnesses.map(|_| (GroupAffine::<C2>::zero()))
+    };
+    // Split the variables of the vector commitments into section corresponding to the M parents.
+    let chunks = c0_vars.chunks_exact(c0_vars.len() / M);
+    let mut i = 0;
+    for chunk in chunks {
+        let ith_selected_witness = selected_witnesses.map(|xy| *xy[i]);
+        let x_var = cs.allocate(ith_selected_witness.map(|xy| xy.x)).unwrap();
+        let y_var = cs.allocate(ith_selected_witness.map(|xy| xy.y)).unwrap();
+        let ith_selected = PointRepresentation {
+            x: x_var.into(),
+            y: y_var.into(),
+            witness: ith_selected_witness,
+        };
+        // Show that the parent is committed to the ith child's x-coordinate
+        select(
+            cs,
+            x_var.into(),
+            chunk
+                .into_iter()
+                .map(|v| LinearCombination::<Fs>::from(*v))
+                .collect(),
+        );
+        // Proof that the child is a permissible point
+        parameters
+            .uh
+            .permissible_gadget(cs, x_var.into(), selected_witnesses.map(|xy| xy[i].y), y_var);
+
+        if i == 0 {
+            // In the first iteration, the sum is the single selected child.
+            sum_of_selected = ith_selected;
+        } else {
+            // Add the extracted point to the accumulated sum
+            sum_of_selected = checked_curve_addition_helper(cs, sum_of_selected, ith_selected);
+        }
+        i += 1;
+    }
+    // Show that `rerandomized`, is a rerandomization of sum of the selected children
+    re_randomize(
+        cs,
+        &parameters.tables,
+        sum_of_selected.x,
+        sum_of_selected.y,
+        constant(rerandomized.x),
+        constant(rerandomized.y),
+        sum_of_selected.witness,
         randomness_offset,
     );
 }
