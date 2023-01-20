@@ -132,7 +132,7 @@ pub fn single_level_batched_select_and_rerandomize<
     let mut sum_of_selected = PointRepresentation {
         x: Variable::One(PhantomData).into(),
         y: Variable::One(PhantomData).into(),
-        witness: selected_witnesses.map(|_| (GroupAffine::<C2>::zero()))
+        witness: selected_witnesses.map(|_| (GroupAffine::<C2>::zero())),
     };
     // Split the variables of the vector commitments into section corresponding to the M parents.
     let chunks = c0_vars.chunks_exact(c0_vars.len() / M);
@@ -156,9 +156,12 @@ pub fn single_level_batched_select_and_rerandomize<
                 .collect(),
         );
         // Proof that the child is a permissible point
-        parameters
-            .uh
-            .permissible_gadget(cs, x_var.into(), selected_witnesses.map(|xy| xy[i].y), y_var);
+        parameters.uh.permissible_gadget(
+            cs,
+            x_var.into(),
+            selected_witnesses.map(|xy| xy[i].y),
+            y_var,
+        );
 
         if i == 0 {
             // In the first iteration, the sum is the single selected child.
