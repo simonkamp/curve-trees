@@ -89,7 +89,8 @@ impl TranscriptProtocol for Transcript {
             if let Err(e) = point.serialize(&mut bytes) {
                 panic!("{}", e)
             }
-            Ok(self.append_message(label, &bytes))
+            self.append_message(label, &bytes);
+            Ok(())
         }
     }
 

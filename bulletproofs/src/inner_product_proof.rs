@@ -94,7 +94,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
                 .map(|(a_L_i, g)| *a_L_i * g)
                 .chain(
                     b_R.iter()
-                        .zip(H_factors[0..n].into_iter())
+                        .zip(H_factors[0..n].iter())
                         .map(|(b_R_i, h)| *b_R_i * h),
                 )
                 .chain(iter::once(c_L))

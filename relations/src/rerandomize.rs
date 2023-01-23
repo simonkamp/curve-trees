@@ -23,10 +23,10 @@ pub fn build_tables<C: SWModelParameters>(h: GroupAffine<C>) -> Vec<Lookup3Bit<2
             elems: [[C::BaseField::one(); WINDOW_ELEMS]; 2],
         };
         // 2^(3*(i - 1))
-        let j_term = C::ScalarField::from(2u64).pow(&[3u64 * (i - 1) as u64]);
+        let j_term = C::ScalarField::from(2u64).pow([3u64 * (i - 1) as u64]);
         let right_term = if i < m {
             // 2^(3*i)
-            let right_term = C::ScalarField::from(2u64).pow(&[3u64 * i as u64]);
+            let right_term = C::ScalarField::from(2u64).pow([3u64 * i as u64]);
             // add right term to the sum in the mth iteration right term
             m_th_right_term += right_term;
             right_term
@@ -80,7 +80,7 @@ pub fn re_randomize<F: Field, C: SWModelParameters<BaseField = F>, Cs: Constrain
             None => (None, None, None, None, None),
             Some(random_bits) => {
                 let bi = (i - 1) * 3;
-                let mut index: usize = if bi < lambda && random_bits[bi] { 1 } else { 0 };
+                let mut index: usize = usize::from(bi < lambda && random_bits[bi]);
                 if bi + 1 < lambda && random_bits[bi + 1] {
                     index += 2;
                 };

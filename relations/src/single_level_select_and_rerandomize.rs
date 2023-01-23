@@ -17,14 +17,14 @@ use rand::Rng;
 use std::iter;
 use std::marker::PhantomData;
 
-pub struct SingleLayerParameters<P: SWModelParameters> {
+pub struct SingleLayerParameters<P: SWModelParameters + Copy> {
     pub bp_gens: BulletproofGens<GroupAffine<P>>,
     pub pc_gens: PedersenGens<GroupAffine<P>>,
     pub uh: UniversalHash<P::BaseField>,
     pub tables: Vec<Lookup3Bit<2, P::BaseField>>,
 }
 
-impl<P: SWModelParameters> SingleLayerParameters<P> {
+impl<P: SWModelParameters + Copy> SingleLayerParameters<P> {
     pub fn new<R: Rng, P1: SWModelParameters>(generators_length: usize, rng: &mut R) -> Self {
         let pc_gens = PedersenGens::<GroupAffine<P>>::default();
         let tables = build_tables(pc_gens.B_blinding);
@@ -37,12 +37,20 @@ impl<P: SWModelParameters> SingleLayerParameters<P> {
         }
     }
 
-    // todo refactor with bases as parameter for stackable curve trees (independent generators)
-    pub fn commit(&self, v: &[P::ScalarField], v_blinding: P::ScalarField) -> GroupAffine<P> {
-        let gens = self.bp_gens.share(0);
+    pub fn commit(
+        &self,
+        v: &[P::ScalarField],
+        v_blinding: P::ScalarField,
+        generator_set_index: usize,
+    ) -> GroupAffine<P> {
+        let gens = self
+            .bp_gens
+            .share(0)
+            .G(v.len() * (generator_set_index + 1))
+            .skip(v.len() * generator_set_index);
 
         let generators: Vec<_> = iter::once(&self.pc_gens.B_blinding)
-            .chain(gens.G(v.len()))
+            .chain(gens)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -64,8 +72,9 @@ impl<P: SWModelParameters> SingleLayerParameters<P> {
         &self,
         v: &[P::ScalarField],
         v_blinding: P::ScalarField,
+        generator_set_index: usize,
     ) -> (GroupAffine<P>, P::ScalarField) {
-        let commitment = self.commit(v, v_blinding);
+        let commitment = self.commit(v, v_blinding, generator_set_index);
         let (permissible_commitment, offset) = self
             .uh
             .permissible_commitment(&commitment, &self.pc_gens.B_blinding);
@@ -77,13 +86,13 @@ impl<P: SWModelParameters> SingleLayerParameters<P> {
 pub fn single_level_select_and_rerandomize<
     Fb: SquareRootField,
     Fs: SquareRootField,
-    C2: SWModelParameters<BaseField = Fs, ScalarField = Fb>,
+    C2: SWModelParameters<BaseField = Fs, ScalarField = Fb> + Copy,
     Cs: ConstraintSystem<Fs>,
 >(
     cs: &mut Cs, // Prover or verifier
     parameters: &SingleLayerParameters<C2>,
     rerandomized: &GroupAffine<C2>, // The public rerandomization of the selected child
-    c0_vars: Vec<Variable<Fs>>, // Variables representing members of the (parent) vector commitment
+    children: Vec<Variable<Fs>>, // Variables representing members of the (parent) vector commitment
     selected_witness: Option<GroupAffine<C2>>, // Witness of the commitment being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. selected_witness * randomness_offset = rerandomized
 ) {
@@ -93,7 +102,7 @@ pub fn single_level_select_and_rerandomize<
     select(
         cs,
         x_var.into(),
-        c0_vars.into_iter().map(|v| v.into()).collect(),
+        children.into_iter().map(|v| v.into()).collect(),
     );
     // Proof that the child is a permissible point
     parameters
@@ -117,14 +126,14 @@ pub fn single_level_select_and_rerandomize<
 pub fn single_level_batched_select_and_rerandomize<
     Fb: SquareRootField,
     Fs: SquareRootField,
-    C2: SWModelParameters<BaseField = Fs, ScalarField = Fb>,
+    C2: SWModelParameters<BaseField = Fs, ScalarField = Fb> + Copy,
     Cs: ConstraintSystem<Fs>,
     const M: usize, // The number of parallel selections
 >(
     cs: &mut Cs, // Prover or verifier
     parameters: &SingleLayerParameters<C2>,
     rerandomized: GroupAffine<C2>, // The public rerandomization of the sum of selected children
-    c0_vars: Vec<Variable<Fs>>, // Variables representing members of the vector commitment (i.e. the sum of M parents)
+    children: Vec<Variable<Fs>>, // Variables representing members of the vector commitment (i.e. the sum of M parents)
     selected_witnesses: Option<[&GroupAffine<C2>; M]>, // Witnesses of the commitments being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. \sum selected_witnesses * randomness_offset = rerandomized
 ) {
@@ -134,8 +143,8 @@ pub fn single_level_batched_select_and_rerandomize<
         y: Variable::One(PhantomData).into(),
         witness: selected_witnesses.map(|_| (GroupAffine::<C2>::zero())),
     };
-    // Split the variables of the vector commitments into section corresponding to the M parents.
-    let chunks = c0_vars.chunks_exact(c0_vars.len() / M);
+    // Split the variables of the vector commitments into chunks corresponding to the M parents.
+    let chunks = children.chunks_exact(children.len() / M);
     let mut i = 0;
     for chunk in chunks {
         let ith_selected_witness = selected_witnesses.map(|xy| *xy[i]);
@@ -151,7 +160,7 @@ pub fn single_level_batched_select_and_rerandomize<
             cs,
             x_var.into(),
             chunk
-                .into_iter()
+                .iter()
                 .map(|v| LinearCombination::<Fs>::from(*v))
                 .collect(),
         );

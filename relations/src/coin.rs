@@ -24,7 +24,13 @@ pub struct Coin<P0: SWModelParameters + Clone, C: ProjectiveCurve> {
     pub pk_randomness: C::ScalarField, // the randomness used to randomize the public key, needed for the receivers signature
 }
 
-impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
+impl<
+        F0: PrimeField,
+        F1: PrimeField,
+        P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
+        C: ProjectiveCurve,
+    > Coin<P0, C>
+{
     pub fn mint<R: Rng>(
         value: u64,
         pk: &PublicKey<C>,
@@ -59,6 +65,7 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
         let (coin_commitment, permissible_randomness) = sr_parameters.permissible_commitment(
             &[P0::ScalarField::from(value), output_tag],
             P0::ScalarField::rand(rng),
+            0, // todo
         );
 
         (
@@ -90,7 +97,7 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
 
     pub fn prove_spend<
         const L: usize,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
     >(
         &self,
         index: usize,
@@ -104,6 +111,7 @@ impl<P0: SWModelParameters + Clone, C: ProjectiveCurve> Coin<P0, C> {
             even_prover,
             odd_prover,
             parameters,
+            &mut rand::thread_rng(),
         );
 
         let (rerandomized_point, variables) = even_prover.commit_vec(
@@ -153,8 +161,10 @@ pub struct SpendingInfo<P: SWModelParameters + Clone, C: ProjectiveCurve> {
 
 pub fn prove_pour<
     const L: usize,
-    P0: SWModelParameters + Clone,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    F0: PrimeField,
+    F1: PrimeField,
+    P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
+    P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
     C: ProjectiveCurve,
     R: Rng,
 >(
@@ -348,8 +358,10 @@ impl<
 }
 
 impl<
-        P0: SWModelParameters + Clone,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        F0: PrimeField,
+        F1: PrimeField,
+        P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
+        P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
         C: ProjectiveCurve,
     > Pour<P0, P1, C>
 {
@@ -367,13 +379,13 @@ impl<
         let minted_amount_var_1 = verify_mint(&mut even_verifier, self.minted_coin_commitment_1);
 
         // spend
-        let spent_amount_var_0 = verify_spend_even::<_, _, C>(
+        let spent_amount_var_0 = verify_spend_even::<_, _, _, _, C>(
             &mut even_verifier,
             spend_commitments_0,
             sr_parameters,
             &self.pk0,
         );
-        let spent_amount_var_1 = verify_spend_even::<_, _, C>(
+        let spent_amount_var_1 = verify_spend_even::<_, _, _, _, C>(
             &mut even_verifier,
             spend_commitments_1,
             sr_parameters,
@@ -492,8 +504,10 @@ impl<
 }
 
 fn verify_spend_even<
-    P0: SWModelParameters + Clone,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    F0: PrimeField,
+    F1: PrimeField,
+    P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
+    P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
     C: ProjectiveCurve,
 >(
     even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
@@ -512,8 +526,8 @@ fn verify_spend_even<
 }
 
 fn verify_spend_odd<
-    P0: SWModelParameters + Clone,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    P0: SWModelParameters + Copy,
+    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
 >(
     odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
     commitments: &SRVerificationCommitments<P0, P1>,
@@ -524,8 +538,8 @@ fn verify_spend_odd<
 
 #[derive(Clone)]
 pub struct SignedTx<
-    P0: SWModelParameters + Clone,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    P0: SWModelParameters + Copy,
+    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
     C: ProjectiveCurve,
 > {
     pub signature_prover_response_0: C::ScalarField,
@@ -537,8 +551,10 @@ pub struct SignedTx<
 }
 
 impl<
-        P0: SWModelParameters + Clone,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        F0: PrimeField,
+        F1: PrimeField,
+        P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
+        P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
         C: ProjectiveCurve,
     > SignedTx<P0, P1, C>
 {
@@ -598,8 +614,8 @@ impl<
 }
 
 impl<
-        P0: SWModelParameters + Clone,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        P0: SWModelParameters + Copy,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
         C: ProjectiveCurve,
     > CanonicalSerialize for SignedTx<P0, P1, C>
 {
@@ -622,8 +638,8 @@ impl<
 }
 
 impl<
-        P0: SWModelParameters + Clone,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        P0: SWModelParameters + Copy,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
         C: ProjectiveCurve,
     > CanonicalDeserialize for SignedTx<P0, P1, C>
 {
@@ -728,7 +744,7 @@ mod tests {
 
             let commitments = curve_tree.select_and_rerandomize_verification_commitments(path);
             verify_spend_odd(&mut vesta_verifier, &commitments, &sr_params);
-            verify_spend_even::<_, _, PallasP>(
+            verify_spend_even::<_, _, _, _, PallasP>(
                 &mut pallas_verifier,
                 &commitments,
                 &sr_params,

@@ -78,6 +78,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
             &mut pallas_prover,
             &mut vesta_prover,
             &sr_params,
+            &mut rand::thread_rng(),
         );
         if print {
             println!(
@@ -135,6 +136,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                     &mut pallas_prover,
                     &mut vesta_prover,
                     &sr_params,
+                    &mut rng,
                 );
             })
         });

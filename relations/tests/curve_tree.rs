@@ -4,13 +4,13 @@ extern crate relations;
 
 use bulletproofs::r1cs::*;
 
+use rand::thread_rng;
 use relations::curve_tree::*;
 
 use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, ProjectiveCurve};
 use ark_std::UniformRand;
 use merlin::Transcript;
 
-// use pasta;
 type PallasParameters = pasta::pallas::PallasParameters;
 type VestaParameters = pasta::vesta::VestaParameters;
 type PallasP = pasta::pallas::Projective;
@@ -61,6 +61,7 @@ pub fn test_curve_tree_with_parameters<const L: usize>(
         &mut pallas_prover,
         &mut vesta_prover,
         &sr_params,
+        &mut rng,
     );
 
     let pallas_proof = pallas_prover
@@ -98,7 +99,7 @@ pub fn test_curve_tree_with_parameters<const L: usize>(
 }
 
 #[test]
-pub fn test_curve_tree_batched() {
+pub fn test_curve_tree_batch_verification() {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << 12;
 
@@ -131,6 +132,7 @@ pub fn test_curve_tree_batched() {
         &mut pallas_prover,
         &mut vesta_prover,
         &sr_params,
+        &mut thread_rng(),
     );
 
     let pallas_proof = pallas_prover

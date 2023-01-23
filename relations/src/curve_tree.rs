@@ -6,8 +6,9 @@ use ark_ec::{
     models::short_weierstrass_jacobian::GroupAffine, AffineCurve, ProjectiveCurve,
     SWModelParameters,
 };
+use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
-use ark_std::{UniformRand, Zero};
+use ark_std::Zero;
 use merlin::Transcript;
 use rand::Rng;
 use std::borrow::BorrowMut;
@@ -19,8 +20,10 @@ pub enum CurveTree<const L: usize, P0: SWModelParameters, P1: SWModelParameters>
 
 impl<
         const L: usize,
-        P0: SWModelParameters + Clone + Send,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone + Send,
+        F0: PrimeField,
+        F1: PrimeField,
+        P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy + Send,
+        P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy + Send,
     > CurveTree<L, P0, P1>
 {
     /// Build a curve tree from a set of commitments assumed to be permissible
@@ -113,67 +116,43 @@ impl<
         }
     }
 
+    /// Produce a witness of the path to the commitment at `index` including siblings and randomness.
+    pub fn select_and_rerandomize_prover_witness(
+        &self,
+        index: usize,
+    ) -> CurveTreeWitnessPath<L, P0, P1> {
+        // todo capacity
+        let mut even_nodes: Vec<CurveTreeWitness<L, P0, P1>> = Vec::new();
+        let mut odd_nodes: Vec<CurveTreeWitness<L, P1, P0>> = Vec::new();
+
+        match self {
+            Self::Even(ct) => {
+                ct.select_and_rerandomize_prover_witness(index, &mut even_nodes, &mut odd_nodes)
+            }
+            Self::Odd(ct) => {
+                ct.select_and_rerandomize_prover_witness(index, &mut odd_nodes, &mut even_nodes)
+            }
+        }
+
+        CurveTreeWitnessPath {
+            even_nodes,
+            odd_nodes,
+        }
+    }
+
     /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
     /// and proves the Select and rerandomize relation for each level.
     /// Returns the rerandomized commitments on the path to (and including) the selected leaf and the rerandomization scalar of the selected leaf.
-    pub fn select_and_rerandomize_prover_gadget(
+    pub fn select_and_rerandomize_prover_gadget<R: Rng>(
         &self,
         index: usize,
         even_prover: &mut Prover<Transcript, GroupAffine<P0>>,
         odd_prover: &mut Prover<Transcript, GroupAffine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
+        rng: &mut R,
     ) -> (SelectAndRerandomizePath<P0, P1>, P0::ScalarField) {
-        let mut rng = rand::thread_rng();
-
-        let mut even_commitments = Vec::new();
-        let mut odd_commitments = Vec::new();
-        let (mut even_internal_node, mut rerandomization_scalar) = match self {
-            Self::Odd(ct) => ct.single_level_select_and_rerandomize_prover_gadget(
-                index,
-                odd_prover,
-                &mut even_commitments,
-                &parameters.odd_parameters,
-                &parameters.even_parameters,
-                P1::ScalarField::zero(),
-                &mut rng,
-            ),
-            Self::Even(ct) => (ct, P0::ScalarField::zero()),
-        };
-        // While the current node is internal, do two iterations of the proof.
-        while even_internal_node.children.is_some() {
-            // Do two iterations of the proof and advance `even_internal_node`to a grandchild.
-            let (child, child_rerandomization_scalar) = even_internal_node
-                .single_level_select_and_rerandomize_prover_gadget(
-                    index,
-                    even_prover,
-                    &mut odd_commitments,
-                    &parameters.even_parameters,
-                    &parameters.odd_parameters,
-                    rerandomization_scalar,
-                    &mut rng,
-                );
-
-            // Assumes the leaf layer is even. Todo make this part of the type
-            (even_internal_node, rerandomization_scalar) = child
-                .single_level_select_and_rerandomize_prover_gadget(
-                    index,
-                    odd_prover,
-                    &mut even_commitments,
-                    &parameters.odd_parameters,
-                    &parameters.even_parameters,
-                    child_rerandomization_scalar,
-                    &mut rng,
-                );
-        }
-
-        // return the commitments and the rerandomization scalar of the leaf.
-        (
-            SelectAndRerandomizePath {
-                even_commitments,
-                odd_commitments,
-            },
-            rerandomization_scalar,
-        )
+        let witness = self.select_and_rerandomize_prover_witness(index);
+        witness.select_and_rerandomize_prover_gadget(even_prover, odd_prover, parameters, rng)
     }
 
     pub fn select_and_rerandomize_verification_commitments(
@@ -188,7 +167,7 @@ impl<
                     randomized_path.even_commitments.len(),
                     randomized_path.odd_commitments.len() + 1
                 );
-                let mut odd_commitments_with_root = vec![ct.commitment];
+                let mut odd_commitments_with_root = vec![ct.parent_commitment];
                 odd_commitments_with_root.append(&mut randomized_path.odd_commitments);
                 (randomized_path.even_commitments, odd_commitments_with_root)
             }
@@ -197,7 +176,7 @@ impl<
                     randomized_path.even_commitments.len(),
                     randomized_path.odd_commitments.len()
                 );
-                let mut even_commitments_with_root = vec![ct.commitment];
+                let mut even_commitments_with_root = vec![ct.parent_commitment];
                 even_commitments_with_root.append(&mut randomized_path.even_commitments);
                 (even_commitments_with_root, randomized_path.odd_commitments)
             }
@@ -220,7 +199,7 @@ impl<
     ) -> GroupAffine<P0> {
         let commitments = self.select_and_rerandomize_verification_commitments(randomized_path);
 
-        commitments.even_verifier_gadget(even_verifier, parameters);
+        commitments.even_verifier_gadget(even_verifier, parameters); // todo use join?
         commitments.odd_verifier_gadget(odd_verifier, parameters);
 
         commitments.leaf
@@ -244,8 +223,8 @@ pub struct SRVerificationCommitments<P0: SWModelParameters, P1: SWModelParameter
 }
 
 impl<
-        P0: SWModelParameters + Clone + Send,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone + Send,
+        P0: SWModelParameters + Copy + Send,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy + Send,
     > SRVerificationCommitments<P0, P1>
 {
     pub fn even_verifier_gadget<T: BorrowMut<Transcript>>(
@@ -260,6 +239,7 @@ impl<
             } else {
                 i
             };
+            // todo use tree index
             let variables =
                 even_verifier.commit_vec(self.branching_factor, self.even_commitments[i]);
             single_level_select_and_rerandomize(
@@ -284,6 +264,7 @@ impl<
             } else {
                 i + 1
             };
+            // todo use tree index
             let variables = odd_verifier.commit_vec(self.branching_factor, self.odd_commitments[i]);
             single_level_select_and_rerandomize(
                 odd_verifier,
@@ -328,10 +309,185 @@ impl<P0: SWModelParameters, P1: SWModelParameters> CanonicalDeserialize
     }
 }
 
+/// A witness of a Curve Tree path including siblings of randomness.
+/// Contains all the information needed to prove the select and rerandomize relation.
+#[derive(Clone)]
+pub struct CurveTreeWitnessPath<
+    const L: usize,
+    P0: SWModelParameters + Copy,
+    P1: SWModelParameters + Copy,
+> {
+    // list of internal even nodes
+    pub even_nodes: Vec<CurveTreeWitness<L, P0, P1>>,
+    // list of internal odd nodes
+    pub odd_nodes: Vec<CurveTreeWitness<L, P1, P0>>,
+}
+
+impl<
+        const L: usize,
+        F0: PrimeField,
+        F1: PrimeField,
+        P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
+        P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
+    > CurveTreeWitnessPath<L, P0, P1>
+{
+    fn root_is_even(&self) -> bool {
+        if self.even_nodes.len() == self.odd_nodes.len() {
+            return true;
+        }
+        if self.even_nodes.len() + 1 == self.odd_nodes.len() {
+            return false;
+        }
+        panic!("Invalid witness path");
+    }
+    /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
+    /// and proves the Select and rerandomize relation for each level.
+    /// Returns the rerandomized commitments on the path to (and including) the selected leaf
+    /// and the rerandomization scalar of the selected leaf.
+    pub fn select_and_rerandomize_prover_gadget<R: Rng>(
+        &self,
+        even_prover: &mut Prover<Transcript, GroupAffine<P0>>,
+        odd_prover: &mut Prover<Transcript, GroupAffine<P1>>,
+        parameters: &SelRerandParameters<P0, P1>,
+        rng: &mut R,
+    ) -> (SelectAndRerandomizePath<P0, P1>, P0::ScalarField) {
+        // for each even internal node, there must be a rerandomization of a commitment in the odd curve
+        let even_length = self.even_nodes.len();
+        let mut odd_rerandomization_scalars: Vec<P1::ScalarField> = Vec::with_capacity(even_length);
+        let mut odd_rerandomized_commitments: Vec<GroupAffine<P1>> =
+            Vec::with_capacity(even_length);
+        // and vice versa
+        let odd_length = self.odd_nodes.len();
+        let mut even_rerandomization_scalars: Vec<P0::ScalarField> = Vec::with_capacity(odd_length);
+        let mut even_rerandomized_commitments: Vec<GroupAffine<P0>> =
+            Vec::with_capacity(odd_length);
+
+        for even in &self.even_nodes {
+            let rerandomization = F1::rand(rng);
+            odd_rerandomization_scalars.push(rerandomization);
+            let blinding = parameters
+                .odd_parameters
+                .pc_gens
+                .B_blinding
+                .mul(rerandomization)
+                .into_affine();
+            odd_rerandomized_commitments.push(even.child_witness + blinding);
+        }
+        for odd in &self.odd_nodes {
+            let rerandomization = F0::rand(rng);
+            even_rerandomization_scalars.push(rerandomization);
+            let blinding = parameters
+                .even_parameters
+                .pc_gens
+                .B_blinding
+                .mul(rerandomization)
+                .into_affine();
+            even_rerandomized_commitments.push(odd.child_witness + blinding);
+        }
+
+        // todo the two loops could be in separate functions for cleaner join
+        for i in 0..even_length {
+            let parent_rerandomization = if self.root_is_even() {
+                if i == 0 {
+                    // the parent is the the root and thus not rerandomized
+                    F0::zero()
+                } else {
+                    even_rerandomization_scalars[i - 1]
+                }
+            } else {
+                even_rerandomization_scalars[i]
+            };
+            self.even_nodes[i].single_level_select_and_rerandomize_prover_gadget(
+                even_prover,
+                &parameters.even_parameters,
+                &parameters.odd_parameters,
+                parent_rerandomization,
+                odd_rerandomization_scalars[i],
+            );
+        }
+        for i in 0..odd_length {
+            let parent_rerandomization = if !self.root_is_even() {
+                if i == 0 {
+                    // the parent is the the root and thus not rerandomized
+                    F1::zero()
+                } else {
+                    odd_rerandomization_scalars[i - 1]
+                }
+            } else {
+                odd_rerandomization_scalars[i]
+            };
+            self.odd_nodes[i].single_level_select_and_rerandomize_prover_gadget(
+                odd_prover,
+                &parameters.odd_parameters,
+                &parameters.even_parameters,
+                parent_rerandomization,
+                even_rerandomization_scalars[i],
+            );
+        }
+
+        (
+            SelectAndRerandomizePath {
+                even_commitments: even_rerandomized_commitments,
+                odd_commitments: odd_rerandomized_commitments,
+            },
+            *even_rerandomization_scalars.last().unwrap(),
+        )
+    }
+}
+
+/// A witness of a Curve Tree path including siblings of randomness.
+/// Contains the information needed to prove the single level select and rerandomize relation.
+#[derive(Copy, Clone)]
+pub struct CurveTreeWitness<
+    const L: usize,
+    P0: SWModelParameters + Copy,
+    P1: SWModelParameters + Copy,
+> {
+    randomness: P0::ScalarField,
+    siblings: [P0::ScalarField; L],
+    child_witness: GroupAffine<P1>,
+}
+
+impl<
+        const L: usize,
+        P0: SWModelParameters + Copy,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+    > CurveTreeWitness<L, P0, P1>
+{
+    pub fn single_level_select_and_rerandomize_prover_gadget(
+        &self,
+        prover: &mut Prover<Transcript, GroupAffine<P0>>,
+        even_parameters: &SingleLayerParameters<P0>,
+        odd_parameters: &SingleLayerParameters<P1>,
+        parent_rerandomization_scalar: P0::ScalarField,
+        child_rerandomization_scalar: P1::ScalarField,
+    ) {
+        // todo do not need to commit to the root. Would save two group elements in one of the proofs.
+        let (_, children_vars) = prover.commit_vec(
+            &self.siblings,
+            self.randomness + parent_rerandomization_scalar,
+            &even_parameters.bp_gens,
+        );
+        let child_commitment = self.child_witness;
+        let mut blinding_base = odd_parameters.pc_gens.B_blinding.into_projective();
+        blinding_base *= child_rerandomization_scalar;
+        let rerandomized_child = child_commitment + blinding_base.into_affine();
+
+        single_level_select_and_rerandomize(
+            prover,
+            odd_parameters,
+            &rerandomized_child,
+            children_vars,
+            Some(child_commitment),
+            Some(child_rerandomization_scalar),
+        );
+    }
+}
+
 #[derive(Clone)]
 pub struct CurveTreeNode<const L: usize, P0: SWModelParameters, P1: SWModelParameters> {
-    commitment: GroupAffine<P0>,
-    randomness: <GroupAffine<P0> as AffineCurve>::ScalarField,
+    parent_commitment: GroupAffine<P0>,
+    randomness: P0::ScalarField,
     children: Option<Box<[Option<CurveTreeNode<L, P1, P0>>; L]>>,
     height: usize,
     elements: usize,
@@ -347,14 +503,14 @@ impl<const L: usize, P0: SWModelParameters, P1: SWModelParameters> std::fmt::Deb
 
 impl<
         const L: usize,
-        P0: SWModelParameters + Clone,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        P0: SWModelParameters + Copy,
+        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
     > CurveTreeNode<L, P0, P1>
 {
     // The commitment is assumed to be permissible
     pub fn leaf(commitment: GroupAffine<P0>) -> Self {
         Self {
-            commitment,
+            parent_commitment: commitment,
             randomness: P0::ScalarField::zero(),
             children: None,
             height: 0,
@@ -366,65 +522,46 @@ impl<
         L.pow(self.height as u32)
     }
 
-    pub fn child_index(&self, index: usize) -> usize {
+    fn child_index(&self, index: usize) -> usize {
         let capacity = L.pow(self.height as u32);
         let child_capacity = L.pow((self.height - 1) as u32);
         (index % capacity) / child_capacity
     }
 
-    pub fn single_level_select_and_rerandomize_prover_gadget<R: Rng>(
+    fn select_and_rerandomize_prover_witness(
         &self,
         index: usize,
-        prover: &mut Prover<Transcript, GroupAffine<P0>>,
-        commitments: &mut Vec<GroupAffine<P1>>,
-        even_parameters: &SingleLayerParameters<P0>,
-        odd_parameters: &SingleLayerParameters<P1>,
-        rerandomization_scalar: P0::ScalarField,
-        rng: &mut R,
-    ) -> (&CurveTreeNode<L, P1, P0>, P1::ScalarField) {
-        let child_rerandomization_scalar = P1::ScalarField::rand(rng);
+        even_nodes: &mut Vec<CurveTreeWitness<L, P0, P1>>,
+        odd_nodes: &mut Vec<CurveTreeWitness<L, P1, P0>>,
+    ) {
+        if let Some(children) = &self.children {
+            let child_index = self.child_index(index);
+            let child = match &children[self.child_index(index)] {
+                None => panic!(
+                    "Child index out of bounds. Height: {}, Index: {}, Local index: {}",
+                    self.height, index, child_index
+                ),
+                Some(child) => child,
+            };
+            let siblings: [P0::ScalarField; L] = children
+                .iter()
+                .map(|opt| match opt {
+                    None => P0::ScalarField::zero(),
+                    Some(child) => child.parent_commitment.x,
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
 
-        let (child, rerandomized_child, children_vars) = match &self.children {
-            None => panic!("The node is assumed to be internal."),
-            Some(children) => {
-                let child = match &children[self.child_index(index)] {
-                    None => panic!(
-                        "Child index out of bounds. Height: {}, Index: {}",
-                        self.height, index
-                    ),
-                    Some(child) => child,
-                };
-                let (_, children_vars) = prover.commit_vec(
-                    children
-                        .iter()
-                        .map(|opt| match opt {
-                            None => P0::ScalarField::zero(),
-                            Some(child) => child.commitment.x,
-                        })
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                    self.randomness + rerandomization_scalar,
-                    &even_parameters.bp_gens,
-                );
-                let child_commitment = child.commitment;
-                let mut blinding_base = odd_parameters.pc_gens.B_blinding.into_projective();
-                blinding_base *= child_rerandomization_scalar;
-                let rerandomized_child = child_commitment + blinding_base.into_affine();
-                commitments.push(rerandomized_child);
-                (child, rerandomized_child, children_vars)
-            }
-        };
+            even_nodes.push(CurveTreeWitness {
+                randomness: self.randomness,
+                siblings,
+                child_witness: child.parent_commitment,
+            });
 
-        single_level_select_and_rerandomize(
-            prover,
-            odd_parameters,
-            &rerandomized_child,
-            children_vars,
-            Some(child.commitment),
-            Some(child_rerandomization_scalar),
-        );
-
-        (child, child_rerandomization_scalar)
+            // recursively add the remaining path
+            child.select_and_rerandomize_prover_witness(index, odd_nodes, even_nodes);
+        }
     }
 
     // Combine up to L nodes of level d into a single level d+1 node.
@@ -457,22 +594,24 @@ impl<
         } else {
             1
         };
-        // commit to the childrens x-coordinates with randomness zero, then increment randomness to find permissible point.
+        // commit to the children's x-coordinates with randomness zero, then increment randomness to find permissible point.
         let children_commitments = children
             .iter()
             .map(|c| {
                 if let Some(c) = c {
-                    c.commitment.x
+                    c.parent_commitment.x
                 } else {
                     P1::BaseField::zero()
                 }
             })
             .collect::<Vec<_>>();
-        let (c, r) = parameters
-            .permissible_commitment(children_commitments.as_slice(), P0::ScalarField::zero());
-
+        let (c, r) = parameters.permissible_commitment(
+            children_commitments.as_slice(),
+            P0::ScalarField::zero(),
+            0,
+        ); // todo index
         Self {
-            commitment: c,
+            parent_commitment: c,
             randomness: r,
             children: Some(Box::new(children)),
             height,
@@ -481,12 +620,12 @@ impl<
     }
 }
 
-pub struct SelRerandParameters<P0: SWModelParameters, P1: SWModelParameters> {
+pub struct SelRerandParameters<P0: SWModelParameters + Copy, P1: SWModelParameters + Copy> {
     pub even_parameters: SingleLayerParameters<P0>,
     pub odd_parameters: SingleLayerParameters<P1>,
 }
 
-impl<P0: SWModelParameters, P1: SWModelParameters> SelRerandParameters<P0, P1> {
+impl<P0: SWModelParameters + Copy, P1: SWModelParameters + Copy> SelRerandParameters<P0, P1> {
     pub fn new<R: Rng>(
         even_generators_length: usize,
         odd_generators_length: usize,

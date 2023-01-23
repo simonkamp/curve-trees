@@ -61,7 +61,7 @@ pub fn incomplete_curve_addition_helper<
             y_r: right.y,
             x_o: x_out.into(),
             y_o: y_out.into(),
-            delta: delta,
+            delta,
         },
     );
     PointRepresentation {
@@ -104,7 +104,7 @@ pub fn checked_curve_addition_helper<
             y_r: right.y,
             x_o: x_out.into(),
             y_o: y_out.into(),
-            delta: delta,
+            delta,
         },
         x_l_minus_x_r_inv,
     );
