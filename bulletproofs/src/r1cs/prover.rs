@@ -695,7 +695,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                     .chain(self.secrets.a_L.iter())
                     .chain(self.secrets.a_R.iter())
                     .map(|s| (*s).into())
-                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
             .into();
@@ -710,7 +710,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                 iter::once(&o_blinding1)
                     .chain(self.secrets.a_O.iter())
                     .map(|s| (*s).into())
-                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
             .into();
@@ -730,7 +730,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                     .chain(s_L1.iter())
                     .chain(s_R1.iter())
                     .map(|s| (*s).into())
-                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
             .into();
