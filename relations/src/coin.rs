@@ -1,3 +1,5 @@
+use ark_serialize::Compress;
+use ark_serialize::Valid;
 use bulletproofs::r1cs::*;
 use merlin::Transcript;
 use rand::Rng;
@@ -8,16 +10,19 @@ use crate::single_level_select_and_rerandomize::*;
 
 use ark_crypto_primitives::{
     signature::schnorr::{Parameters, PublicKey, Schnorr, SecretKey, Signature},
-    SignatureScheme,
+    signature::*,
 };
-use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, ProjectiveCurve, SWModelParameters};
-use ark_ff::{PrimeField, ToBytes};
+use ark_ec::{
+    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
+};
+use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::UniformRand;
-use blake2::Blake2s;
+use blake2::Blake2s256 as Blake2s;
+use std::hash::BuildHasher;
 use std::marker::PhantomData;
 
-pub struct Coin<P0: SWModelParameters + Clone, C: ProjectiveCurve> {
+pub struct Coin<P0: SWCurveConfig + Clone, C: CurveGroup> {
     pub value: u64,
     pub tag: P0::ScalarField, // spending tag derived from the rerandomized public key
     pub permissible_randomness: P0::ScalarField, // hiding and permissible randomness used to commit to `tag` and `value`
@@ -27,8 +32,8 @@ pub struct Coin<P0: SWModelParameters + Clone, C: ProjectiveCurve> {
 impl<
         F0: PrimeField,
         F1: PrimeField,
-        P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
-        C: ProjectiveCurve,
+        P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
+        C: CurveGroup,
     > Coin<P0, C>
 {
     pub fn mint<R: Rng>(
@@ -37,8 +42,8 @@ impl<
         parameters: &Parameters<C, Blake2s>,
         sr_parameters: &SingleLayerParameters<P0>,
         rng: &mut R,
-        prover: &mut Prover<Transcript, GroupAffine<P0>>,
-    ) -> (Coin<P0, C>, GroupAffine<P0>, Variable<P0::ScalarField>) {
+        prover: &mut Prover<Transcript, Affine<P0>>,
+    ) -> (Coin<P0, C>, Affine<P0>, Variable<P0::ScalarField>) {
         let (coin, _) = Self::new(value, pk, parameters, sr_parameters, rng);
 
         let (coin_commitment, variables) = prover.commit_vec(
@@ -57,7 +62,7 @@ impl<
         parameters: &Parameters<C, Blake2s>,
         sr_parameters: &SingleLayerParameters<P0>,
         rng: &mut R,
-    ) -> (Coin<P0, C>, GroupAffine<P0>) {
+    ) -> (Coin<P0, C>, Affine<P0>) {
         let pk_rerandomization = C::ScalarField::rand(rng);
         let randomized_pk = Self::rerandomized_pk(pk, &pk_rerandomization, parameters);
         let output_tag = Self::pk_to_scalar(&randomized_pk);
@@ -81,7 +86,7 @@ impl<
 
     fn pk_to_scalar(pk: &PublicKey<C>) -> P0::ScalarField {
         let mut pk_bytes = Vec::new();
-        pk.write(&mut pk_bytes).unwrap();
+        pk.serialize_compressed(&mut pk_bytes).unwrap();
         element_from_bytes_stat::<P0::ScalarField>(&pk_bytes)
     }
 
@@ -91,18 +96,20 @@ impl<
         parameters: &Parameters<C, Blake2s>,
     ) -> PublicKey<C> {
         let mut randomness = Vec::new();
-        rerandomization.write(&mut randomness).unwrap();
+        rerandomization
+            .serialize_compressed(&mut randomness)
+            .unwrap();
         Schnorr::randomize_public_key(parameters, pk, &randomness).unwrap()
     }
 
     pub fn prove_spend<
         const L: usize,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
     >(
         &self,
         index: usize,
-        even_prover: &mut Prover<Transcript, GroupAffine<P0>>,
-        odd_prover: &mut Prover<Transcript, GroupAffine<P1>>,
+        even_prover: &mut Prover<Transcript, Affine<P0>>,
+        odd_prover: &mut Prover<Transcript, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
         curve_tree: &CurveTree<L, P0, P1>,
     ) -> (SelectAndRerandomizePath<P0, P1>, Variable<P0::ScalarField>) {
@@ -130,9 +137,9 @@ impl<
     }
 }
 
-pub fn verify_mint<P: SWModelParameters>(
-    verifier: &mut Verifier<Transcript, GroupAffine<P>>,
-    commitment: GroupAffine<P>,
+pub fn verify_mint<P: SWCurveConfig>(
+    verifier: &mut Verifier<Transcript, Affine<P>>,
+    commitment: Affine<P>,
 ) -> Variable<P::ScalarField> {
     let variables = verifier.commit_vec(2, commitment);
     range_proof(verifier, variables[0].into(), None, 64).unwrap(); // todo range?
@@ -152,7 +159,7 @@ pub fn element_from_bytes_stat<F: PrimeField>(bytes: &[u8]) -> F {
     F::from_le_bytes_mod_order(&buf)
 }
 
-pub struct SpendingInfo<P: SWModelParameters + Clone, C: ProjectiveCurve> {
+pub struct SpendingInfo<P: SWCurveConfig + Clone, C: CurveGroup> {
     pub index: usize,
     pub coin_aux: Coin<P, C>,
     pub randomized_pk: PublicKey<C>,
@@ -163,13 +170,13 @@ pub fn prove_pour<
     const L: usize,
     F0: PrimeField,
     F1: PrimeField,
-    P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
-    P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
-    C: ProjectiveCurve,
+    P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
+    P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy,
+    C: CurveGroup,
     R: Rng,
 >(
-    mut even_prover: Prover<Transcript, GroupAffine<P0>>,
-    mut odd_prover: Prover<Transcript, GroupAffine<P1>>,
+    mut even_prover: Prover<Transcript, Affine<P0>>,
+    mut odd_prover: Prover<Transcript, Affine<P1>>,
     sr_parameters: &SelRerandParameters<P0, P1>,
     curve_tree: &CurveTree<L, P0, P1>,
     input_0: &SpendingInfo<P0, C>,
@@ -256,14 +263,14 @@ pub fn prove_pour<
         minted_coin_commitment_1,
     };
     // double sign
-    let mut proof_bytes = Vec::with_capacity(proof.serialized_size());
-    proof.serialize(&mut proof_bytes).unwrap();
+    let mut proof_bytes = Vec::with_capacity(proof.serialized_size(Compress::Yes));
+    proof.serialize_compressed(&mut proof_bytes).unwrap();
     let sig_0 = Schnorr::sign(sig_parameters, &input_0.sk, proof_bytes.as_slice(), rng).unwrap();
     let mut randomization_bytes = Vec::new();
     input_0
         .coin_aux
         .pk_randomness
-        .write(&mut randomization_bytes)
+        .serialize_compressed(&mut randomization_bytes)
         .unwrap();
     let sig_0 =
         Schnorr::randomize_signature(sig_parameters, &sig_0, randomization_bytes.as_slice())
@@ -274,7 +281,7 @@ pub fn prove_pour<
     input_1
         .coin_aux
         .pk_randomness
-        .write(&mut randomization_bytes)
+        .serialize_compressed(&mut randomization_bytes)
         .unwrap();
     let sig_1 =
         Schnorr::randomize_signature(sig_parameters, &sig_1, randomization_bytes.as_slice())
@@ -293,66 +300,112 @@ pub fn prove_pour<
 // todo do an n to m pour with arrays?
 #[derive(Clone)]
 pub struct Pour<
-    P0: SWModelParameters + Clone,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
-    C: ProjectiveCurve,
+    P0: SWCurveConfig + Clone,
+    P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+    C: CurveGroup,
 > {
-    pub even_proof: R1CSProof<GroupAffine<P0>>,
-    pub odd_proof: R1CSProof<GroupAffine<P1>>,
+    pub even_proof: R1CSProof<Affine<P0>>,
+    pub odd_proof: R1CSProof<Affine<P1>>,
     pub randomized_path_0: SelectAndRerandomizePath<P0, P1>,
     pub randomized_path_1: SelectAndRerandomizePath<P0, P1>,
     pub pk0: PublicKey<C>,
     pub pk1: PublicKey<C>,
-    pub minted_coin_commitment_0: GroupAffine<P0>,
-    pub minted_coin_commitment_1: GroupAffine<P0>,
+    pub minted_coin_commitment_0: Affine<P0>,
+    pub minted_coin_commitment_1: Affine<P0>,
 }
 
 impl<
-        P0: SWModelParameters + Clone,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
-        C: ProjectiveCurve,
+        P0: SWCurveConfig + Clone,
+        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        C: CurveGroup,
     > CanonicalSerialize for Pour<P0, P1, C>
 {
-    fn serialized_size(&self) -> usize {
-        self.even_proof.serialized_size()
-            + self.odd_proof.serialized_size()
-            + self.randomized_path_0.serialized_size()
-            + self.randomized_path_1.serialized_size()
-            + self.pk0.serialized_size()
-            + self.pk1.serialized_size()
-            + self.minted_coin_commitment_0.serialized_size()
-            + self.minted_coin_commitment_1.serialized_size()
+    fn serialized_size(&self, compress: Compress) -> usize {
+        self.even_proof.serialized_size(compress)
+            + self.odd_proof.serialized_size(compress)
+            + self.randomized_path_0.serialized_size(compress)
+            + self.randomized_path_1.serialized_size(compress)
+            + self.pk0.serialized_size(compress)
+            + self.pk1.serialized_size(compress)
+            + self.minted_coin_commitment_0.serialized_size(compress)
+            + self.minted_coin_commitment_1.serialized_size(compress)
     }
 
-    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        self.even_proof.serialize(&mut writer)?;
-        self.odd_proof.serialize(&mut writer)?;
-        self.randomized_path_0.serialize(&mut writer)?;
-        self.randomized_path_1.serialize(&mut writer)?;
-        self.pk0.serialize(&mut writer)?;
-        self.pk1.serialize(&mut writer)?;
-        self.minted_coin_commitment_0.serialize(&mut writer)?;
-        self.minted_coin_commitment_1.serialize(&mut writer)?;
+    fn serialize_with_mode<W: Write>(
+        &self,
+        mut writer: W,
+        compress: Compress,
+    ) -> Result<(), SerializationError> {
+        self.even_proof.serialize_with_mode(&mut writer, compress)?;
+        self.odd_proof.serialize_with_mode(&mut writer, compress)?;
+        self.randomized_path_0
+            .serialize_with_mode(&mut writer, compress)?;
+        self.randomized_path_1
+            .serialize_with_mode(&mut writer, compress)?;
+        self.pk0.serialize_with_mode(&mut writer, compress)?;
+        self.pk1.serialize_with_mode(&mut writer, compress)?;
+        self.minted_coin_commitment_0
+            .serialize_with_mode(&mut writer, compress)?;
+        self.minted_coin_commitment_1
+            .serialize_with_mode(&mut writer, compress)?;
         Ok(())
     }
 }
 
 impl<
-        P0: SWModelParameters + Clone,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
-        C: ProjectiveCurve,
+        P0: SWCurveConfig + Clone,
+        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        C: CurveGroup,
+    > Valid for Pour<P0, P1, C>
+{
+    fn check(&self) -> Result<(), SerializationError> {
+        Ok(()) // todo
+    }
+}
+impl<
+        P0: SWCurveConfig + Clone,
+        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
+        C: CurveGroup,
     > CanonicalDeserialize for Pour<P0, P1, C>
 {
-    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+    fn deserialize_with_mode<R: Read>(
+        mut reader: R,
+        compress: Compress,
+        validate: ark_serialize::Validate,
+    ) -> Result<Self, SerializationError> {
         Ok(Self {
-            even_proof: R1CSProof::<GroupAffine<P0>>::deserialize(&mut reader)?,
-            odd_proof: R1CSProof::<GroupAffine<P1>>::deserialize(&mut reader)?,
-            randomized_path_0: SelectAndRerandomizePath::<P0, P1>::deserialize(&mut reader)?,
-            randomized_path_1: SelectAndRerandomizePath::<P0, P1>::deserialize(&mut reader)?,
-            pk0: PublicKey::<C>::deserialize(&mut reader)?,
-            pk1: PublicKey::<C>::deserialize(&mut reader)?,
-            minted_coin_commitment_0: GroupAffine::<P0>::deserialize(&mut reader)?,
-            minted_coin_commitment_1: GroupAffine::<P0>::deserialize(&mut reader)?,
+            even_proof: R1CSProof::<Affine<P0>>::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            odd_proof: R1CSProof::<Affine<P1>>::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            randomized_path_0: SelectAndRerandomizePath::<P0, P1>::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            randomized_path_1: SelectAndRerandomizePath::<P0, P1>::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            pk0: PublicKey::<C>::deserialize_with_mode(&mut reader, compress, validate)?,
+            pk1: PublicKey::<C>::deserialize_with_mode(&mut reader, compress, validate)?,
+            minted_coin_commitment_0: Affine::<P0>::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            minted_coin_commitment_1: Affine::<P0>::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
         })
     }
 }
@@ -360,9 +413,9 @@ impl<
 impl<
         F0: PrimeField,
         F1: PrimeField,
-        P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
-        P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
-        C: ProjectiveCurve,
+        P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
+        P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy,
+        C: CurveGroup,
     > Pour<P0, P1, C>
 {
     // verification
@@ -372,7 +425,7 @@ impl<
         sr_parameters: &SelRerandParameters<P0, P1>,
         spend_commitments_0: &SRVerificationCommitments<P0, P1>,
         spend_commitments_1: &SRVerificationCommitments<P0, P1>,
-    ) -> VerificationTuple<GroupAffine<P0>> {
+    ) -> VerificationTuple<Affine<P0>> {
         let mut even_verifier = Verifier::new(Transcript::new(ro_domain));
         // mint
         let minted_amount_var_0 = verify_mint(&mut even_verifier, self.minted_coin_commitment_0);
@@ -409,7 +462,7 @@ impl<
         sr_parameters: &SelRerandParameters<P0, P1>,
         spend_commitments_0: &SRVerificationCommitments<P0, P1>,
         spend_commitments_1: &SRVerificationCommitments<P0, P1>,
-    ) -> VerificationTuple<GroupAffine<P1>> {
+    ) -> VerificationTuple<Affine<P1>> {
         let mut odd_verifier = Verifier::new(Transcript::new(ro_domain));
         // spend
         verify_spend_odd(&mut odd_verifier, spend_commitments_0, sr_parameters);
@@ -426,10 +479,7 @@ impl<
         ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
         curve_tree: &CurveTree<L, P0, P1>,
-    ) -> (
-        VerificationTuple<GroupAffine<P0>>,
-        VerificationTuple<GroupAffine<P1>>,
-    ) {
+    ) -> (VerificationTuple<Affine<P0>>, VerificationTuple<Affine<P1>>) {
         #[cfg(feature = "parallel")]
         let (spend_commitments_0, spend_commitments_1) = {
             // todo this might not be worth the overhead
@@ -506,11 +556,11 @@ impl<
 fn verify_spend_even<
     F0: PrimeField,
     F1: PrimeField,
-    P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
-    P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
-    C: ProjectiveCurve,
+    P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
+    P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy,
+    C: CurveGroup,
 >(
-    even_verifier: &mut Verifier<Transcript, GroupAffine<P0>>,
+    even_verifier: &mut Verifier<Transcript, Affine<P0>>,
     commitments: &SRVerificationCommitments<P0, P1>,
     sr_parameters: &SelRerandParameters<P0, P1>,
     pk: &PublicKey<C>,
@@ -526,10 +576,11 @@ fn verify_spend_even<
 }
 
 fn verify_spend_odd<
-    P0: SWModelParameters + Copy,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+    F: PrimeField,
+    P0: SWCurveConfig<BaseField = F> + Copy,
+    P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = F> + Copy,
 >(
-    odd_verifier: &mut Verifier<Transcript, GroupAffine<P1>>,
+    odd_verifier: &mut Verifier<Transcript, Affine<P1>>,
     commitments: &SRVerificationCommitments<P0, P1>,
     sr_parameters: &SelRerandParameters<P0, P1>,
 ) {
@@ -538,9 +589,9 @@ fn verify_spend_odd<
 
 #[derive(Clone)]
 pub struct SignedTx<
-    P0: SWModelParameters + Copy,
-    P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
-    C: ProjectiveCurve,
+    P0: SWCurveConfig + Copy,
+    P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+    C: CurveGroup,
 > {
     pub signature_prover_response_0: C::ScalarField,
     pub signature_verifier_challenge_0: C::ScalarField,
@@ -553,9 +604,9 @@ pub struct SignedTx<
 impl<
         F0: PrimeField,
         F1: PrimeField,
-        P0: SWModelParameters<BaseField = F1, ScalarField = F0> + Copy,
-        P1: SWModelParameters<BaseField = F0, ScalarField = F1> + Copy,
-        C: ProjectiveCurve,
+        P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
+        P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy,
+        C: CurveGroup,
     > SignedTx<P0, P1, C>
 {
     pub fn verification_gadget<const L: usize>(
@@ -564,11 +615,8 @@ impl<
         sr_parameters: &SelRerandParameters<P0, P1>,
         curve_tree: &CurveTree<L, P0, P1>,
         sig_parameters: &Parameters<C, Blake2s>,
-    ) -> (
-        VerificationTuple<GroupAffine<P0>>,
-        VerificationTuple<GroupAffine<P1>>,
-    ) {
-        let pour = Pour::<P0, P1, C>::deserialize(self.pour_bytes.as_slice()).unwrap();
+    ) -> (VerificationTuple<Affine<P0>>, VerificationTuple<Affine<P1>>) {
+        let pour = Pour::<P0, P1, C>::deserialize_compressed(self.pour_bytes.as_slice()).unwrap();
         let pk0 = pour.pk0;
         let pk1 = pour.pk1;
         #[cfg(feature = "parallel")]
@@ -614,42 +662,80 @@ impl<
 }
 
 impl<
-        P0: SWModelParameters + Copy,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
-        C: ProjectiveCurve,
+        P0: SWCurveConfig + Copy,
+        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+        C: CurveGroup,
     > CanonicalSerialize for SignedTx<P0, P1, C>
 {
-    fn serialized_size(&self) -> usize {
-        self.pour_bytes.serialized_size()
-            + self.signature_prover_response_0.serialized_size()
-            + self.signature_verifier_challenge_0.serialized_size()
-            + self.signature_prover_response_1.serialized_size()
-            + self.signature_verifier_challenge_1.serialized_size()
+    fn serialized_size(&self, mode: Compress) -> usize {
+        self.pour_bytes.serialized_size(mode)
+            + self.signature_prover_response_0.serialized_size(mode)
+            + self.signature_verifier_challenge_0.serialized_size(mode)
+            + self.signature_prover_response_1.serialized_size(mode)
+            + self.signature_verifier_challenge_1.serialized_size(mode)
     }
 
-    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        self.signature_prover_response_0.serialize(&mut writer)?;
-        self.signature_verifier_challenge_0.serialize(&mut writer)?;
-        self.signature_prover_response_1.serialize(&mut writer)?;
-        self.signature_verifier_challenge_1.serialize(&mut writer)?;
-        self.pour_bytes.serialize(&mut writer)?;
+    fn serialize_with_mode<W: Write>(
+        &self,
+        mut writer: W,
+        compress: ark_serialize::Compress,
+    ) -> Result<(), SerializationError> {
+        self.signature_prover_response_0
+            .serialize_with_mode(&mut writer, compress)?;
+        self.signature_verifier_challenge_0
+            .serialize_with_mode(&mut writer, compress)?;
+        self.signature_prover_response_1
+            .serialize_with_mode(&mut writer, compress)?;
+        self.signature_verifier_challenge_1
+            .serialize_with_mode(&mut writer, compress)?;
+        self.pour_bytes.serialize_with_mode(&mut writer, compress)?;
         Ok(())
     }
 }
 
 impl<
-        P0: SWModelParameters + Copy,
-        P1: SWModelParameters<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
-        C: ProjectiveCurve,
+        P0: SWCurveConfig + Copy,
+        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+        C: CurveGroup,
+    > Valid for SignedTx<P0, P1, C>
+{
+    fn check(&self) -> Result<(), SerializationError> {
+        Ok(())
+    }
+}
+impl<
+        P0: SWCurveConfig + Copy,
+        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+        C: CurveGroup,
     > CanonicalDeserialize for SignedTx<P0, P1, C>
 {
-    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+    fn deserialize_with_mode<R: Read>(
+        mut reader: R,
+        compress: ark_serialize::Compress,
+        validate: ark_serialize::Validate,
+    ) -> Result<Self, SerializationError> {
         Ok(Self {
-            signature_prover_response_0: C::ScalarField::deserialize(&mut reader)?,
-            signature_verifier_challenge_0: C::ScalarField::deserialize(&mut reader)?,
-            signature_prover_response_1: C::ScalarField::deserialize(&mut reader)?,
-            signature_verifier_challenge_1: C::ScalarField::deserialize(&mut reader)?,
-            pour_bytes: Vec::<u8>::deserialize(&mut reader)?,
+            signature_prover_response_0: C::ScalarField::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            signature_verifier_challenge_0: C::ScalarField::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            signature_prover_response_1: C::ScalarField::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            signature_verifier_challenge_1: C::ScalarField::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            pour_bytes: Vec::<u8>::deserialize_with_mode(&mut reader, compress, validate)?,
             _pour_type: PhantomData,
         })
     }
@@ -659,10 +745,9 @@ impl<
 mod tests {
     use super::*;
     use merlin::Transcript;
-    use pasta;
-    type PallasParameters = pasta::pallas::PallasParameters;
-    type VestaParameters = pasta::vesta::VestaParameters;
-    type PallasP = pasta::pallas::Projective;
+    type PallasParameters = ark_pallas::PallasConfig;
+    type VestaParameters = ark_vesta::VestaConfig;
+    type PallasP = ark_pallas::Projective;
 
     #[test]
     fn test_schnorr() {
@@ -691,11 +776,11 @@ mod tests {
         );
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+        let mut pallas_prover: Prover<_, Affine<PallasParameters>> =
             Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+        let mut vesta_prover: Prover<_, Affine<VestaParameters>> =
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
@@ -780,11 +865,11 @@ mod tests {
         );
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-        let pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+        let pallas_prover: Prover<_, Affine<PallasParameters>> =
             Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-        let vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+        let vesta_prover: Prover<_, Affine<VestaParameters>> =
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();

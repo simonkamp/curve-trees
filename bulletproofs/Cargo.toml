@@ -30,8 +30,7 @@ rayon = {verison = "1.5.3", optional = true}
 [dev-dependencies]
 criterion = "0.3"
 ark-algebra-test-templates = "0.3.0"
-# pasta = { path = "../pasta", default-features = false }
-ark-pallas = "0.4.0"
+ark-pallas = "0.4.0" # todo flags?
 ark-vesta = "0.4.0"
 
 [features]

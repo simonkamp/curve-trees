@@ -117,16 +117,15 @@ pub fn lookup<const N: usize, F: Field, Cs: ConstraintSystem<F>>(
 mod tests {
     use super::*;
 
-    use ark_ec::AffineCurve;
+    use ark_ec::AffineRepr;
     use ark_std::UniformRand;
     use bulletproofs::{BulletproofGens, PedersenGens};
     use merlin::Transcript;
 
     use rand::thread_rng;
 
-    use pasta;
-    type C = pasta::pallas::Affine;
-    type F = <C as AffineCurve>::ScalarField;
+    type C = ark_pallas::Affine;
+    type F = <C as AffineRepr>::ScalarField;
 
     #[test]
     fn test_lookup() {

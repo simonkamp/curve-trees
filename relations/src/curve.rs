@@ -1,4 +1,4 @@
-use ark_ec::{short_weierstrass_jacobian::GroupAffine, AffineCurve, SWModelParameters};
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::Field;
 use bulletproofs::r1cs::*;
 use std::marker::PhantomData;
@@ -25,7 +25,7 @@ pub fn curve_check<F: Field, Cs: ConstraintSystem<F>>(
 /// A point represented by variables corresponding to its affine coordinates and optionally the value of those,
 /// which must be known by the prover.
 #[derive(Clone)]
-pub struct PointRepresentation<F: Field, C: AffineCurve<BaseField = F>> {
+pub struct PointRepresentation<F: Field, C: AffineRepr<BaseField = F>> {
     pub x: LinearCombination<F>,
     pub y: LinearCombination<F>,
     pub witness: Option<C>, // Some(x,y) for the prover, otherwise None
@@ -36,22 +36,23 @@ pub struct PointRepresentation<F: Field, C: AffineCurve<BaseField = F>> {
 pub fn incomplete_curve_addition_helper<
     F: Field,
     Cs: ConstraintSystem<F>,
-    P: SWModelParameters<BaseField = F>,
+    P: AffineRepr<BaseField = F>,
 >(
     cs: &mut Cs,
-    left: PointRepresentation<F, GroupAffine<P>>,
-    right: PointRepresentation<F, GroupAffine<P>>,
-) -> PointRepresentation<F, GroupAffine<P>> {
+    left: PointRepresentation<F, P>,
+    right: PointRepresentation<F, P>,
+) -> PointRepresentation<F, P> {
     let (out_witness, delta) = match (left.witness, right.witness) {
         (Some(left), Some(right)) => {
-            let out = left + right;
-            let delta = (right.y - left.y) / (right.x - left.x);
+            let out = (left + right).into_affine();
+            let delta = (*right.y().unwrap() - *left.y().unwrap())
+                / (*right.x().unwrap() - *left.x().unwrap());
             (Some(out), Some(delta))
         }
         _ => (None, None),
     };
-    let x_out = cs.allocate(out_witness.map(|o| o.x)).unwrap();
-    let y_out = cs.allocate(out_witness.map(|o| o.y)).unwrap();
+    let x_out = cs.allocate(out_witness.map(|o| *o.x().unwrap())).unwrap();
+    let y_out = cs.allocate(out_witness.map(|o| *o.y().unwrap())).unwrap();
     incomplete_curve_addition(
         cs,
         &CurveAddition {
@@ -77,24 +78,25 @@ pub fn incomplete_curve_addition_helper<
 pub fn checked_curve_addition_helper<
     F: Field,
     Cs: ConstraintSystem<F>,
-    P: SWModelParameters<BaseField = F>,
+    P: AffineRepr<BaseField = F>,
 >(
     cs: &mut Cs,
-    left: PointRepresentation<F, GroupAffine<P>>,
-    right: PointRepresentation<F, GroupAffine<P>>,
-) -> PointRepresentation<F, GroupAffine<P>> {
+    left: PointRepresentation<F, P>,
+    right: PointRepresentation<F, P>,
+) -> PointRepresentation<F, P> {
     let (out_witness, delta, x_l_minus_x_r_inv) = match (left.witness, right.witness) {
         (Some(left), Some(right)) => {
-            let out = left + right;
-            let delta = (right.y - left.y) / (right.x - left.x);
-            assert_ne!(left.x, right.x);
-            let x_l_minus_x_r_inv = F::one() / (left.x - right.x);
+            let out = (left + right).into_affine();
+            let delta = (*right.y().unwrap() - left.y().unwrap())
+                / (*right.x().unwrap() - left.x().unwrap());
+            assert_ne!(left.x().unwrap(), right.x().unwrap());
+            let x_l_minus_x_r_inv = F::one() / (*left.x().unwrap() - right.x().unwrap());
             (Some(out), Some(delta), Some(x_l_minus_x_r_inv))
         }
         _ => (None, None, None),
     };
-    let x_out = cs.allocate(out_witness.map(|o| o.x)).unwrap();
-    let y_out = cs.allocate(out_witness.map(|o| o.y)).unwrap();
+    let x_out = cs.allocate(out_witness.map(|o| *o.x().unwrap())).unwrap();
+    let y_out = cs.allocate(out_witness.map(|o| *o.y().unwrap())).unwrap();
     checked_curve_addition(
         cs,
         &CurveAddition {
@@ -186,28 +188,27 @@ fn not_zero<F: Field, Cs: ConstraintSystem<F>>(
 mod tests {
     use super::*;
 
-    use ark_ec::ProjectiveCurve;
+    // use ark_ec::ProjectiveCurve;
     use ark_std::{One, UniformRand, Zero};
     use bulletproofs::{BulletproofGens, PedersenGens};
-    use pasta::{
-        pallas::Affine as PallasA, pallas::Projective as PallasP, vesta::Affine as VestaA,
-        vesta::Projective as VestaP,
-    };
-    type VestaScalar = <VestaP as ProjectiveCurve>::ScalarField;
+
+    use ark_pallas::Affine as PallasA;
+    // use ark_pallas::Projective as PallasP;
+    use ark_vesta::Affine as VestaA;
+    // use ark_vesta::Projective as VestaP;
+    type VestaScalar = <VestaA as AffineRepr>::ScalarField;
     use merlin::Transcript;
 
     #[test]
     fn test_curve_addition() {
         let mut rng = rand::thread_rng();
-        let p = <PallasP as UniformRand>::rand(&mut rng);
-        let pa = p.into_affine();
-        let x_l: VestaScalar = (pa as PallasA).x;
-        let y_l: VestaScalar = (pa as PallasA).y;
+        let p = <PallasA as UniformRand>::rand(&mut rng);
+        let x_l: VestaScalar = (p as PallasA).x;
+        let y_l: VestaScalar = (p as PallasA).y;
 
-        let q = <PallasP as UniformRand>::rand(&mut rng);
-        let qa = q.into_affine();
-        let x_r: VestaScalar = (qa as PallasA).x;
-        let y_r: VestaScalar = (qa as PallasA).y;
+        let q = <PallasA as UniformRand>::rand(&mut rng);
+        let x_r: VestaScalar = (q as PallasA).x;
+        let y_r: VestaScalar = (q as PallasA).y;
 
         let p_plus_q = p + q;
         let p_plus_qa = p_plus_q.into_affine();
@@ -275,15 +276,13 @@ mod tests {
     #[test]
     fn test_curve_addition_helper() {
         let mut rng = rand::thread_rng();
-        let p = <PallasP as UniformRand>::rand(&mut rng);
-        let pa = p.into_affine();
-        let x_l: VestaScalar = (pa as PallasA).x;
-        let y_l: VestaScalar = (pa as PallasA).y;
+        let p = <PallasA as UniformRand>::rand(&mut rng);
+        let x_l: VestaScalar = (p as PallasA).x;
+        let y_l: VestaScalar = (p as PallasA).y;
 
-        let q = <PallasP as UniformRand>::rand(&mut rng);
-        let qa = q.into_affine();
-        let x_r: VestaScalar = (qa as PallasA).x;
-        let y_r: VestaScalar = (qa as PallasA).y;
+        let q = <PallasA as UniformRand>::rand(&mut rng);
+        let x_r: VestaScalar = (q as PallasA).x;
+        let y_r: VestaScalar = (q as PallasA).y;
 
         let pc_gens = PedersenGens::<VestaA>::default();
         let bp_gens = BulletproofGens::<VestaA>::new(8, 1);
@@ -300,12 +299,12 @@ mod tests {
             PointRepresentation {
                 x: x_l_var.into(),
                 y: y_l_var.into(),
-                witness: Some(pa),
+                witness: Some(p),
             },
             PointRepresentation {
                 x: x_r_var.into(),
                 y: y_r_var.into(),
-                witness: Some(qa),
+                witness: Some(q),
             },
         );
         assert_eq!(
@@ -322,7 +321,7 @@ mod tests {
         let y_l_var = verifier.commit(y_l_comm);
         let x_r_var = verifier.commit(x_r_comm);
         let y_r_var = verifier.commit(y_r_comm);
-        incomplete_curve_addition_helper::<_, _, pasta::pallas::PallasParameters>(
+        incomplete_curve_addition_helper::<_, _, PallasA>(
             &mut verifier,
             PointRepresentation {
                 x: x_l_var.into(),
@@ -342,15 +341,13 @@ mod tests {
     #[test]
     fn test_checked_curve_addition_helper() {
         let mut rng = rand::thread_rng();
-        let p = <PallasP as UniformRand>::rand(&mut rng);
-        let pa = p.into_affine();
-        let x_l: VestaScalar = (pa as PallasA).x;
-        let y_l: VestaScalar = (pa as PallasA).y;
+        let p = <PallasA as UniformRand>::rand(&mut rng);
+        let x_l: VestaScalar = (p as PallasA).x;
+        let y_l: VestaScalar = (p as PallasA).y;
 
-        let q = <PallasP as UniformRand>::rand(&mut rng);
-        let qa = q.into_affine();
-        let x_r: VestaScalar = (qa as PallasA).x;
-        let y_r: VestaScalar = (qa as PallasA).y;
+        let q = <PallasA as UniformRand>::rand(&mut rng);
+        let x_r: VestaScalar = (q as PallasA).x;
+        let y_r: VestaScalar = (q as PallasA).y;
 
         let pc_gens = PedersenGens::<VestaA>::default();
         let bp_gens = BulletproofGens::<VestaA>::new(8, 1);
@@ -367,12 +364,12 @@ mod tests {
             PointRepresentation {
                 x: x_l_var.into(),
                 y: y_l_var.into(),
-                witness: Some(pa),
+                witness: Some(p),
             },
             PointRepresentation {
                 x: x_r_var.into(),
                 y: y_r_var.into(),
-                witness: Some(qa),
+                witness: Some(q),
             },
         );
         assert_eq!(
@@ -391,7 +388,7 @@ mod tests {
         let y_l_var = verifier.commit(y_l_comm);
         let x_r_var = verifier.commit(x_r_comm);
         let y_r_var = verifier.commit(y_r_comm);
-        checked_curve_addition_helper::<_, _, pasta::pallas::PallasParameters>(
+        checked_curve_addition_helper::<_, _, PallasA>(
             &mut verifier,
             PointRepresentation {
                 x: x_l_var.into(),

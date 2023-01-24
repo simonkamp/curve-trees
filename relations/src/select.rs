@@ -23,17 +23,16 @@ pub fn select<F: Field, Cs: ConstraintSystem<F>>(
 mod tests {
     use super::*;
 
-    use ark_ec::AffineCurve;
+    use ark_ec::AffineRepr;
     use ark_std::UniformRand;
     use bulletproofs::{BulletproofGens, PedersenGens};
     use merlin::Transcript;
     use std::iter;
 
-    use pasta;
-    type PallasA = pasta::pallas::Affine;
-    type PallasBase = <PallasA as AffineCurve>::BaseField;
-    type VestaA = pasta::vesta::Affine;
-    type VestaScalar = <VestaA as AffineCurve>::ScalarField;
+    type PallasA = ark_pallas::Affine;
+    type PallasBase = <PallasA as AffineRepr>::BaseField;
+    type VestaA = ark_vesta::Affine;
+    type VestaScalar = <VestaA as AffineRepr>::ScalarField;
 
     #[test]
     fn test_select() {
