@@ -6,12 +6,12 @@ extern crate alloc;
 use alloc::borrow::Borrow;
 use alloc::vec::Vec;
 
-use ark_ec::{msm::VariableBaseMSM, AffineCurve};
+use ark_ec::{VariableBaseMSM, AffineRepr};
 use ark_ff::{
     fields::{batch_inversion, PrimeField},
     Field,
 };
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write, Valid, Compress};
 use ark_std::One;
 use core::iter;
 use merlin::Transcript;
@@ -20,14 +20,14 @@ use crate::errors::ProofError;
 use crate::transcript::TranscriptProtocol;
 
 #[derive(Clone, Debug)]
-pub struct InnerProductProof<C: AffineCurve> {
+pub struct InnerProductProof<C: AffineRepr> {
     pub(crate) L_vec: Vec<C>,
     pub(crate) R_vec: Vec<C>,
     pub(crate) a: C::ScalarField,
     pub(crate) b: C::ScalarField,
 }
 
-impl<C: AffineCurve> InnerProductProof<C> {
+impl<C: AffineRepr> InnerProductProof<C> {
     /// Create an inner-product proof.
     ///
     /// The proof is created with respect to the bases \\(G\\), \\(H'\\),
@@ -88,7 +88,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
             let c_L = inner_product(a_L, b_R);
             let c_R = inner_product(a_R, b_L);
 
-            let l_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = a_L
+            let l_scalars: Vec<C::ScalarField> = a_L
                 .iter()
                 .zip(G_factors[n..2 * n].iter())
                 .map(|(a_L_i, g)| *a_L_i * g)
@@ -107,9 +107,9 @@ impl<C: AffineCurve> InnerProductProof<C> {
                 .cloned()
                 .collect();
             let L =
-                VariableBaseMSM::multi_scalar_mul(l_points.as_slice(), l_scalars.as_slice()).into();
+                C::Group::msm_unchecked(l_points.as_slice(), l_scalars.as_slice()).into();
 
-            let r_scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = a_R
+                let r_scalars: Vec<C::ScalarField> = a_R
                 .iter()
                 .zip(G_factors[0..n].iter())
                 .map(|(a_R_i, g)| *a_R_i * g)
@@ -128,7 +128,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
                 .cloned()
                 .collect(); // todo avoid cloning?
             let R =
-                VariableBaseMSM::multi_scalar_mul(r_points.as_slice(), r_scalars.as_slice()).into();
+                C::Group::msm_unchecked(r_points.as_slice(), r_scalars.as_slice()).into();
 
             L_vec.push(L);
             R_vec.push(R);
@@ -147,12 +147,12 @@ impl<C: AffineCurve> InnerProductProof<C> {
             for i in 0..n {
                 a_L[i] = a_L[i] * u + u_inv * a_R[i];
                 b_L[i] = b_L[i] * u_inv + u * b_R[i];
-                G_L[i] = VariableBaseMSM::multi_scalar_mul(
+                G_L[i] = C::Group::msm_unchecked(
                     &[G_L[i], G_R[i]],
                     &[(u_inv * G_factors[i]).into(), (u * G_factors[n + i]).into()],
                 )
                 .into();
-                H_L[i] = VariableBaseMSM::multi_scalar_mul(
+                H_L[i] = C::Group::msm_unchecked(
                     &[H_L[i], H_R[i]],
                     &[(u * H_factors[i]).into(), (u_inv * H_factors[n + i]).into()],
                 )
@@ -175,7 +175,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
             let c_L = inner_product(a_L, b_R);
             let c_R = inner_product(a_R, b_L);
 
-            let L = VariableBaseMSM::multi_scalar_mul(
+            let L = C::Group::msm_unchecked(
                 G_R.iter()
                     .chain(H_L.iter())
                     .chain(iter::once(Q))
@@ -186,12 +186,12 @@ impl<C: AffineCurve> InnerProductProof<C> {
                     .chain(b_R.iter())
                     .chain(iter::once(&c_L))
                     .map(|s| (*s).into())
-                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
             .into();
 
-            let R = VariableBaseMSM::multi_scalar_mul(
+            let R = C::Group::msm_unchecked(
                 G_L.iter()
                     .chain(H_R.iter())
                     .chain(iter::once(Q))
@@ -202,7 +202,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
                     .chain(b_L.iter())
                     .chain(iter::once(&c_R))
                     .map(|s| (*s).into())
-                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
             .into();
@@ -224,10 +224,10 @@ impl<C: AffineCurve> InnerProductProof<C> {
                 a_L[i] = a_L[i] * u + u_inv * a_R[i];
                 b_L[i] = b_L[i] * u_inv + u * b_R[i];
                 G_L[i] =
-                    VariableBaseMSM::multi_scalar_mul(&[G_L[i], G_R[i]], &[u_inv.into(), u.into()])
+                    C::Group::msm_unchecked(&[G_L[i], G_R[i]], &[u_inv.into(), u.into()])
                         .into();
                 H_L[i] =
-                    VariableBaseMSM::multi_scalar_mul(&[H_L[i], H_R[i]], &[u.into(), u_inv.into()])
+                    C::Group::msm_unchecked(&[H_L[i], H_R[i]], &[u.into(), u_inv.into()])
                         .into();
             }
 
@@ -358,7 +358,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
         let neg_u_sq = u_sq.iter().map(|ui| -(*ui));
         let neg_u_inv_sq = u_inv_sq.iter().map(|ui| -(*ui));
 
-        let expect_P = VariableBaseMSM::multi_scalar_mul(
+        let expect_P = C::Group::msm_unchecked(
             iter::once(Q)
                 .chain(G.iter())
                 .chain(H.iter())
@@ -373,7 +373,7 @@ impl<C: AffineCurve> InnerProductProof<C> {
                 .chain(neg_u_sq)
                 .chain(neg_u_inv_sq)
                 .map(|s| (s).into())
-                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                .collect::<Vec<C::ScalarField>>()
                 .as_slice(),
         );
 
@@ -386,37 +386,44 @@ impl<C: AffineCurve> InnerProductProof<C> {
 
     /// Returns the size in bytes required to serialize the inner
     /// product proof.
-    pub fn serialized_size(&self) -> usize {
+    pub fn serialized_size(&self, compress: Compress) -> usize {
         // size of the two scalars
-        let scalars_size = self.a.serialized_size() * 2;
+        let scalars_size = self.a.serialized_size(compress) * 2;
         // size of the 2 point vectors (should be equal)
-        let l_and_r_size = self.L_vec.serialized_size() * 2;
+        let l_and_r_size = self.L_vec.serialized_size(compress) * 2;
         scalars_size + l_and_r_size
     }
 }
 
-impl<C: AffineCurve> CanonicalDeserialize for InnerProductProof<C> {
-    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+impl<C: AffineRepr> Valid for InnerProductProof<C> { 
+    fn check(&self) -> Result<(), SerializationError> { Ok(())}
+}
+impl<C: AffineRepr> CanonicalDeserialize for InnerProductProof<C> {
+    fn deserialize_with_mode<R: Read>(
+            mut reader: R,
+            compress: Compress, // todo
+            validate: ark_serialize::Validate,
+        ) -> Result<Self, SerializationError> {
         Ok(Self {
-            L_vec: Vec::<C>::deserialize(&mut reader)?,
-            R_vec: Vec::<C>::deserialize(&mut reader)?,
-            a: C::ScalarField::deserialize(&mut reader)?,
-            b: C::ScalarField::deserialize(&mut reader)?,
+            L_vec: Vec::<C>::deserialize_compressed(&mut reader)?,
+            R_vec: Vec::<C>::deserialize_compressed(&mut reader)?,
+            a: C::ScalarField::deserialize_compressed(&mut reader)?,
+            b: C::ScalarField::deserialize_compressed(&mut reader)?,
         })
     }
 }
 
-impl<C: AffineCurve> CanonicalSerialize for InnerProductProof<C> {
+impl<C: AffineRepr> CanonicalSerialize for InnerProductProof<C> {
     /// Returns the size in bytes required to serialize the inner
     /// product proof.
     ///
     /// For vectors of length `n` the proof size is
     /// \\(32 \cdot (2\lg n+2)\\) bytes.
-    fn serialized_size(&self) -> usize {
+    fn serialized_size(&self, mode: Compress) -> usize {
         // size of the two scalars
-        let scalars_size = self.a.serialized_size() * 2;
+        let scalars_size = self.a.serialized_size(mode) * 2;
         // size of the 2 point vectors (should be equal)
-        let l_and_r_size = self.L_vec.serialized_size() * 2;
+        let l_and_r_size = self.L_vec.serialized_size(mode) * 2;
         scalars_size + l_and_r_size
     }
 
@@ -424,11 +431,15 @@ impl<C: AffineCurve> CanonicalSerialize for InnerProductProof<C> {
     /// The layout of the inner product proof is:
     /// * \\(n\\) pairs of compressed Ristretto points \\(L_0, R_0 \dots, L_{n-1}, R_{n-1}\\),
     /// * two scalars \\(a, b\\).
-    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        self.L_vec.serialize(&mut writer)?;
-        self.R_vec.serialize(&mut writer)?;
-        self.a.serialize(&mut writer)?;
-        self.b.serialize(&mut writer)?;
+    fn serialize_with_mode<W: Write>(
+            &self,
+            mut writer: W,
+            compress: Compress, // todo
+        ) -> Result<(), SerializationError> {
+        self.L_vec.serialize_compressed(&mut writer)?;
+        self.R_vec.serialize_compressed(&mut writer)?;
+        self.a.serialize_compressed(&mut writer)?;
+        self.b.serialize_compressed(&mut writer)?;
         Ok(())
     }
 }
@@ -456,7 +467,7 @@ mod tests {
     use ark_std::UniformRand;
     use pasta::pallas::Affine;
 
-    type F = <Affine as AffineCurve>::ScalarField;
+    type F = <Affine as AffineRepr>::ScalarField;
 
     use crate::util;
 
@@ -481,7 +492,7 @@ mod tests {
         let b: Vec<_> = (0..n).map(|_| F::rand(&mut rng)).collect();
         let c = inner_product(&a, &b);
 
-        let G_factors: Vec<_> = iter::repeat(<Affine as AffineCurve>::ScalarField::one())
+        let G_factors: Vec<_> = iter::repeat(<Affine as AffineRepr>::ScalarField::one())
             .take(n)
             .collect();
 
@@ -498,7 +509,7 @@ mod tests {
         // a.iter() has Item=&Scalar, need Item=Scalar to chain with b_prime
         let a_prime = a.iter().cloned();
 
-        let P = VariableBaseMSM::multi_scalar_mul(
+        let P = C::Group::msm_unchecked(
             G.iter()
                 .chain(H.iter())
                 .chain(iter::once(&Q))
@@ -540,9 +551,9 @@ mod tests {
             )
             .is_ok());
 
-        let mut buf = Vec::with_capacity(proof.serialized_size());
-        proof.serialize(&mut buf).unwrap();
-        let proof = InnerProductProof::deserialize(&buf[..]).unwrap();
+        let mut buf = Vec::with_capacity(proof.serialized_size(Compress::Yes));
+        proof.serialize_compressed(&mut buf).unwrap();
+        let proof = InnerProductProof::deserialize_compressed(&buf[..]).unwrap();
         let mut verifier = Transcript::new(b"innerproducttest");
         assert!(proof
             .verify(
