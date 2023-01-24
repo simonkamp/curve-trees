@@ -17,7 +17,7 @@ extern crate bulletproofs;
 extern crate merlin;
 extern crate rand;
 
-use pasta::pallas::Affine;
+use ark_pallas::Affine;
 
 use ark_ec::AffineRepr;
 use ark_std::UniformRand;
