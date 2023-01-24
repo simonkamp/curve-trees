@@ -2,6 +2,7 @@
 
 #[macro_use]
 extern crate criterion;
+use ark_serialize::Compress;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 
@@ -13,16 +14,16 @@ use merlin::Transcript;
 use relations::coin::*;
 use relations::curve_tree::*;
 
-extern crate pasta;
-use pasta::{
-    pallas::{PallasParameters, Projective as PallasP},
-    vesta::VestaParameters,
+use ark_pallas::{PallasConfig, Projective as PallasP};
+use ark_vesta::VestaConfig;
+
+use ark_crypto_primitives::{signature::schnorr::Schnorr, signature::SignatureScheme};
+use ark_ec::{
+    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
 };
 
-use ark_crypto_primitives::{signature::schnorr::Schnorr, SignatureScheme};
-use ark_ec::models::short_weierstrass_jacobian::GroupAffine;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use blake2::Blake2s;
+use blake2::Blake2s256 as Blake2s;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -52,7 +53,7 @@ fn bench_pour_with_parameters<const L: usize>(
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2; // minimum sufficient power of 2
 
-    let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+    let sr_params = SelRerandParameters::<PallasConfig, VestaConfig>::new(
         generators_length,
         generators_length,
         &mut rng,
@@ -61,14 +62,14 @@ fn bench_pour_with_parameters<const L: usize>(
     let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
     let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
 
-    let (coin_aux_0, coin_0) = Coin::<PallasParameters, PallasP>::new(
+    let (coin_aux_0, coin_0) = Coin::<PallasConfig, PallasP>::new(
         19,
         &pk,
         &schnorr_parameters,
         &sr_params.even_parameters,
         &mut rng,
     );
-    let (coin_aux_1, coin_1) = Coin::<PallasParameters, PallasP>::new(
+    let (coin_aux_1, coin_1) = Coin::<PallasConfig, PallasP>::new(
         23,
         &pk,
         &schnorr_parameters,
@@ -78,9 +79,9 @@ fn bench_pour_with_parameters<const L: usize>(
     // Curve tree with two coins
     let set = vec![coin_0, coin_1];
     let curve_tree =
-        CurveTree::<L, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(depth));
+        CurveTree::<L, PallasConfig, VestaConfig>::from_set(&set, &sr_params, Some(depth));
 
-    let randomized_pk_0 = Coin::<PallasParameters, PallasP>::rerandomized_pk(
+    let randomized_pk_0 = Coin::<PallasConfig, PallasP>::rerandomized_pk(
         &pk,
         &coin_aux_0.pk_randomness,
         &schnorr_parameters,
@@ -91,7 +92,7 @@ fn bench_pour_with_parameters<const L: usize>(
         randomized_pk: randomized_pk_0,
         sk: sk.clone(),
     };
-    let randomized_pk_1 = Coin::<PallasParameters, PallasP>::rerandomized_pk(
+    let randomized_pk_1 = Coin::<PallasConfig, PallasP>::rerandomized_pk(
         &pk,
         &coin_aux_1.pk_randomness,
         &schnorr_parameters,
@@ -104,11 +105,11 @@ fn bench_pour_with_parameters<const L: usize>(
     };
     let prove = || {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-        let pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+        let pallas_prover: Prover<_, Affine<PallasConfig>> =
             Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-        let vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+        let vesta_prover: Prover<_, Affine<VestaConfig>> =
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let receiver_pk_0 = pk;
@@ -131,10 +132,10 @@ fn bench_pour_with_parameters<const L: usize>(
     };
     let tx = prove();
     let pour_proof =
-        Pour::<PallasParameters, VestaParameters, PallasP>::deserialize(&tx.pour_bytes[..])
+        Pour::<PallasConfig, VestaConfig, PallasP>::deserialize_compressed(&tx.pour_bytes[..])
             .unwrap();
 
-    println!("Proof size in bytes {}", tx.serialized_size());
+    println!("Proof size in bytes {}", tx.serialized_size(Compress::Yes));
 
     {
         let group_name = format!("{}_pour.L={},d={}.", threaded, L, depth);
@@ -155,7 +156,7 @@ fn bench_pour_with_parameters<const L: usize>(
         });
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                let pour = Pour::<PallasParameters, VestaParameters, PallasP>::deserialize(
+                let pour = Pour::<PallasConfig, VestaConfig, PallasP>::deserialize_compressed(
                     &tx.pour_bytes[..],
                 )
                 .unwrap();

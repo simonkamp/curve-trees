@@ -1,5 +1,4 @@
 extern crate bulletproofs;
-extern crate pasta;
 extern crate relations;
 
 use bulletproofs::r1cs::*;
@@ -7,13 +6,15 @@ use bulletproofs::r1cs::*;
 use rand::thread_rng;
 use relations::curve_tree::*;
 
-use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, ProjectiveCurve};
+use ark_ec::{
+    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
+};
 use ark_std::UniformRand;
 use merlin::Transcript;
 
-type PallasParameters = pasta::pallas::PallasParameters;
-type VestaParameters = pasta::vesta::VestaParameters;
-type PallasP = pasta::pallas::Projective;
+type PallasParameters = ark_pallas::PallasConfig;
+type VestaParameters = ark_vesta::VestaConfig;
+type PallasP = ark_pallas::Projective;
 
 #[test]
 pub fn test_curve_tree_even_depth() {
@@ -39,11 +40,11 @@ pub fn test_curve_tree_with_parameters<const L: usize>(
     );
 
     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+    let mut pallas_prover: Prover<_, Affine<PallasParameters>> =
         Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
     let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+    let mut vesta_prover: Prover<_, Affine<VestaParameters>> =
         Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
     let some_point = PallasP::rand(&mut rng).into_affine();
@@ -120,11 +121,11 @@ pub fn test_curve_tree_batch_verification() {
     assert_eq!(curve_tree.height(), 4);
 
     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+    let mut pallas_prover: Prover<_, Affine<PallasParameters>> =
         Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
     let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+    let mut vesta_prover: Prover<_, Affine<VestaParameters>> =
         Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
     let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(

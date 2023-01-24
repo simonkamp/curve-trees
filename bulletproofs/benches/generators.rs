@@ -1,4 +1,4 @@
-use pasta::pallas::Affine;
+use ark_pallas::Affine;
 
 use bulletproofs::{BulletproofGens, PedersenGens};
 

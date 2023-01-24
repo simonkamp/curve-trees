@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use ark_ec::{msm::VariableBaseMSM, AffineCurve};
+use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::Field;
 use ark_std::{One, UniformRand, Zero};
 use core::borrow::BorrowMut;
@@ -29,7 +29,7 @@ use super::op_splits;
 /// When all constraints are added, the verifying code calls `verify`
 /// which consumes the `Verifier` instance, samples random challenges
 /// that instantiate the randomized constraints, and verifies the proof.
-pub struct Verifier<T: BorrowMut<Transcript>, C: AffineCurve> {
+pub struct Verifier<T: BorrowMut<Transcript>, C: AffineRepr> {
     transcript: T,
     constraints: Vec<LinearCombination<C::ScalarField>>,
 
@@ -63,11 +63,11 @@ pub struct Verifier<T: BorrowMut<Transcript>, C: AffineCurve> {
 /// monomorphize the closures for the proving and verifying code.
 /// However, this type cannot be instantiated by the user and therefore can only be used within
 /// the callback provided to `specify_randomized_constraints`.
-pub struct RandomizingVerifier<T: BorrowMut<Transcript>, C: AffineCurve> {
+pub struct RandomizingVerifier<T: BorrowMut<Transcript>, C: AffineRepr> {
     verifier: Verifier<T, C>,
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField> for Verifier<T, C> {
+impl<T: BorrowMut<Transcript>, C: AffineRepr> ConstraintSystem<C::ScalarField> for Verifier<T, C> {
     fn transcript(&mut self) -> &mut Transcript {
         self.transcript.borrow_mut()
     }
@@ -155,7 +155,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField> 
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C::ScalarField>
+impl<T: BorrowMut<Transcript>, C: AffineRepr> RandomizableConstraintSystem<C::ScalarField>
     for Verifier<T, C>
 {
     type RandomizedCS = RandomizingVerifier<T, C>;
@@ -169,7 +169,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C::S
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
+impl<T: BorrowMut<Transcript>, C: AffineRepr> ConstraintSystem<C::ScalarField>
     for RandomizingVerifier<T, C>
 {
     fn transcript(&mut self) -> &mut Transcript {
@@ -218,7 +218,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C::ScalarField>
+impl<T: BorrowMut<Transcript>, C: AffineRepr> RandomizedConstraintSystem<C::ScalarField>
     for RandomizingVerifier<T, C>
 {
     fn challenge_scalar(&mut self, label: &'static [u8]) -> C::ScalarField {
@@ -229,7 +229,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C::Sca
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
+impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
     /// Construct an empty constraint system with specified external
     /// input variables.
     ///
@@ -443,7 +443,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(gens.G(padded_n).copied())
             .chain(gens.H(padded_n).copied());
 
-        let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
+        let mega_check: C::Group = C::Group::msm_unchecked(
             verification_tuple
                 .proof_dependent_points
                 .into_iter()
@@ -724,13 +724,13 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
     }
 }
 
-pub struct VerificationTuple<C: AffineCurve> {
+pub struct VerificationTuple<C: AffineRepr> {
     pub proof_dependent_points: Vec<C>,
     pub proof_dependent_scalars: Vec<C::ScalarField>,
     pub proof_independent_scalars: Vec<C::ScalarField>,
 }
 
-pub fn batch_verify<C: AffineCurve>(
+pub fn batch_verify<C: AffineRepr>(
     verification_tuples: Vec<VerificationTuple<C>>,
     pc_gens: &PedersenGens<C>,
     bp_gens: &BulletproofGens<C>,
@@ -782,7 +782,7 @@ pub fn batch_verify<C: AffineCurve>(
         .chain(gens.G(padded_n).copied())
         .chain(gens.H(padded_n).copied());
 
-    let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
+    let mega_check: C::Group = C::Group::msm_unchecked(
         proof_points
             .into_iter()
             .chain(fixed_points)

@@ -8,29 +8,29 @@ use crate::rerandomize::*;
 use crate::select::*;
 
 use ark_ec::{
-    models::short_weierstrass_jacobian::GroupAffine, msm::VariableBaseMSM, ProjectiveCurve,
-    SWModelParameters,
+    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
+    VariableBaseMSM,
 };
-use ark_ff::{PrimeField, SquareRootField};
+use ark_ff::{Field, PrimeField};
 use ark_std::Zero;
 use rand::Rng;
 use std::iter;
 use std::marker::PhantomData;
 
-pub struct SingleLayerParameters<P: SWModelParameters + Copy> {
-    pub bp_gens: BulletproofGens<GroupAffine<P>>,
-    pub pc_gens: PedersenGens<GroupAffine<P>>,
+pub struct SingleLayerParameters<P: SWCurveConfig + Copy> {
+    pub bp_gens: BulletproofGens<Affine<P>>,
+    pub pc_gens: PedersenGens<Affine<P>>,
     pub uh: UniversalHash<P::BaseField>,
     pub tables: Vec<Lookup3Bit<2, P::BaseField>>,
 }
 
-impl<P: SWModelParameters + Copy> SingleLayerParameters<P> {
-    pub fn new<R: Rng, P1: SWModelParameters>(generators_length: usize, rng: &mut R) -> Self {
-        let pc_gens = PedersenGens::<GroupAffine<P>>::default();
+impl<P: SWCurveConfig + Copy> SingleLayerParameters<P> {
+    pub fn new<R: Rng, P1: SWCurveConfig>(generators_length: usize, rng: &mut R) -> Self {
+        let pc_gens = PedersenGens::<Affine<P>>::default();
         let tables = build_tables(pc_gens.B_blinding);
 
         SingleLayerParameters {
-            bp_gens: BulletproofGens::<GroupAffine<P>>::new(generators_length, 1),
+            bp_gens: BulletproofGens::<Affine<P>>::new(generators_length, 1),
             pc_gens,
             uh: UniversalHash::new(rng, P::COEFF_A, P::COEFF_B),
             tables,
@@ -42,7 +42,7 @@ impl<P: SWModelParameters + Copy> SingleLayerParameters<P> {
         v: &[P::ScalarField],
         v_blinding: P::ScalarField,
         generator_set_index: usize,
-    ) -> GroupAffine<P> {
+    ) -> Affine<P> {
         let gens = self
             .bp_gens
             .share(0)
@@ -54,17 +54,20 @@ impl<P: SWModelParameters + Copy> SingleLayerParameters<P> {
             .cloned()
             .collect::<Vec<_>>();
 
-        let scalars: Vec<<P::ScalarField as PrimeField>::BigInt> = iter::once(&v_blinding)
+        let scalars: Vec<P::ScalarField> = iter::once(&v_blinding)
             .chain(v.iter())
             .map(|s| {
-                let s: <P::ScalarField as PrimeField>::BigInt = (*s).into();
+                let s: P::ScalarField = (*s).into();
                 s
             })
             .collect();
 
         assert_eq!(generators.len(), scalars.len());
 
-        let comm = VariableBaseMSM::multi_scalar_mul(generators.as_slice(), scalars.as_slice());
+        let comm = <Affine<P> as AffineRepr>::Group::msm_unchecked(
+            generators.as_slice(),
+            scalars.as_slice(),
+        );
         comm.into_affine()
     }
 
@@ -73,7 +76,7 @@ impl<P: SWModelParameters + Copy> SingleLayerParameters<P> {
         v: &[P::ScalarField],
         v_blinding: P::ScalarField,
         generator_set_index: usize,
-    ) -> (GroupAffine<P>, P::ScalarField) {
+    ) -> (Affine<P>, P::ScalarField) {
         let commitment = self.commit(v, v_blinding, generator_set_index);
         let (permissible_commitment, offset) = self
             .uh
@@ -84,16 +87,16 @@ impl<P: SWModelParameters + Copy> SingleLayerParameters<P> {
 
 /// Circuit for the single level version of the select and rerandomize relation.
 pub fn single_level_select_and_rerandomize<
-    Fb: SquareRootField,
-    Fs: SquareRootField,
-    C2: SWModelParameters<BaseField = Fs, ScalarField = Fb> + Copy,
+    Fb: PrimeField,
+    Fs: Field,
+    C2: SWCurveConfig<BaseField = Fs, ScalarField = Fb> + Copy,
     Cs: ConstraintSystem<Fs>,
 >(
     cs: &mut Cs, // Prover or verifier
     parameters: &SingleLayerParameters<C2>,
-    rerandomized: &GroupAffine<C2>, // The public rerandomization of the selected child
+    rerandomized: &Affine<C2>, // The public rerandomization of the selected child
     children: Vec<Variable<Fs>>, // Variables representing members of the (parent) vector commitment
-    selected_witness: Option<GroupAffine<C2>>, // Witness of the commitment being selected and rerandomized
+    selected_witness: Option<Affine<C2>>, // Witness of the commitment being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. selected_witness * randomness_offset = rerandomized
 ) {
     let x_var = cs.allocate(selected_witness.map(|xy| xy.x)).unwrap();
@@ -124,24 +127,24 @@ pub fn single_level_select_and_rerandomize<
 /// Circuit for the single level version of the batched select and rerandomize relation.
 /// Facilitates showing M instances of the select and rerandomize relation with only a single rerandomization.
 pub fn single_level_batched_select_and_rerandomize<
-    Fb: SquareRootField,
-    Fs: SquareRootField,
-    C2: SWModelParameters<BaseField = Fs, ScalarField = Fb> + Copy,
+    Fb: PrimeField,
+    Fs: Field,
+    C2: SWCurveConfig<BaseField = Fs, ScalarField = Fb> + Copy,
     Cs: ConstraintSystem<Fs>,
     const M: usize, // The number of parallel selections
 >(
     cs: &mut Cs, // Prover or verifier
     parameters: &SingleLayerParameters<C2>,
-    rerandomized: GroupAffine<C2>, // The public rerandomization of the sum of selected children
+    rerandomized: Affine<C2>, // The public rerandomization of the sum of selected children
     children: Vec<Variable<Fs>>, // Variables representing members of the vector commitment (i.e. the sum of M parents)
-    selected_witnesses: Option<[&GroupAffine<C2>; M]>, // Witnesses of the commitments being selected and rerandomized
+    selected_witnesses: Option<[&Affine<C2>; M]>, // Witnesses of the commitments being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. \sum selected_witnesses * randomness_offset = rerandomized
 ) {
     // Initialize the accumulated sum of the selected children to dummy values.
     let mut sum_of_selected = PointRepresentation {
         x: Variable::One(PhantomData).into(),
         y: Variable::One(PhantomData).into(),
-        witness: selected_witnesses.map(|_| (GroupAffine::<C2>::zero())),
+        witness: selected_witnesses.map(|_| (Affine::<C2>::zero())),
     };
     // Split the variables of the vector commitments into chunks corresponding to the M parents.
     let chunks = children.chunks_exact(children.len() / M);

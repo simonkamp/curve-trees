@@ -5,7 +5,7 @@ extern crate alloc;
 
 use alloc::vec;
 use alloc::vec::Vec;
-use ark_ec::AffineCurve;
+use ark_ec::AffineRepr;
 use ark_ff::Field;
 use clear_on_drop::clear::Clear;
 
@@ -352,7 +352,7 @@ pub fn read32(data: &[u8]) -> [u8; 32] {
     buf32
 }
 
-pub fn affine_from_bytes_tai<C: AffineCurve>(bytes: &[u8]) -> C {
+pub fn affine_from_bytes_tai<C: AffineRepr>(bytes: &[u8]) -> C {
     extern crate crypto;
     use crypto::digest::Digest;
     use crypto::sha3::Sha3;
@@ -373,7 +373,7 @@ pub fn affine_from_bytes_tai<C: AffineCurve>(bytes: &[u8]) -> C {
 
 pub fn field_as_bytes<F: Field>(field: &F) -> Vec<u8> {
     let mut bytes = Vec::new();
-    if let Err(e) = field.serialize(&mut bytes) {
+    if let Err(e) = field.serialize_compressed(&mut bytes) {
         panic!("{}", e)
     }
     bytes
@@ -383,9 +383,9 @@ pub fn field_as_bytes<F: Field>(field: &F) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    use pasta::pallas::*;
+    use ark_pallas::*;
 
-    type Scalar = <Affine as AffineCurve>::ScalarField;
+    type Scalar = <Affine as AffineRepr>::ScalarField;
     use ark_ff::{One, Zero};
 
     #[test]
