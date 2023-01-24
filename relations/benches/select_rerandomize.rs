@@ -8,14 +8,13 @@ use bulletproofs::r1cs::{batch_verify, Prover, Verifier};
 extern crate relations;
 use relations::curve_tree::*;
 
-extern crate pasta;
-use pasta::{
-    pallas::{PallasParameters, Projective as PallasP},
-    vesta::VestaParameters,
-};
+use ark_pallas::{PallasConfig, Projective as PallasP};
+use ark_vesta::VestaConfig;
 
-use ark_ec::{short_weierstrass_jacobian::GroupAffine, ProjectiveCurve};
-use ark_serialize::CanonicalSerialize;
+use ark_ec::{
+    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
+};
+use ark_serialize::{CanonicalSerialize, Compress};
 use ark_std::UniformRand;
 
 use merlin::Transcript;
@@ -49,7 +48,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
-    let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
+    let sr_params = SelRerandParameters::<PallasConfig, VestaConfig>::new(
         generators_length,
         generators_length,
         &mut rng,
@@ -62,15 +61,15 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
         .permissible_commitment(&some_point, &sr_params.even_parameters.pc_gens.B_blinding);
     let set = vec![permissible_point];
     let curve_tree =
-        CurveTree::<L, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(depth));
+        CurveTree::<L, PallasConfig, VestaConfig>::from_set(&set, &sr_params, Some(depth));
 
     let prove = |print| {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-        let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+        let mut pallas_prover: Prover<_, Affine<PallasConfig>> =
             Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-        let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+        let mut vesta_prover: Prover<_, Affine<VestaConfig>> =
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let (path, _) = curve_tree.select_and_rerandomize_prover_gadget(
@@ -114,7 +113,9 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
 
     println!(
         "Proof size in bytes: {}",
-        path.serialized_size() + pallas_proof.serialized_size() + vesta_proof.serialized_size()
+        path.serialized_size(Compress::Yes)
+            + pallas_proof.serialized_size(Compress::Yes)
+            + vesta_proof.serialized_size(Compress::Yes)
     );
 
     {
@@ -124,11 +125,11 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
         group.bench_function("prover_gadget", |b| {
             b.iter(|| {
                 let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-                let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+                let mut pallas_prover: Prover<_, Affine<PallasConfig>> =
                     Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
                 let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-                let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+                let mut vesta_prover: Prover<_, Affine<VestaConfig>> =
                     Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
                 let (path, _) = curve_tree.select_and_rerandomize_prover_gadget(
