@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use ark_ec::{VariableBaseMSM, AffineRepr};
+use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::Field;
 use ark_std::{One, UniformRand, Zero};
 use core::borrow::BorrowMut;

@@ -2,7 +2,9 @@
 //! Definition of the proof struct.
 
 use ark_ec::AffineRepr;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write, Valid, Compress};
+use ark_serialize::{
+    CanonicalDeserialize, CanonicalSerialize, Compress, Read, SerializationError, Valid, Write,
+};
 
 use crate::errors::R1CSError;
 use crate::inner_product_proof::InnerProductProof;
@@ -91,10 +93,10 @@ impl<C: AffineRepr> CanonicalSerialize for R1CSProof<C> {
     }
 
     fn serialize_with_mode<W: Write>(
-            &self,
-            mut writer: W,
-            compress: Compress, // todo propogate mode
-        ) -> Result<(), SerializationError> {
+        &self,
+        mut writer: W,
+        compress: Compress, // todo propogate mode
+    ) -> Result<(), SerializationError> {
         // serialize first phase commitments.
         self.A_I1.serialize_compressed(&mut writer)?;
         self.A_O1.serialize_compressed(&mut writer)?;
@@ -125,15 +127,16 @@ impl<C: AffineRepr> CanonicalSerialize for R1CSProof<C> {
 
 impl<C: AffineRepr> Valid for R1CSProof<C> {
     fn check(&self) -> Result<(), SerializationError> {
-        Ok(())   
+        Ok(())
     }
 }
 impl<C: AffineRepr> CanonicalDeserialize for R1CSProof<C> {
-    fn deserialize_with_mode<R: Read>(// todo should propogate mode
-            mut reader: R,
-            compress: Compress,
-            validate: ark_serialize::Validate,
-        ) -> Result<Self, SerializationError> {
+    fn deserialize_with_mode<R: Read>(
+        // todo should propogate mode
+        mut reader: R,
+        compress: Compress,
+        validate: ark_serialize::Validate,
+    ) -> Result<Self, SerializationError> {
         let A_I1 = C::deserialize_compressed(&mut reader)?;
         let A_O1 = C::deserialize_compressed(&mut reader)?;
         let S1 = C::deserialize_compressed(&mut reader)?;

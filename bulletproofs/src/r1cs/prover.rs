@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use ark_ec::{VariableBaseMSM, AffineRepr};
+use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::{Field, PrimeField};
 use ark_std::{One, UniformRand, Zero};
 use clear_on_drop::clear::Clear;

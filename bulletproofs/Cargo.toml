@@ -30,13 +30,15 @@ rayon = {verison = "1.5.3", optional = true}
 [dev-dependencies]
 criterion = "0.3"
 ark-algebra-test-templates = "0.3.0"
-pasta = { path = "../pasta", default-features = false }
+# pasta = { path = "../pasta", default-features = false }
+ark-pallas = "0.4.0"
+ark-vesta = "0.4.0"
 
 [features]
 default = ["std", "parallel", "asm"]
 std = ["rand", "rand/std", "thiserror"]
-asm = ["ark-ff/asm", "pasta/asm"]
-parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "pasta/parallel", "rayon"]
+asm = ["ark-ff/asm"]
+parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "rayon"]
 nightly = ["clear_on_drop/nightly"]
 
 [[test]]

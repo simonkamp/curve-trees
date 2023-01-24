@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use ark_ec::{VariableBaseMSM, AffineRepr};
+use ark_ec::{AffineRepr, VariableBaseMSM};
 use std::marker::PhantomData;
 
 use crate::util;
@@ -36,18 +36,15 @@ pub struct PedersenGens<C: AffineRepr> {
 impl<C: AffineRepr> PedersenGens<C> {
     /// Creates a Pedersen commitment using the value scalar and a blinding factor.
     pub fn commit(&self, value: C::ScalarField, blinding: C::ScalarField) -> C {
-        C::Group::msm_unchecked(
-            &[self.B, self.B_blinding],
-            &[value.into(), blinding.into()],
-        ).into()
+        C::Group::msm_unchecked(&[self.B, self.B_blinding], &[value.into(), blinding.into()]).into()
     }
 }
 
-impl<C: AffineRepr + ark_serialize::Write> Default for PedersenGens<C> {
+impl<C: AffineRepr> Default for PedersenGens<C> {
     fn default() -> Self {
-        let mut basepoint = C::generator();
+        let basepoint = C::generator();
         let mut buffer: Vec<u8> = Vec::new();
-        basepoint.write(&mut buffer);
+        basepoint.serialize_compressed(&mut buffer).unwrap(); // todo use hash trait?
         PedersenGens {
             B: C::generator(),
             B_blinding: util::affine_from_bytes_tai(&buffer),
@@ -296,7 +293,7 @@ impl<'a, C: AffineRepr> BulletproofGensShare<'a, C> {
 mod tests {
     use super::*;
 
-    use pasta::pallas::*;
+    use ark_pallas::*;
 
     #[test]
     fn aggregated_gens_iter_matches_flat_map() {

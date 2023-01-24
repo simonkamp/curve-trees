@@ -6,12 +6,11 @@ extern crate alloc;
 use alloc::borrow::Borrow;
 use alloc::vec::Vec;
 
-use ark_ec::{VariableBaseMSM, AffineRepr};
-use ark_ff::{
-    fields::{batch_inversion, PrimeField},
-    Field,
+use ark_ec::{AffineRepr, VariableBaseMSM};
+use ark_ff::{fields::batch_inversion, Field};
+use ark_serialize::{
+    CanonicalDeserialize, CanonicalSerialize, Compress, Read, SerializationError, Valid, Write,
 };
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write, Valid, Compress};
 use ark_std::One;
 use core::iter;
 use merlin::Transcript;
@@ -106,10 +105,9 @@ impl<C: AffineRepr> InnerProductProof<C> {
                 .chain(iter::once(Q))
                 .cloned()
                 .collect();
-            let L =
-                C::Group::msm_unchecked(l_points.as_slice(), l_scalars.as_slice()).into();
+            let L = C::Group::msm_unchecked(l_points.as_slice(), l_scalars.as_slice()).into();
 
-                let r_scalars: Vec<C::ScalarField> = a_R
+            let r_scalars: Vec<C::ScalarField> = a_R
                 .iter()
                 .zip(G_factors[0..n].iter())
                 .map(|(a_R_i, g)| *a_R_i * g)
@@ -127,8 +125,7 @@ impl<C: AffineRepr> InnerProductProof<C> {
                 .chain(iter::once(Q))
                 .cloned()
                 .collect(); // todo avoid cloning?
-            let R =
-                C::Group::msm_unchecked(r_points.as_slice(), r_scalars.as_slice()).into();
+            let R = C::Group::msm_unchecked(r_points.as_slice(), r_scalars.as_slice()).into();
 
             L_vec.push(L);
             R_vec.push(R);
@@ -224,11 +221,9 @@ impl<C: AffineRepr> InnerProductProof<C> {
                 a_L[i] = a_L[i] * u + u_inv * a_R[i];
                 b_L[i] = b_L[i] * u_inv + u * b_R[i];
                 G_L[i] =
-                    C::Group::msm_unchecked(&[G_L[i], G_R[i]], &[u_inv.into(), u.into()])
-                        .into();
+                    C::Group::msm_unchecked(&[G_L[i], G_R[i]], &[u_inv.into(), u.into()]).into();
                 H_L[i] =
-                    C::Group::msm_unchecked(&[H_L[i], H_R[i]], &[u.into(), u_inv.into()])
-                        .into();
+                    C::Group::msm_unchecked(&[H_L[i], H_R[i]], &[u.into(), u_inv.into()]).into();
             }
 
             a = a_L;
@@ -395,15 +390,17 @@ impl<C: AffineRepr> InnerProductProof<C> {
     }
 }
 
-impl<C: AffineRepr> Valid for InnerProductProof<C> { 
-    fn check(&self) -> Result<(), SerializationError> { Ok(())}
+impl<C: AffineRepr> Valid for InnerProductProof<C> {
+    fn check(&self) -> Result<(), SerializationError> {
+        Ok(())
+    }
 }
 impl<C: AffineRepr> CanonicalDeserialize for InnerProductProof<C> {
     fn deserialize_with_mode<R: Read>(
-            mut reader: R,
-            compress: Compress, // todo
-            validate: ark_serialize::Validate,
-        ) -> Result<Self, SerializationError> {
+        mut reader: R,
+        compress: Compress, // todo
+        validate: ark_serialize::Validate,
+    ) -> Result<Self, SerializationError> {
         Ok(Self {
             L_vec: Vec::<C>::deserialize_compressed(&mut reader)?,
             R_vec: Vec::<C>::deserialize_compressed(&mut reader)?,
@@ -432,10 +429,10 @@ impl<C: AffineRepr> CanonicalSerialize for InnerProductProof<C> {
     /// * \\(n\\) pairs of compressed Ristretto points \\(L_0, R_0 \dots, L_{n-1}, R_{n-1}\\),
     /// * two scalars \\(a, b\\).
     fn serialize_with_mode<W: Write>(
-            &self,
-            mut writer: W,
-            compress: Compress, // todo
-        ) -> Result<(), SerializationError> {
+        &self,
+        mut writer: W,
+        compress: Compress, // todo
+    ) -> Result<(), SerializationError> {
         self.L_vec.serialize_compressed(&mut writer)?;
         self.R_vec.serialize_compressed(&mut writer)?;
         self.a.serialize_compressed(&mut writer)?;
@@ -464,8 +461,8 @@ pub fn inner_product<S: Field>(a: &[S], b: &[S]) -> S {
 mod tests {
     use super::*;
 
+    use ark_pallas::Affine;
     use ark_std::UniformRand;
-    use pasta::pallas::Affine;
 
     type F = <Affine as AffineRepr>::ScalarField;
 
@@ -509,7 +506,7 @@ mod tests {
         // a.iter() has Item=&Scalar, need Item=Scalar to chain with b_prime
         let a_prime = a.iter().cloned();
 
-        let P = C::Group::msm_unchecked(
+        let P = <Affine as AffineRepr>::Group::msm_unchecked(
             G.iter()
                 .chain(H.iter())
                 .chain(iter::once(&Q))

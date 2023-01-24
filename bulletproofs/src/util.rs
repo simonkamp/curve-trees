@@ -383,7 +383,7 @@ pub fn field_as_bytes<F: Field>(field: &F) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    use pasta::pallas::*;
+    use ark_pallas::*;
 
     type Scalar = <Affine as AffineRepr>::ScalarField;
     use ark_ff::{One, Zero};
