@@ -12,8 +12,7 @@ ark-serialize = { version = "0.4.0" }
 ark-std = { version = "0.4.0"}
 merlin = { version = "2", default-features = false }
 rust-crypto = "^0.2"
-ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives", features = ["signature"]} # fix commit
-# ark-crypto-primitives = { version = "0.3.0" } # will probably need the github version for now
+ark-crypto-primitives = { version = "0.4.0", features = ["signature"]}
 digest = "0.9"
 blake2 = "0.10"
 rayon = {verison = "1.5.3", optional = true}
