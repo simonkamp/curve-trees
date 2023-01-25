@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use ark_ec::{AffineRepr, VariableBaseMSM};
-use ark_ff::{Field, PrimeField};
+use ark_ff::Field;
 use ark_std::{One, UniformRand, Zero};
 use clear_on_drop::clear::Clear;
 use core::borrow::BorrowMut;
@@ -49,7 +49,7 @@ pub struct Prover<'g, T: BorrowMut<Transcript>, C: AffineRepr> {
 }
 
 // todo I assume this would be automatically implemented by the compiler if it did not have a a mutable borrow of a transcript
-unsafe impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Send for Prover<'g, T, C> {} // todo fix
+unsafe impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Send for Prover<'g, T, C> {} // todo fix after refactor
 
 /// Separate struct to implement Drop trait for (for zeroing),
 /// so that compiler does not prohibit us from moving the Transcript out of `prove()`.
@@ -371,15 +371,11 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
         // [b] * H + [v_1] * G1 + ... + [v_n] * Gn
         let generators: Vec<_> = iter::once(&self.pc_gens.B_blinding)
             .chain(gens.G(v.len()))
-            .cloned()
+            .copied()
             .collect::<Vec<_>>();
 
-        let scalars: Vec<C::ScalarField> = iter::once(&v_blinding)
-            .chain(v.iter())
-            .map(|s| {
-                *s // todo
-            })
-            .collect();
+        let scalars: Vec<C::ScalarField> =
+            iter::once(&v_blinding).chain(v.iter()).copied().collect();
 
         assert_eq!(generators.len(), scalars.len());
 
@@ -616,11 +612,11 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
             let A_I1_scalars = iter::once(&i_blinding1)
                 .chain(self.secrets.a_L.iter())
                 .chain(self.secrets.a_R.iter())
-                .map(|s| (*s).into())
+                .copied()
                 .collect::<Vec<C::ScalarField>>();
             let A_O1_scalars = iter::once(&o_blinding1)
                 .chain(self.secrets.a_O.iter())
-                .map(|s| (*s).into())
+                .copied()
                 .collect::<Vec<C::ScalarField>>();
             let (mut A_I1, mut A_O1, mut S1) = (None, None, None);
             rayon::scope(|s| {
@@ -631,7 +627,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                             iter::once(&blinding)
                                 .chain(gens.G(n1))
                                 .chain(gens.H(n1))
-                                .cloned()
+                                .copied()
                                 .collect::<Vec<C>>()
                                 .as_slice(),
                             A_I1_scalars.as_slice(),
@@ -645,7 +641,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                         C::Group::msm_unchecked(
                             iter::once(&blinding)
                                 .chain(gens.G(n1))
-                                .cloned()
+                                .copied()
                                 .collect::<Vec<C>>()
                                 .as_slice(),
                             A_O1_scalars.as_slice(),
@@ -664,13 +660,13 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                             iter::once(&blinding)
                                 .chain(gens.G(n1))
                                 .chain(gens.H(n1))
-                                .cloned()
+                                .copied()
                                 .collect::<Vec<C>>()
                                 .as_slice(),
                             iter::once(&s_blinding1)
                                 .chain(s_L1.iter())
                                 .chain(s_R1.iter())
-                                .map(|s| (*s).into())
+                                .copied()
                                 .collect::<Vec<C::ScalarField>>()
                                 .as_slice(),
                         )
@@ -688,7 +684,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                 iter::once(&self.pc_gens.B_blinding)
                     .chain(gens.G(n1))
                     .chain(gens.H(n1))
-                    .cloned()
+                    .copied()
                     .collect::<Vec<C>>()
                     .as_slice(),
                 iter::once(&i_blinding1)
@@ -704,7 +700,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
             let A_O1 = C::Group::msm_unchecked(
                 iter::once(&self.pc_gens.B_blinding)
                     .chain(gens.G(n1))
-                    .cloned()
+                    .copied()
                     .collect::<Vec<C>>()
                     .as_slice(),
                 iter::once(&o_blinding1)
@@ -723,7 +719,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                 iter::once(&self.pc_gens.B_blinding)
                     .chain(gens.G(n1))
                     .chain(gens.H(n1))
-                    .cloned()
+                    .copied()
                     .collect::<Vec<C>>()
                     .as_slice(),
                 iter::once(&s_blinding1)
@@ -791,13 +787,13 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                     iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
                         .chain(gens.H(n).skip(n1))
-                        .cloned()
+                        .copied()
                         .collect::<Vec<C>>()
                         .as_slice(),
                     iter::once(&i_blinding2)
                         .chain(self.secrets.a_L.iter().skip(n1))
                         .chain(self.secrets.a_R.iter().skip(n1))
-                        .map(|s| (*s).into())
+                        .copied()
                         .collect::<Vec<C::ScalarField>>()
                         .as_slice(),
                 )
@@ -806,12 +802,12 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                 C::Group::msm_unchecked(
                     iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
-                        .cloned()
+                        .copied()
                         .collect::<Vec<C>>()
                         .as_slice(),
                     iter::once(&o_blinding2)
                         .chain(self.secrets.a_O.iter().skip(n1))
-                        .map(|s| (*s).into())
+                        .copied()
                         .collect::<Vec<C::ScalarField>>()
                         .as_slice(),
                 )
@@ -821,13 +817,13 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
                     iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
                         .chain(gens.H(n).skip(n1))
-                        .cloned()
+                        .copied()
                         .collect::<Vec<C>>()
                         .as_slice(),
                     iter::once(&s_blinding2)
                         .chain(s_L2.iter())
                         .chain(s_R2.iter())
-                        .map(|s| (*s).into())
+                        .copied()
                         .collect::<Vec<C::ScalarField>>()
                         .as_slice(),
                 )
@@ -1157,8 +1153,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
 
         #[cfg(debug_assertions)]
         {
-            for i in 0..e_terms.len() {
-                println!("e_terms, x^{} = {:?}", i, e_terms[i]);
+            for (i, e) in e_terms.iter().enumerate() {
+                println!("e_terms, x^{} = {:?}", i, e);
             }
         }
 
@@ -1201,8 +1197,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
             &Q,
             &G_factors,
             &H_factors,
-            gens.G(padded_n).cloned().collect(),
-            gens.H(padded_n).cloned().collect(),
+            gens.G(padded_n).copied().collect(),
+            gens.H(padded_n).copied().collect(),
             l_vec,
             r_vec,
         );

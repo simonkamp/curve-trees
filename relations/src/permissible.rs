@@ -90,7 +90,6 @@ mod tests {
     use merlin::Transcript;
 
     type PallasA = ark_pallas::Affine;
-    type PallasP = ark_pallas::Projective;
     type PallasBase = <PallasA as AffineRepr>::BaseField;
     type VestaA = ark_vesta::Affine;
     type VestaScalar = <VestaA as AffineRepr>::ScalarField;

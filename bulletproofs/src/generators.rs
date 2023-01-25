@@ -36,7 +36,7 @@ pub struct PedersenGens<C: AffineRepr> {
 impl<C: AffineRepr> PedersenGens<C> {
     /// Creates a Pedersen commitment using the value scalar and a blinding factor.
     pub fn commit(&self, value: C::ScalarField, blinding: C::ScalarField) -> C {
-        C::Group::msm_unchecked(&[self.B, self.B_blinding], &[value.into(), blinding.into()]).into()
+        C::Group::msm_unchecked(&[self.B, self.B_blinding], &[value, blinding]).into()
     }
 }
 
@@ -300,22 +300,22 @@ mod tests {
         let gens = BulletproofGens::<Affine>::new(64, 8);
 
         let helper = |n: usize, m: usize| {
-            let agg_G: Vec<Affine> = gens.G(n, m).cloned().collect();
+            let agg_G: Vec<Affine> = gens.G(n, m).copied().collect();
             let flat_G: Vec<Affine> = gens
                 .G_vec
                 .iter()
                 .take(m)
                 .flat_map(move |G_j| G_j.iter().take(n))
-                .cloned()
+                .copied()
                 .collect();
 
-            let agg_H: Vec<Affine> = gens.H(n, m).cloned().collect();
+            let agg_H: Vec<Affine> = gens.H(n, m).copied().collect();
             let flat_H: Vec<Affine> = gens
                 .H_vec
                 .iter()
                 .take(m)
                 .flat_map(move |H_j| H_j.iter().take(n))
-                .cloned()
+                .copied()
                 .collect();
 
             assert_eq!(agg_G, flat_G);
@@ -344,11 +344,11 @@ mod tests {
         gen_resized.increase_capacity(64);
 
         let helper = |n: usize, m: usize| {
-            let gens_G: Vec<Affine> = gens.G(n, m).cloned().collect();
-            let gens_H: Vec<Affine> = gens.H(n, m).cloned().collect();
+            let gens_G: Vec<Affine> = gens.G(n, m).copied().collect();
+            let gens_H: Vec<Affine> = gens.H(n, m).copied().collect();
 
-            let resized_G: Vec<Affine> = gen_resized.G(n, m).cloned().collect();
-            let resized_H: Vec<Affine> = gen_resized.H(n, m).cloned().collect();
+            let resized_G: Vec<Affine> = gen_resized.G(n, m).copied().collect();
+            let resized_H: Vec<Affine> = gen_resized.H(n, m).copied().collect();
 
             assert_eq!(gens_G, resized_G);
             assert_eq!(gens_H, resized_H);

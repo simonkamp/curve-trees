@@ -2,9 +2,7 @@ use bulletproofs::r1cs::*;
 
 use crate::single_level_select_and_rerandomize::*;
 
-use ark_ec::{
-    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
-};
+use ark_ec::{models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, CurveGroup};
 use ark_ff::PrimeField;
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Valid, Write,
@@ -48,11 +46,11 @@ impl<
             let mut odd_forest = Vec::with_capacity(next_forest_length);
             for i in 0..next_forest_length {
                 let mut chunk = Vec::new();
-                for j in i * L..(i + 1) * L {
+                for (j, tree) in even_forest.iter().enumerate().take((i + 1) * L).skip(i * L) {
                     if j >= forest_length {
                         break;
                     }
-                    chunk.push(even_forest[j].clone());
+                    chunk.push(tree.clone());
                 }
                 odd_forest.push(CurveTreeNode::<L, P1, P0>::combine(
                     chunk,
@@ -70,11 +68,11 @@ impl<
             even_forest = Vec::with_capacity(next_forest_length);
             for i in 0..next_forest_length {
                 let mut chunk = Vec::new();
-                for j in i * L..(i + 1) * L {
+                for (j, tree) in odd_forest.iter().enumerate().take((i + 1) * L).skip(i * L) {
                     if j >= forest_length {
                         break;
                     }
-                    chunk.push(odd_forest[j].clone());
+                    chunk.push(tree.clone());
                 }
                 even_forest.push(CurveTreeNode::<L, P0, P1>::combine(
                     chunk,
@@ -308,7 +306,6 @@ impl<P0: SWCurveConfig, P1: SWCurveConfig> CanonicalSerialize for SelectAndReran
 impl<P0: SWCurveConfig, P1: SWCurveConfig> Valid for SelectAndRerandomizePath<P0, P1> {
     fn check(&self) -> Result<(), SerializationError> {
         Ok(())
-        // todo
     }
 }
 impl<P0: SWCurveConfig, P1: SWCurveConfig> CanonicalDeserialize

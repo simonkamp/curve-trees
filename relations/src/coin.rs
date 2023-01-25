@@ -12,14 +12,11 @@ use ark_crypto_primitives::{
     signature::schnorr::{Parameters, PublicKey, Schnorr, SecretKey, Signature},
     signature::*,
 };
-use ark_ec::{
-    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
-};
+use ark_ec::{models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, CurveGroup};
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::UniformRand;
 use blake2::Blake2s256 as Blake2s;
-use std::hash::BuildHasher;
 use std::marker::PhantomData;
 
 pub struct Coin<P0: SWCurveConfig + Clone, C: CurveGroup> {
@@ -251,7 +248,6 @@ pub fn prove_pour<
         },
     );
 
-    // todo serialize tx's and sign using both of the secret keys
     let proof = Pour::<P0, P1, C> {
         even_proof,
         odd_proof,
@@ -359,7 +355,7 @@ impl<
     > Valid for Pour<P0, P1, C>
 {
     fn check(&self) -> Result<(), SerializationError> {
-        Ok(()) // todo
+        Ok(())
     }
 }
 impl<

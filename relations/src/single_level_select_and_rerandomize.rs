@@ -12,7 +12,6 @@ use ark_ec::{
     VariableBaseMSM,
 };
 use ark_ff::{Field, PrimeField};
-use ark_std::Zero;
 use rand::Rng;
 use std::iter;
 use std::marker::PhantomData;
@@ -51,24 +50,19 @@ impl<P: SWCurveConfig + Copy> SingleLayerParameters<P> {
 
         let generators: Vec<_> = iter::once(&self.pc_gens.B_blinding)
             .chain(gens)
-            .cloned()
+            .copied()
             .collect::<Vec<_>>();
 
         let scalars: Vec<P::ScalarField> = iter::once(&v_blinding)
             .chain(v.iter())
             .map(|s| {
-                let s: P::ScalarField = (*s).into();
+                let s: P::ScalarField = *s;
                 s
             })
             .collect();
 
-        assert_eq!(generators.len(), scalars.len());
-
-        let comm = <Affine<P> as AffineRepr>::Group::msm_unchecked(
-            generators.as_slice(),
-            scalars.as_slice(),
-        );
-        comm.into_affine()
+        let comm = <Affine<P> as AffineRepr>::Group::msm(generators.as_slice(), scalars.as_slice());
+        comm.unwrap().into_affine()
     }
 
     pub fn permissible_commitment(
@@ -148,8 +142,7 @@ pub fn single_level_batched_select_and_rerandomize<
     };
     // Split the variables of the vector commitments into chunks corresponding to the M parents.
     let chunks = children.chunks_exact(children.len() / M);
-    let mut i = 0;
-    for chunk in chunks {
+    for (i, chunk) in chunks.enumerate() {
         let ith_selected_witness = selected_witnesses.map(|xy| *xy[i]);
         let x_var = cs.allocate(ith_selected_witness.map(|xy| xy.x)).unwrap();
         let y_var = cs.allocate(ith_selected_witness.map(|xy| xy.y)).unwrap();
@@ -182,7 +175,6 @@ pub fn single_level_batched_select_and_rerandomize<
             // Add the extracted point to the accumulated sum
             sum_of_selected = checked_curve_addition_helper(cs, sum_of_selected, ith_selected);
         }
-        i += 1;
     }
     // Show that `rerandomized`, is a rerandomization of sum of the selected children
     re_randomize(

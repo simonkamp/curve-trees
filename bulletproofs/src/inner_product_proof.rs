@@ -97,13 +97,12 @@ impl<C: AffineRepr> InnerProductProof<C> {
                         .map(|(b_R_i, h)| *b_R_i * h),
                 )
                 .chain(iter::once(c_L))
-                .map(|s| s.into())
                 .collect();
             let l_points: Vec<C> = G_R
                 .iter()
                 .chain(H_L.iter())
                 .chain(iter::once(Q))
-                .cloned()
+                .copied()
                 .collect();
             let L = C::Group::msm_unchecked(l_points.as_slice(), l_scalars.as_slice()).into();
 
@@ -117,14 +116,13 @@ impl<C: AffineRepr> InnerProductProof<C> {
                         .map(|(b_L_i, h)| *b_L_i * h),
                 )
                 .chain(iter::once(c_R))
-                .map(|s| s.into())
                 .collect();
             let r_points: Vec<C> = G_L
                 .iter()
                 .chain(H_R.iter())
                 .chain(iter::once(Q))
-                .cloned()
-                .collect(); // todo avoid cloning?
+                .copied()
+                .collect();
             let R = C::Group::msm_unchecked(r_points.as_slice(), r_scalars.as_slice()).into();
 
             L_vec.push(L);
@@ -146,12 +144,12 @@ impl<C: AffineRepr> InnerProductProof<C> {
                 b_L[i] = b_L[i] * u_inv + u * b_R[i];
                 G_L[i] = C::Group::msm_unchecked(
                     &[G_L[i], G_R[i]],
-                    &[(u_inv * G_factors[i]).into(), (u * G_factors[n + i]).into()],
+                    &[(u_inv * G_factors[i]), (u * G_factors[n + i])],
                 )
                 .into();
                 H_L[i] = C::Group::msm_unchecked(
                     &[H_L[i], H_R[i]],
-                    &[(u * H_factors[i]).into(), (u_inv * H_factors[n + i]).into()],
+                    &[(u * H_factors[i]), (u_inv * H_factors[n + i])],
                 )
                 .into();
             }
@@ -176,13 +174,13 @@ impl<C: AffineRepr> InnerProductProof<C> {
                 G_R.iter()
                     .chain(H_L.iter())
                     .chain(iter::once(Q))
-                    .cloned()
+                    .copied()
                     .collect::<Vec<C>>()
                     .as_slice(),
                 a_L.iter()
                     .chain(b_R.iter())
                     .chain(iter::once(&c_L))
-                    .map(|s| (*s).into())
+                    .copied()
                     .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
@@ -192,13 +190,13 @@ impl<C: AffineRepr> InnerProductProof<C> {
                 G_L.iter()
                     .chain(H_R.iter())
                     .chain(iter::once(Q))
-                    .cloned()
+                    .copied()
                     .collect::<Vec<C>>()
                     .as_slice(),
                 a_R.iter()
                     .chain(b_L.iter())
                     .chain(iter::once(&c_R))
-                    .map(|s| (*s).into())
+                    .copied()
                     .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
@@ -220,10 +218,8 @@ impl<C: AffineRepr> InnerProductProof<C> {
             for i in 0..n {
                 a_L[i] = a_L[i] * u + u_inv * a_R[i];
                 b_L[i] = b_L[i] * u_inv + u * b_R[i];
-                G_L[i] =
-                    C::Group::msm_unchecked(&[G_L[i], G_R[i]], &[u_inv.into(), u.into()]).into();
-                H_L[i] =
-                    C::Group::msm_unchecked(&[H_L[i], H_R[i]], &[u.into(), u_inv.into()]).into();
+                G_L[i] = C::Group::msm_unchecked(&[G_L[i], G_R[i]], &[u_inv, u]).into();
+                H_L[i] = C::Group::msm_unchecked(&[H_L[i], H_R[i]], &[u, u_inv]).into();
             }
 
             a = a_L;
@@ -359,7 +355,7 @@ impl<C: AffineRepr> InnerProductProof<C> {
                 .chain(H.iter())
                 .chain(self.L_vec.iter())
                 .chain(self.R_vec.iter())
-                .cloned()
+                .copied()
                 .collect::<Vec<C>>()
                 .as_slice(),
             iter::once(self.a * self.b)
@@ -367,7 +363,6 @@ impl<C: AffineRepr> InnerProductProof<C> {
                 .chain(h_times_b_div_s)
                 .chain(neg_u_sq)
                 .chain(neg_u_inv_sq)
-                .map(|s| (s).into())
                 .collect::<Vec<C::ScalarField>>()
                 .as_slice(),
         );
@@ -398,14 +393,14 @@ impl<C: AffineRepr> Valid for InnerProductProof<C> {
 impl<C: AffineRepr> CanonicalDeserialize for InnerProductProof<C> {
     fn deserialize_with_mode<R: Read>(
         mut reader: R,
-        compress: Compress, // todo
+        compress: Compress,
         validate: ark_serialize::Validate,
     ) -> Result<Self, SerializationError> {
         Ok(Self {
-            L_vec: Vec::<C>::deserialize_compressed(&mut reader)?,
-            R_vec: Vec::<C>::deserialize_compressed(&mut reader)?,
-            a: C::ScalarField::deserialize_compressed(&mut reader)?,
-            b: C::ScalarField::deserialize_compressed(&mut reader)?,
+            L_vec: Vec::<C>::deserialize_with_mode(&mut reader, compress, validate)?,
+            R_vec: Vec::<C>::deserialize_with_mode(&mut reader, compress, validate)?,
+            a: C::ScalarField::deserialize_with_mode(&mut reader, compress, validate)?,
+            b: C::ScalarField::deserialize_with_mode(&mut reader, compress, validate)?,
         })
     }
 }
@@ -431,12 +426,12 @@ impl<C: AffineRepr> CanonicalSerialize for InnerProductProof<C> {
     fn serialize_with_mode<W: Write>(
         &self,
         mut writer: W,
-        compress: Compress, // todo
+        compress: Compress,
     ) -> Result<(), SerializationError> {
-        self.L_vec.serialize_compressed(&mut writer)?;
-        self.R_vec.serialize_compressed(&mut writer)?;
-        self.a.serialize_compressed(&mut writer)?;
-        self.b.serialize_compressed(&mut writer)?;
+        self.L_vec.serialize_with_mode(&mut writer, compress)?;
+        self.R_vec.serialize_with_mode(&mut writer, compress)?;
+        self.a.serialize_with_mode(&mut writer, compress)?;
+        self.b.serialize_with_mode(&mut writer, compress)?;
         Ok(())
     }
 }
@@ -478,8 +473,8 @@ mod tests {
 
         use crate::generators::BulletproofGens;
         let bp_gens = BulletproofGens::<Affine>::new(n, 1);
-        let G: Vec<_> = bp_gens.share(0).G(n).cloned().collect();
-        let H: Vec<_> = bp_gens.share(0).H(n).cloned().collect();
+        let G: Vec<_> = bp_gens.share(0).G(n).copied().collect();
+        let H: Vec<_> = bp_gens.share(0).H(n).copied().collect();
 
         // Q would be determined upstream in the protocol, so we pick a random one.
         let Q = util::affine_from_bytes_tai::<Affine>(b"test point");
@@ -504,13 +499,13 @@ mod tests {
         // where b' = b \circ y^(-n)
         let b_prime = b.iter().zip(util::exp_iter(y_inv)).map(|(bi, yi)| *bi * yi);
         // a.iter() has Item=&Scalar, need Item=Scalar to chain with b_prime
-        let a_prime = a.iter().cloned();
+        let a_prime = a.iter().copied();
 
         let P = <Affine as AffineRepr>::Group::msm_unchecked(
             G.iter()
                 .chain(H.iter())
                 .chain(iter::once(&Q))
-                .cloned()
+                .copied()
                 .collect::<Vec<_>>()
                 .as_slice(),
             a_prime

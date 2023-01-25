@@ -11,7 +11,7 @@ use ark_std::{One, Zero};
 use std::marker::PhantomData;
 
 pub fn build_tables<C: AffineRepr>(h: C) -> Vec<Lookup3Bit<2, C::BaseField>> {
-    let lambda = <C::ScalarField as PrimeField>::MODULUS_BIT_SIZE as usize; // todo
+    let lambda = <C::ScalarField as PrimeField>::MODULUS_BIT_SIZE as usize;
     let m = lambda / 3 + 1;
 
     // Define tables T_1 .. T_m, and witnesses
@@ -62,7 +62,7 @@ pub fn re_randomize<
     commitment: Option<Affine<P>>, // Witness provided by the prover
     randomness: Option<S>,         // Witness provided by the prover
 ) {
-    let lambda = S::MODULUS_BIT_SIZE as usize; // todo check is consistent with prev impl
+    let lambda = S::MODULUS_BIT_SIZE as usize;
     let m = lambda / 3 + 1;
 
     let r_bits = match randomness {

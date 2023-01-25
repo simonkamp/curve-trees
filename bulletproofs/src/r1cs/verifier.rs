@@ -454,7 +454,6 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
                 .proof_dependent_scalars
                 .into_iter()
                 .chain(verification_tuple.proof_independent_scalars.into_iter())
-                .map(|s| s.into())
                 .collect::<Vec<_>>()
                 .as_slice(),
         );
@@ -642,7 +641,7 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
 
                     // add terms for vector commitments (higher degrees).
                     for j in 0..wVCs.len() {
-                        let wVCji = wVCs[j].get(i).cloned().unwrap_or_default();
+                        let wVCji = wVCs[j].get(i).copied().unwrap_or_default();
                         comb += xs[op_vec[j].1] * wVCji;
                     }
                 }
@@ -681,7 +680,7 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
         let xS = xs[op_degree + 1];
 
         let vscalar = (0..ncomm).map(|j| xs[op_vec[j].0]);
-        let vcomm = self.vec_comms.iter().cloned().map(|(comm, _)| comm);
+        let vcomm = self.vec_comms.iter().copied().map(|(comm, _)| comm);
 
         let proof_points = vcomm
             .chain(iter::once(proof.A_I1))
@@ -690,10 +689,10 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
             .chain(iter::once(proof.A_I2))
             .chain(iter::once(proof.A_O2))
             .chain(iter::once(proof.S2))
-            .chain(self.V.iter().cloned())
-            .chain(T_points.iter().cloned())
-            .chain(proof.ipp_proof.L_vec.iter().cloned())
-            .chain(proof.ipp_proof.R_vec.iter().cloned())
+            .chain(self.V.iter().copied())
+            .chain(T_points.iter().copied())
+            .chain(proof.ipp_proof.L_vec.iter().copied())
+            .chain(proof.ipp_proof.R_vec.iter().copied())
             .collect();
 
         let proof_scalars = vscalar
@@ -704,7 +703,7 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
             .chain(iter::once(xO * u)) // A_O2
             .chain(iter::once(xS * u)) // S2
             .chain(wV.iter().map(|wVi| *wVi * rxs[op_degree])) // V : at op-degree
-            .chain(T_scalars.iter().cloned()) // T_points
+            .chain(T_scalars.iter().copied()) // T_points
             .chain(u_sq.into_iter()) // ipp_proof.L_vec
             .chain(u_inv_sq.into_iter()) // ipp_proof.R_vec
             .collect::<Vec<_>>();
@@ -791,7 +790,6 @@ pub fn batch_verify<C: AffineRepr>(
         proof_point_scalars
             .into_iter()
             .chain(linear_combination)
-            .map(|s| s.into())
             .collect::<Vec<_>>()
             .as_slice(),
     );
