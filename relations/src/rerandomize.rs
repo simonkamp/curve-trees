@@ -191,7 +191,6 @@ mod tests {
 
     use ark_ec::CurveGroup;
     use ark_pallas::Affine as PallasA;
-    use ark_pallas::Projective as PallasP;
     use ark_std::UniformRand;
     use ark_vesta::Affine as VestaA;
     use merlin::Transcript;

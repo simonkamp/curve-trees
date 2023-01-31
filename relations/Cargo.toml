@@ -40,4 +40,6 @@ harness = false
 lto = true
 
 [build]
-rustflags = "-C target-cpu=native" # check if this actually improves benchmarks
+ # Adds architecture specific optimizations including those enabling the asm backend for ark_ff. It could potentially cause slowdowns from other features.
+rustflags = "-C target-cpu=native"
+ # You could alternatively add support for the asm backend through "-C target-feature=+bmi2,+adx", but the binary would only run on systems supporting these instructions.

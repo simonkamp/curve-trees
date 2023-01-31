@@ -11,9 +11,7 @@ use relations::curve_tree::*;
 use ark_pallas::{PallasConfig, Projective as PallasP};
 use ark_vesta::VestaConfig;
 
-use ark_ec::{
-    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
-};
+use ark_ec::{short_weierstrass::Affine, CurveGroup};
 use ark_serialize::{CanonicalSerialize, Compress};
 use ark_std::UniformRand;
 
@@ -266,7 +264,8 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     let mut group = c.benchmark_group(group_name);
     use std::iter;
 
-    for n in [1, 2, 10, 50, 100, 150, 200] {
+    // for n in [1, 2, 10, 50, 100] {
+    for n in [1, 100] {
         group.bench_with_input(
             BenchmarkId::from_parameter(n),
             &iter::repeat(path.clone()).take(n).collect::<Vec<_>>(),

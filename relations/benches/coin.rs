@@ -18,9 +18,7 @@ use ark_pallas::{PallasConfig, Projective as PallasP};
 use ark_vesta::VestaConfig;
 
 use ark_crypto_primitives::{signature::schnorr::Schnorr, signature::SignatureScheme};
-use ark_ec::{
-    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
-};
+use ark_ec::short_weierstrass::Affine;
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use blake2::Blake2s256 as Blake2s;
@@ -190,7 +188,7 @@ fn bench_pour_with_parameters<const L: usize>(
     use std::iter;
     let group_name = format!("{}_pour_batch_verification.L={},d={}.", threaded, L, depth);
     let mut group = c.benchmark_group(group_name);
-    for n in [1, 2, 10, 50, 100, 150, 200] {
+    for n in [1, 100] {
         group.bench_with_input(
             BenchmarkId::from_parameter(n),
             &iter::repeat(pour_proof.clone()).take(n).collect::<Vec<_>>(),

@@ -188,14 +188,11 @@ fn not_zero<F: Field, Cs: ConstraintSystem<F>>(
 mod tests {
     use super::*;
 
-    // use ark_ec::ProjectiveCurve;
-    use ark_std::{One, UniformRand, Zero};
+    use ark_std::{One, UniformRand};
     use bulletproofs::{BulletproofGens, PedersenGens};
 
     use ark_pallas::Affine as PallasA;
-    // use ark_pallas::Projective as PallasP;
     use ark_vesta::Affine as VestaA;
-    // use ark_vesta::Projective as VestaP;
     type VestaScalar = <VestaA as AffineRepr>::ScalarField;
     use merlin::Transcript;
 
