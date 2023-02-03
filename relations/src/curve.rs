@@ -7,19 +7,20 @@ pub fn curve_check<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
     x: LinearCombination<F>,
     y: LinearCombination<F>,
-    a: F, // 0 for pallas and vesta
-    b: F, // 5 for pallas and vesta
+    a: F,
+    b: F,
 ) {
-    let (_, _, x_r) = cs.multiply(x.clone(), x.clone());
-    let (_, _, x_o) = cs.multiply(x, x_r.into());
-    let (_, _, y_r) = cs.multiply(y.clone(), y);
+    let (_, _, x_squared) = cs.multiply(x.clone(), x.clone());
+    let (_, _, x_cubed) = cs.multiply(x, x_squared.into());
+    let (_, _, y_squared) = cs.multiply(y.clone(), y);
 
     // x^3 + A*x^2 + B - y^2 = 0
     cs.constrain(
-        LinearCombination::<F>::from(x_o) + LinearCombination::<F>::from(x_r).scalar_mul(a) + b
-            - y_r,
+        LinearCombination::<F>::from(x_cubed)
+            + LinearCombination::<F>::from(x_squared).scalar_mul(a)
+            + b
+            - y_squared,
     )
-    // todo can anything be optimized by checking for a = 0?
 }
 
 /// A point represented by variables corresponding to its affine coordinates and optionally the value of those,

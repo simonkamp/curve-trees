@@ -154,7 +154,7 @@ fn bench_pour_with_parameters<const L: usize>(
         });
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                let pour = Pour::<PallasConfig, VestaConfig, PallasP>::deserialize_compressed(
+                let _pour = Pour::<PallasConfig, VestaConfig, PallasP>::deserialize_compressed(
                     &tx.pour_bytes[..],
                 )
                 .unwrap();

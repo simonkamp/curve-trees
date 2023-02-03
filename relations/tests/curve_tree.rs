@@ -6,9 +6,7 @@ use bulletproofs::r1cs::*;
 use rand::thread_rng;
 use relations::curve_tree::*;
 
-use ark_ec::{
-    models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
-};
+use ark_ec::{short_weierstrass::Affine, CurveGroup};
 use ark_std::UniformRand;
 use merlin::Transcript;
 

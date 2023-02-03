@@ -780,7 +780,7 @@ mod tests {
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
-        let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
+        let (pk, _sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
 
         let (coin_aux, coin) = Coin::<PallasParameters, PallasP>::new(
             19,

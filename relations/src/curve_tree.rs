@@ -198,7 +198,7 @@ impl<
     ) -> Affine<P0> {
         let commitments = self.select_and_rerandomize_verification_commitments(randomized_path);
 
-        commitments.even_verifier_gadget(even_verifier, parameters); // todo use join?
+        commitments.even_verifier_gadget(even_verifier, parameters);
         commitments.odd_verifier_gadget(odd_verifier, parameters);
 
         commitments.leaf
@@ -282,6 +282,13 @@ impl<
 pub struct SelectAndRerandomizePath<P0: SWCurveConfig, P1: SWCurveConfig> {
     pub even_commitments: Vec<Affine<P0>>,
     pub odd_commitments: Vec<Affine<P1>>,
+}
+
+impl<P0: SWCurveConfig, P1: SWCurveConfig> SelectAndRerandomizePath<P0, P1> {
+    /// Get the public rerandomization of the selected commitment
+    pub fn get_rerandomized_commitment(&self) -> Affine<P0> {
+        *self.even_commitments.last().unwrap()
+    }
 }
 
 impl<P0: SWCurveConfig, P1: SWCurveConfig> CanonicalSerialize for SelectAndRerandomizePath<P0, P1> {
@@ -390,6 +397,7 @@ impl<
                 .into_affine();
             odd_rerandomized_commitments.push((even.child_witness + blinding).into());
         }
+
         for odd in &self.odd_nodes {
             let rerandomization = F0::rand(rng);
             even_rerandomization_scalars.push(rerandomization);
@@ -402,45 +410,55 @@ impl<
             even_rerandomized_commitments.push((odd.child_witness + blinding).into());
         }
 
-        // todo the two loops could be in separate functions for cleaner join
-        for i in 0..even_length {
-            let parent_rerandomization = if self.root_is_even() {
-                if i == 0 {
-                    // the parent is the the root and thus not rerandomized
-                    F0::zero()
+        let prove_even = |prover: &mut Prover<Transcript, Affine<P0>>| {
+            for i in 0..even_length {
+                let parent_rerandomization = if self.root_is_even() {
+                    if i == 0 {
+                        // the parent is the the root and thus not rerandomized
+                        F0::zero()
+                    } else {
+                        even_rerandomization_scalars[i - 1]
+                    }
                 } else {
-                    even_rerandomization_scalars[i - 1]
-                }
-            } else {
-                even_rerandomization_scalars[i]
-            };
-            self.even_nodes[i].single_level_select_and_rerandomize_prover_gadget(
-                even_prover,
-                &parameters.even_parameters,
-                &parameters.odd_parameters,
-                parent_rerandomization,
-                odd_rerandomization_scalars[i],
-            );
-        }
-        for i in 0..odd_length {
-            let parent_rerandomization = if !self.root_is_even() {
-                if i == 0 {
-                    // the parent is the the root and thus not rerandomized
-                    F1::zero()
+                    even_rerandomization_scalars[i]
+                };
+                self.even_nodes[i].single_level_select_and_rerandomize_prover_gadget(
+                    prover,
+                    &parameters.even_parameters,
+                    &parameters.odd_parameters,
+                    parent_rerandomization,
+                    odd_rerandomization_scalars[i],
+                );
+            }
+        };
+        #[cfg(not(feature = "parallel"))]
+        prove_even(even_prover);
+        let prove_odd = |prover: &mut Prover<Transcript, Affine<P1>>| {
+            for i in 0..odd_length {
+                let parent_rerandomization = if !self.root_is_even() {
+                    if i == 0 {
+                        // the parent is the the root and thus not rerandomized
+                        F1::zero()
+                    } else {
+                        odd_rerandomization_scalars[i - 1]
+                    }
                 } else {
-                    odd_rerandomization_scalars[i - 1]
-                }
-            } else {
-                odd_rerandomization_scalars[i]
-            };
-            self.odd_nodes[i].single_level_select_and_rerandomize_prover_gadget(
-                odd_prover,
-                &parameters.odd_parameters,
-                &parameters.even_parameters,
-                parent_rerandomization,
-                even_rerandomization_scalars[i],
-            );
-        }
+                    odd_rerandomization_scalars[i]
+                };
+                self.odd_nodes[i].single_level_select_and_rerandomize_prover_gadget(
+                    prover,
+                    &parameters.odd_parameters,
+                    &parameters.even_parameters,
+                    parent_rerandomization,
+                    even_rerandomization_scalars[i],
+                );
+            }
+        };
+        #[cfg(not(feature = "parallel"))]
+        prove_odd(odd_prover);
+
+        #[cfg(feature = "parallel")]
+        rayon::join(|| prove_even(even_prover), || prove_odd(odd_prover));
 
         (
             SelectAndRerandomizePath {

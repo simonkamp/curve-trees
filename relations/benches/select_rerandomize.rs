@@ -130,7 +130,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 let mut vesta_prover: Prover<_, Affine<VestaConfig>> =
                     Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
-                let (path, _) = curve_tree.select_and_rerandomize_prover_gadget(
+                let (_path, _) = curve_tree.select_and_rerandomize_prover_gadget(
                     0,
                     &mut pallas_prover,
                     &mut vesta_prover,
@@ -140,7 +140,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
             })
         });
 
-        // #[cfg(feature = "bench_prover")]
+        #[cfg(feature = "bench_prover")]
         group.bench_function("prover", |b| b.iter(|| prove(false)));
 
         group.bench_function("verification_gadget", |b| {

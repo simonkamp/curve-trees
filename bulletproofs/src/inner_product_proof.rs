@@ -133,7 +133,6 @@ impl<C: AffineRepr> InnerProductProof<C> {
 
             let u = transcript.challenge_scalar::<C>(b"u");
             let u_inv = if let Some(res) = u.inverse() {
-                //todo
                 res
             } else {
                 panic!("u challenge is zero");

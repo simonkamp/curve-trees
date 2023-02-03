@@ -1,6 +1,6 @@
 use ark_pallas::Affine;
 
-use bulletproofs::{BulletproofGens, PedersenGens};
+use bulletproofs::BulletproofGens;
 
 #[macro_use]
 extern crate criterion;

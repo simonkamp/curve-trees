@@ -36,6 +36,10 @@ harness = false
 name = "coin"
 harness = false
 
+[[bench]]
+name = "accumulator"
+harness = false
+
 [profile.release]
 lto = true
 
