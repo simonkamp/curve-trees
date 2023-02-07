@@ -151,13 +151,13 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 let even_verification_gadget = || {
                     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
                     let mut pallas_verifier = Verifier::new(pallas_transcript);
-                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params, &curve_tree);
                 };
 
                 let odd_verification_gadget = || {
                     let vesta_transcript = Transcript::new(b"select_and_rerandomize");
                     let mut vesta_verifier = Verifier::new(vesta_transcript);
-                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params, &curve_tree);
                 };
 
                 #[cfg(not(feature = "parallel"))]
@@ -180,7 +180,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 let even_verification_gadget = || {
                     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
                     let mut pallas_verifier = Verifier::new(pallas_transcript);
-                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params, &curve_tree);
                     let _ = pallas_verifier
                         .verification_scalars_and_points(&pallas_proof)
                         .unwrap();
@@ -189,7 +189,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 let odd_verification_gadget = || {
                     let vesta_transcript = Transcript::new(b"select_and_rerandomize");
                     let mut vesta_verifier = Verifier::new(vesta_transcript);
-                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params, &curve_tree);
                     let _ = vesta_verifier
                         .verification_scalars_and_points(&vesta_proof)
                         .unwrap();
@@ -214,7 +214,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 let even_verification_gadget = || {
                     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
                     let mut pallas_verifier = Verifier::new(pallas_transcript);
-                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params, &curve_tree);
                     let pallas_vt = pallas_verifier
                         .verification_scalars_and_points(&pallas_proof)
                         .unwrap();
@@ -230,7 +230,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 let odd_verification_gadget = || {
                     let vesta_transcript = Transcript::new(b"select_and_rerandomize");
                     let mut vesta_verifier = Verifier::new(vesta_transcript);
-                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params, &curve_tree);
 
                     let vesta_vt = vesta_verifier
                         .verification_scalars_and_points(&vesta_proof)
@@ -284,7 +284,11 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                                         let pallas_transcript =
                                             Transcript::new(b"select_and_rerandomize");
                                         let mut pallas_verifier = Verifier::new(pallas_transcript);
-                                        srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                                        srv.even_verifier_gadget(
+                                            &mut pallas_verifier,
+                                            &sr_params,
+                                            &curve_tree,
+                                        );
                                         let pallas_vt = pallas_verifier
                                             .verification_scalars_and_points(&pallas_proof)
                                             .unwrap();
@@ -304,7 +308,11 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                                         let vesta_transcript =
                                             Transcript::new(b"select_and_rerandomize");
                                         let mut vesta_verifier = Verifier::new(vesta_transcript);
-                                        srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                                        srv.odd_verifier_gadget(
+                                            &mut vesta_verifier,
+                                            &sr_params,
+                                            &curve_tree,
+                                        );
 
                                         let vesta_vt = vesta_verifier
                                             .verification_scalars_and_points(&vesta_proof)
@@ -333,7 +341,11 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                             {
                                 let pallas_transcript = Transcript::new(b"select_and_rerandomize");
                                 let mut pallas_verifier = Verifier::new(pallas_transcript);
-                                srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                                srv.even_verifier_gadget(
+                                    &mut pallas_verifier,
+                                    &sr_params,
+                                    &curve_tree,
+                                );
                                 let pallas_vt = pallas_verifier
                                     .verification_scalars_and_points(&pallas_proof)
                                     .unwrap();
@@ -343,7 +355,11 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                             {
                                 let vesta_transcript = Transcript::new(b"select_and_rerandomize");
                                 let mut vesta_verifier = Verifier::new(vesta_transcript);
-                                srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                                srv.odd_verifier_gadget(
+                                    &mut vesta_verifier,
+                                    &sr_params,
+                                    &curve_tree,
+                                );
 
                                 let vesta_vt = vesta_verifier
                                     .verification_scalars_and_points(&vesta_proof)

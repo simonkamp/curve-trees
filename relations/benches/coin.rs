@@ -130,7 +130,7 @@ fn bench_pour_with_parameters<const L: usize>(
     };
     let tx = prove();
     let pour_proof =
-        Pour::<PallasConfig, VestaConfig, PallasP>::deserialize_compressed(&tx.pour_bytes[..])
+        Pour::<L, PallasConfig, VestaConfig, PallasP>::deserialize_compressed(&tx.pour_bytes[..])
             .unwrap();
 
     println!("Proof size in bytes {}", tx.serialized_size(Compress::Yes));
@@ -154,7 +154,7 @@ fn bench_pour_with_parameters<const L: usize>(
         });
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                let _pour = Pour::<PallasConfig, VestaConfig, PallasP>::deserialize_compressed(
+                let _pour = Pour::<L, PallasConfig, VestaConfig, PallasP>::deserialize_compressed(
                     &tx.pour_bytes[..],
                 )
                 .unwrap();
@@ -246,6 +246,7 @@ fn bench_pour_with_parameters<const L: usize>(
                                             &sr_params,
                                             &path0,
                                             &path1,
+                                            &curve_tree,
                                         )
                                     })
                                     .collect();
@@ -265,6 +266,7 @@ fn bench_pour_with_parameters<const L: usize>(
                                             &sr_params,
                                             &path0,
                                             &path1,
+                                            &curve_tree,
                                         )
                                     })
                                     .collect();

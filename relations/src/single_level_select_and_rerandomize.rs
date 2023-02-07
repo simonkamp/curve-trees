@@ -89,7 +89,7 @@ pub fn single_level_select_and_rerandomize<
     cs: &mut Cs, // Prover or verifier
     parameters: &SingleLayerParameters<C2>,
     rerandomized: &Affine<C2>, // The public rerandomization of the selected child
-    children: Vec<Variable<Fs>>, // Variables representing members of the (parent) vector commitment
+    children: Vec<LinearCombination<Fs>>, // Variables representing members of the (parent) vector commitment
     selected_witness: Option<Affine<C2>>, // Witness of the commitment being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. selected_witness * randomness_offset = rerandomized
 ) {
@@ -109,11 +109,13 @@ pub fn single_level_select_and_rerandomize<
     re_randomize(
         cs,
         &parameters.tables,
-        x_var.into(),
-        y_var.into(),
+        PointRepresentation {
+            x: x_var.into(),
+            y: y_var.into(),
+            witness: selected_witness,
+        },
         constant(rerandomized.x),
         constant(rerandomized.y),
-        selected_witness,
         randomness_offset,
     );
 }
@@ -180,11 +182,9 @@ pub fn single_level_batched_select_and_rerandomize<
     re_randomize(
         cs,
         &parameters.tables,
-        sum_of_selected.x,
-        sum_of_selected.y,
+        sum_of_selected,
         constant(rerandomized.x),
         constant(rerandomized.y),
-        sum_of_selected.witness,
         randomness_offset,
     );
 }

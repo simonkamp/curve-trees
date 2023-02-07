@@ -109,7 +109,10 @@ impl<
         odd_prover: &mut Prover<Transcript, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
         curve_tree: &CurveTree<L, P0, P1>,
-    ) -> (SelectAndRerandomizePath<P0, P1>, Variable<P0::ScalarField>) {
+    ) -> (
+        SelectAndRerandomizePath<L, P0, P1>,
+        Variable<P0::ScalarField>,
+    ) {
         let (path, rerandomization) = curve_tree.select_and_rerandomize_prover_gadget(
             index,
             even_prover,
@@ -248,7 +251,7 @@ pub fn prove_pour<
         },
     );
 
-    let proof = Pour::<P0, P1, C> {
+    let proof = Pour::<L, P0, P1, C> {
         even_proof,
         odd_proof,
         randomized_path_0: path_0,
@@ -296,14 +299,15 @@ pub fn prove_pour<
 // todo do an n to m pour with arrays?
 #[derive(Clone)]
 pub struct Pour<
+    const L: usize,
     P0: SWCurveConfig + Clone,
     P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
     C: CurveGroup,
 > {
     pub even_proof: R1CSProof<Affine<P0>>,
     pub odd_proof: R1CSProof<Affine<P1>>,
-    pub randomized_path_0: SelectAndRerandomizePath<P0, P1>,
-    pub randomized_path_1: SelectAndRerandomizePath<P0, P1>,
+    pub randomized_path_0: SelectAndRerandomizePath<L, P0, P1>,
+    pub randomized_path_1: SelectAndRerandomizePath<L, P0, P1>,
     pub pk0: PublicKey<C>,
     pub pk1: PublicKey<C>,
     pub minted_coin_commitment_0: Affine<P0>,
@@ -311,10 +315,11 @@ pub struct Pour<
 }
 
 impl<
+        const L: usize,
         P0: SWCurveConfig + Clone,
         P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
         C: CurveGroup,
-    > CanonicalSerialize for Pour<P0, P1, C>
+    > CanonicalSerialize for Pour<L, P0, P1, C>
 {
     fn serialized_size(&self, compress: Compress) -> usize {
         self.even_proof.serialized_size(compress)
@@ -349,20 +354,22 @@ impl<
 }
 
 impl<
+        const L: usize,
         P0: SWCurveConfig + Clone,
         P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
         C: CurveGroup,
-    > Valid for Pour<P0, P1, C>
+    > Valid for Pour<L, P0, P1, C>
 {
     fn check(&self) -> Result<(), SerializationError> {
         Ok(())
     }
 }
 impl<
+        const L: usize,
         P0: SWCurveConfig + Clone,
         P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Clone,
         C: CurveGroup,
-    > CanonicalDeserialize for Pour<P0, P1, C>
+    > CanonicalDeserialize for Pour<L, P0, P1, C>
 {
     fn deserialize_with_mode<R: Read>(
         mut reader: R,
@@ -380,12 +387,12 @@ impl<
                 compress,
                 validate,
             )?,
-            randomized_path_0: SelectAndRerandomizePath::<P0, P1>::deserialize_with_mode(
+            randomized_path_0: SelectAndRerandomizePath::<L, P0, P1>::deserialize_with_mode(
                 &mut reader,
                 compress,
                 validate,
             )?,
-            randomized_path_1: SelectAndRerandomizePath::<P0, P1>::deserialize_with_mode(
+            randomized_path_1: SelectAndRerandomizePath::<L, P0, P1>::deserialize_with_mode(
                 &mut reader,
                 compress,
                 validate,
@@ -407,20 +414,22 @@ impl<
 }
 
 impl<
+        const L: usize,
         F0: PrimeField,
         F1: PrimeField,
         P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
         P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy,
         C: CurveGroup,
-    > Pour<P0, P1, C>
+    > Pour<L, P0, P1, C>
 {
     // verification
     pub fn even_verification_gadget(
         &self,
         ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
-        spend_commitments_0: &SRVerificationCommitments<P0, P1>,
-        spend_commitments_1: &SRVerificationCommitments<P0, P1>,
+        spend_commitments_0: &SelectAndRerandomizePath<L, P0, P1>,
+        spend_commitments_1: &SelectAndRerandomizePath<L, P0, P1>,
+        curve_tree: &CurveTree<L, P0, P1>,
     ) -> VerificationTuple<Affine<P0>> {
         let mut even_verifier = Verifier::new(Transcript::new(ro_domain));
         // mint
@@ -428,17 +437,19 @@ impl<
         let minted_amount_var_1 = verify_mint(&mut even_verifier, self.minted_coin_commitment_1);
 
         // spend
-        let spent_amount_var_0 = verify_spend_even::<_, _, _, _, C>(
+        let spent_amount_var_0 = verify_spend_even::<L, _, _, _, _, C>(
             &mut even_verifier,
             spend_commitments_0,
             sr_parameters,
             &self.pk0,
+            curve_tree,
         );
-        let spent_amount_var_1 = verify_spend_even::<_, _, _, _, C>(
+        let spent_amount_var_1 = verify_spend_even::<L, _, _, _, _, C>(
             &mut even_verifier,
             spend_commitments_1,
             sr_parameters,
             &self.pk1,
+            curve_tree,
         );
 
         // balance
@@ -456,13 +467,24 @@ impl<
         &self,
         ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
-        spend_commitments_0: &SRVerificationCommitments<P0, P1>,
-        spend_commitments_1: &SRVerificationCommitments<P0, P1>,
+        spend_commitments_0: &SelectAndRerandomizePath<L, P0, P1>,
+        spend_commitments_1: &SelectAndRerandomizePath<L, P0, P1>,
+        curve_tree: &CurveTree<L, P0, P1>,
     ) -> VerificationTuple<Affine<P1>> {
         let mut odd_verifier = Verifier::new(Transcript::new(ro_domain));
         // spend
-        verify_spend_odd(&mut odd_verifier, spend_commitments_0, sr_parameters);
-        verify_spend_odd(&mut odd_verifier, spend_commitments_1, sr_parameters);
+        verify_spend_odd(
+            &mut odd_verifier,
+            spend_commitments_0,
+            sr_parameters,
+            curve_tree,
+        );
+        verify_spend_odd(
+            &mut odd_verifier,
+            spend_commitments_1,
+            sr_parameters,
+            curve_tree,
+        );
 
         odd_verifier
             .verification_scalars_and_points(&self.odd_proof)
@@ -470,7 +492,7 @@ impl<
     }
 
     // verification
-    pub fn verification_gadget<const L: usize>(
+    pub fn verification_gadget(
         self,
         ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
@@ -513,6 +535,7 @@ impl<
                         sr_parameters,
                         &spend_commitments_0,
                         &spend_commitments_1,
+                        &curve_tree,
                     )
                 },
                 || {
@@ -521,6 +544,7 @@ impl<
                         sr_parameters,
                         &spend_commitments_0,
                         &spend_commitments_1,
+                        &curve_tree,
                     )
                 },
             )
@@ -533,12 +557,14 @@ impl<
                     sr_parameters,
                     &spend_commitments_0,
                     &spend_commitments_1,
+                    &curve_tree,
                 ),
                 self.odd_verification_gadget(
                     ro_domain,
                     sr_parameters,
                     &spend_commitments_0,
                     &spend_commitments_1,
+                    &curve_tree,
                 ),
             )
         };
@@ -550,6 +576,7 @@ impl<
 }
 
 fn verify_spend_even<
+    const L: usize,
     F0: PrimeField,
     F1: PrimeField,
     P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
@@ -557,12 +584,13 @@ fn verify_spend_even<
     C: CurveGroup,
 >(
     even_verifier: &mut Verifier<Transcript, Affine<P0>>,
-    commitments: &SRVerificationCommitments<P0, P1>,
+    commitments: &SelectAndRerandomizePath<L, P0, P1>,
     sr_parameters: &SelRerandParameters<P0, P1>,
     pk: &PublicKey<C>,
+    curve_tree: &CurveTree<L, P0, P1>,
 ) -> Variable<P0::ScalarField> {
-    commitments.even_verifier_gadget(even_verifier, sr_parameters);
-    let vars = even_verifier.commit_vec(commitments.branching_factor, commitments.leaf);
+    commitments.even_verifier_gadget(even_verifier, sr_parameters, curve_tree);
+    let vars = even_verifier.commit_vec(L, commitments.get_rerandomized_leaf());
 
     // enforce equality of tag with hash of public key
     even_verifier.constrain(vars[1] - Coin::<P0, C>::pk_to_scalar(pk));
@@ -572,15 +600,17 @@ fn verify_spend_even<
 }
 
 fn verify_spend_odd<
+    const L: usize,
     F: PrimeField,
     P0: SWCurveConfig<BaseField = F> + Copy,
     P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = F> + Copy,
 >(
     odd_verifier: &mut Verifier<Transcript, Affine<P1>>,
-    commitments: &SRVerificationCommitments<P0, P1>,
+    commitments: &SelectAndRerandomizePath<L, P0, P1>,
     sr_parameters: &SelRerandParameters<P0, P1>,
+    curve_tree: &CurveTree<L, P0, P1>,
 ) {
-    commitments.odd_verifier_gadget(odd_verifier, sr_parameters);
+    commitments.odd_verifier_gadget(odd_verifier, sr_parameters, curve_tree);
 }
 
 #[derive(Clone)]
@@ -612,7 +642,8 @@ impl<
         curve_tree: &CurveTree<L, P0, P1>,
         sig_parameters: &Parameters<C, Blake2s>,
     ) -> (VerificationTuple<Affine<P0>>, VerificationTuple<Affine<P1>>) {
-        let pour = Pour::<P0, P1, C>::deserialize_compressed(self.pour_bytes.as_slice()).unwrap();
+        let pour =
+            Pour::<L, P0, P1, C>::deserialize_compressed(self.pour_bytes.as_slice()).unwrap();
         let pk0 = pour.pk0;
         let pk1 = pour.pk1;
         #[cfg(feature = "parallel")]
@@ -824,12 +855,13 @@ mod tests {
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
             let commitments = curve_tree.select_and_rerandomize_verification_commitments(path);
-            verify_spend_odd(&mut vesta_verifier, &commitments, &sr_params);
-            verify_spend_even::<_, _, _, _, PallasP>(
+            verify_spend_odd(&mut vesta_verifier, &commitments, &sr_params, &curve_tree);
+            verify_spend_even::<256, _, _, _, _, PallasP>(
                 &mut pallas_verifier,
                 &commitments,
                 &sr_params,
                 &rerandomized_pk,
+                &curve_tree,
             );
 
             vesta_verifier

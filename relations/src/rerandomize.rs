@@ -55,12 +55,10 @@ pub fn re_randomize<
 >(
     cs: &mut Cs,
     tables: &[Lookup3Bit<2, F>],
-    commitment_x: LinearCombination<F>,
-    commitment_y: LinearCombination<F>,
+    commitment: PointRepresentation<F, Affine<P>>,
     commitment_x_tilde: LinearCombination<F>,
     commitment_y_tilde: LinearCombination<F>,
-    commitment: Option<Affine<P>>, // Witness provided by the prover
-    randomness: Option<S>,         // Witness provided by the prover
+    randomness: Option<S>, // Witness provided by the prover
 ) {
     let lambda = S::MODULUS_BIT_SIZE as usize;
     let m = lambda / 3 + 1;
@@ -160,7 +158,7 @@ pub fn re_randomize<
     }
 
     // constrain (x_tilde, y_tilde) = (x, y) + (R_m) - with checked addition
-    let (delta, x_l_minus_x_r_inv) = match commitment {
+    let (delta, x_l_minus_x_r_inv) = match commitment.witness {
         Some(commitment) => {
             let x_left = commitment.x().unwrap();
             let y_left = commitment.y().unwrap();
@@ -172,8 +170,8 @@ pub fn re_randomize<
         _ => (None, None),
     };
     let prms = CurveAddition {
-        x_l: commitment_x,
-        y_l: commitment_y,
+        x_l: commitment.x,
+        y_l: commitment.y,
         x_r: acc_i_minus_1_x_lc,
         y_r: acc_i_minus_1_y_lc,
         x_o: commitment_x_tilde,
@@ -221,11 +219,13 @@ mod tests {
             re_randomize(
                 &mut prover,
                 &tables,
-                c_x_var.into(),
-                c_y_var.into(),
+                PointRepresentation {
+                    x: c_x_var.into(),
+                    y: c_y_var.into(),
+                    witness: Some(c),
+                },
                 c_x_tilde_var.into(),
                 c_y_tilde_var.into(),
-                Some(c),
                 Some(r),
             );
 
@@ -243,11 +243,13 @@ mod tests {
         re_randomize::<_, _, PallasConfig, _>(
             &mut verifier,
             &tables,
-            c_x_var.into(),
-            c_y_var.into(),
+            PointRepresentation {
+                x: c_x_var.into(),
+                y: c_y_var.into(),
+                witness: None,
+            },
             c_x_tilde_var.into(),
             c_y_tilde_var.into(),
-            None,
             None,
         );
 

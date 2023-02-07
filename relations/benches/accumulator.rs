@@ -17,27 +17,30 @@ use ark_std::{UniformRand, Zero};
 
 use merlin::Transcript;
 
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 fn bench_accumulator(c: &mut Criterion) {
-    // todo use better parameters, eg. maybe reduce depth and increase leaf_width? Split gen size.
-    bench_accumulator_with_parameters::<256>(c, 3, 64, 12);
-    bench_accumulator_with_parameters::<1024>(c, 2, 1024, 12);
+    bench_accumulator_with_parameters::<256>(c, 3, 64, 11, 12);
+    // bench_accumulator_with_parameters::<512>(c, 3, 8, 11, 12);
+    // bench_accumulator_with_parameters::<1024>(c, 2, 1024, 12, 11);
 }
 
 // `L` is the branching factor of the curve tree
 fn bench_accumulator_with_parameters<const L: usize>(
     c: &mut Criterion,
-    depth: usize,                   // the depth of the curve tree
+    depth: usize,                        // the depth of the curve tree
     leaf_width: usize, // the maximum number of field elements stored in a curve tree leaf
-    generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
+    even_generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
+    odd_generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
 ) {
     let mut rng = rand::thread_rng();
-    let generators_length = 1 << generators_length_log_2;
+    let even_generators_length = 1 << even_generators_length_log_2;
+    let odd_generators_length = 1 << odd_generators_length_log_2;
 
     let sr_params = SelRerandParameters::<PallasConfig, VestaConfig>::new(
-        generators_length,
-        generators_length,
+        even_generators_length,
+        odd_generators_length,
         &mut rng,
     );
 
@@ -82,7 +85,7 @@ fn bench_accumulator_with_parameters<const L: usize>(
             permissible_randomness + rerandomization,
             &sr_params.even_parameters.bp_gens,
         );
-        assert_eq!(leaf_commitment, path.get_rerandomized_commitment()); // sanity check
+        assert_eq!(leaf_commitment, path.get_rerandomized_leaf()); // sanity check
 
         select(
             &mut pallas_prover,
@@ -103,6 +106,16 @@ fn bench_accumulator_with_parameters<const L: usize>(
                 vesta_prover.number_of_constraints()
             );
         }
+        #[cfg(not(feature = "parallel"))]
+        let (pallas_proof, vesta_proof) = (
+            pallas_prover
+                .prove(&sr_params.even_parameters.bp_gens)
+                .unwrap(),
+            vesta_prover
+                .prove(&sr_params.odd_parameters.bp_gens)
+                .unwrap(),
+        );
+        #[cfg(feature = "parallel")]
         let (pallas_proof, vesta_proof) = rayon::join(
             || {
                 pallas_prover
@@ -141,9 +154,9 @@ fn bench_accumulator_with_parameters<const L: usize>(
                 let even_verification_gadget = || {
                     let pallas_transcript = Transcript::new(b"acc");
                     let mut pallas_verifier = Verifier::new(pallas_transcript);
-                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params, &curve_tree);
                     let leaf_vars =
-                        pallas_verifier.commit_vec(leaf_width, path.get_rerandomized_commitment());
+                        pallas_verifier.commit_vec(leaf_width, path.get_rerandomized_leaf());
 
                     select(
                         &mut pallas_verifier,
@@ -169,7 +182,7 @@ fn bench_accumulator_with_parameters<const L: usize>(
                 let odd_verification_gadget = || {
                     let vesta_transcript = Transcript::new(b"acc");
                     let mut vesta_verifier = Verifier::new(vesta_transcript);
-                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params, &curve_tree);
 
                     let vesta_vt = vesta_verifier
                         .verification_scalars_and_points(&vesta_proof)
@@ -183,8 +196,12 @@ fn bench_accumulator_with_parameters<const L: usize>(
                     assert_eq!(res, Ok(()))
                 };
 
+                #[cfg(feature = "parallel")]
+                rayon::join(even_verification_gadget, odd_verification_gadget);
+                #[cfg(not(feature = "parallel"))]
                 {
-                    rayon::join(even_verification_gadget, odd_verification_gadget);
+                    even_verification_gadget();
+                    odd_verification_gadget();
                 }
             })
         });
@@ -200,19 +217,90 @@ fn bench_accumulator_with_parameters<const L: usize>(
             &iter::repeat(path.clone()).take(n).collect::<Vec<_>>(),
             |b, proofs| {
                 b.iter(|| {
-                    let srvs = proofs.par_iter().map(|path| {
-                        curve_tree.select_and_rerandomize_verification_commitments(path.clone())
-                    });
-                    let srvs_clone = srvs.clone();
-                    rayon::join(
-                        || {
+                    #[cfg(feature = "parallel")]
+                    {
+                        let srvs = proofs.par_iter().map(|path| {
+                            curve_tree.select_and_rerandomize_verification_commitments(path.clone())
+                        });
+                        let srvs_clone = srvs.clone();
+                        rayon::join(
+                            || {
+                                let pallas_verification_scalars_and_points: Vec<_> = srvs
+                                    .map(|srv| {
+                                        let pallas_transcript = Transcript::new(b"acc");
+                                        let mut pallas_verifier = Verifier::new(pallas_transcript);
+                                        srv.even_verifier_gadget(
+                                            &mut pallas_verifier,
+                                            &sr_params,
+                                            &curve_tree,
+                                        );
+                                        let leaf_vars = pallas_verifier
+                                            .commit_vec(leaf_width, path.get_rerandomized_leaf());
+                                        select(
+                                            &mut pallas_verifier,
+                                            LinearCombination::from(element),
+                                            leaf_vars
+                                                .iter()
+                                                .map(|var| LinearCombination::from(*var))
+                                                .collect(),
+                                        );
+                                        let pallas_vt = pallas_verifier
+                                            .verification_scalars_and_points(&pallas_proof)
+                                            .unwrap();
+                                        pallas_vt
+                                    })
+                                    .collect();
+                                batch_verify(
+                                    pallas_verification_scalars_and_points,
+                                    &sr_params.even_parameters.pc_gens,
+                                    &sr_params.even_parameters.bp_gens,
+                                )
+                                .unwrap()
+                            },
+                            || {
+                                let vesta_verification_scalars_and_points: Vec<_> = srvs_clone
+                                    .map(|srv| {
+                                        let vesta_transcript = Transcript::new(b"acc");
+                                        let mut vesta_verifier = Verifier::new(vesta_transcript);
+                                        srv.odd_verifier_gadget(
+                                            &mut vesta_verifier,
+                                            &sr_params,
+                                            &curve_tree,
+                                        );
+
+                                        let vesta_vt = vesta_verifier
+                                            .verification_scalars_and_points(&vesta_proof)
+                                            .unwrap();
+                                        vesta_vt
+                                    })
+                                    .collect();
+                                batch_verify(
+                                    vesta_verification_scalars_and_points,
+                                    &sr_params.odd_parameters.pc_gens,
+                                    &sr_params.odd_parameters.bp_gens,
+                                )
+                                .unwrap()
+                            },
+                        )
+                    };
+                    #[cfg(not(feature = "parallel"))]
+                    {
+                        let srvs = proofs.iter().map(|path| {
+                            curve_tree.select_and_rerandomize_verification_commitments(path.clone())
+                        });
+                        let srvs_clone = srvs.clone();
+                        {
                             let pallas_verification_scalars_and_points: Vec<_> = srvs
                                 .map(|srv| {
                                     let pallas_transcript = Transcript::new(b"acc");
                                     let mut pallas_verifier = Verifier::new(pallas_transcript);
-                                    srv.even_verifier_gadget(&mut pallas_verifier, &sr_params);
+                                    srv.even_verifier_gadget(
+                                        &mut pallas_verifier,
+                                        &sr_params,
+                                        &curve_tree,
+                                    );
                                     let leaf_vars = pallas_verifier
-                                        .commit_vec(leaf_width, path.get_rerandomized_commitment());
+                                        .commit_vec(leaf_width, path.get_rerandomized_leaf());
                                     select(
                                         &mut pallas_verifier,
                                         LinearCombination::from(element),
@@ -233,13 +321,17 @@ fn bench_accumulator_with_parameters<const L: usize>(
                                 &sr_params.even_parameters.bp_gens,
                             )
                             .unwrap()
-                        },
-                        || {
+                        };
+                        {
                             let vesta_verification_scalars_and_points: Vec<_> = srvs_clone
                                 .map(|srv| {
                                     let vesta_transcript = Transcript::new(b"acc");
                                     let mut vesta_verifier = Verifier::new(vesta_transcript);
-                                    srv.odd_verifier_gadget(&mut vesta_verifier, &sr_params);
+                                    srv.odd_verifier_gadget(
+                                        &mut vesta_verifier,
+                                        &sr_params,
+                                        &curve_tree,
+                                    );
 
                                     let vesta_vt = vesta_verifier
                                         .verification_scalars_and_points(&vesta_proof)
@@ -253,8 +345,8 @@ fn bench_accumulator_with_parameters<const L: usize>(
                                 &sr_params.odd_parameters.bp_gens,
                             )
                             .unwrap()
-                        },
-                    )
+                        };
+                    }
                 })
             },
         );
