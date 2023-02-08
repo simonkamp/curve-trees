@@ -142,6 +142,7 @@ fn bench_pour_with_parameters<const L: usize>(
         #[cfg(feature = "bench_prover")]
         group.bench_function("prove", |b| b.iter(|| prove()));
 
+        #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("verification_gadget", |b| {
             b.iter(|| {
                 tx.clone().verification_gadget(
@@ -152,6 +153,7 @@ fn bench_pour_with_parameters<const L: usize>(
                 );
             })
         });
+        #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("deserialize", |b| {
             b.iter(|| {
                 let _pour = Pour::<L, PallasConfig, VestaConfig, PallasP>::deserialize_compressed(
@@ -160,6 +162,7 @@ fn bench_pour_with_parameters<const L: usize>(
                 .unwrap();
             })
         });
+        #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("verify_single_with_deserialization", |b| {
             b.iter(|| {
                 let (pallas_vt, vesta_vt) = tx.clone().verification_gadget(

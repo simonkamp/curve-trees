@@ -27,6 +27,7 @@ default = ["asm", "parallel"]
 asm = ["ark-ff/asm", "bulletproofs/asm"]
 parallel = ["rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "bulletproofs/parallel"]
 bench_prover = []
+detailed_benchmarks = []
 
 [[bench]]
 name = "select_rerandomize"

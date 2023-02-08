@@ -120,6 +120,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
         let group_name = format!("{}_Select&Rerandomize.L={},d={}.", threaded, L, depth);
         let mut group = c.benchmark_group(group_name);
 
+        #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("prover_gadget", |b| {
             b.iter(|| {
                 let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -143,6 +144,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
         #[cfg(feature = "bench_prover")]
         group.bench_function("prover", |b| b.iter(|| prove(false)));
 
+        #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("verification_gadget", |b| {
             b.iter(|| {
                 // Common part
@@ -172,6 +174,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
             })
         });
 
+        #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("verification_tuples", |b| {
             b.iter(|| {
                 // Common part
@@ -206,6 +209,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
                 }
             })
         });
+        #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("verify_single", |b| {
             b.iter(|| {
                 // Common part

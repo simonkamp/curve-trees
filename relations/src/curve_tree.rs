@@ -292,7 +292,7 @@ impl<
             assert!(self.even_commitments.len() == self.odd_commitments.len() + 1);
         }
         for parent_index in 0..self.odd_commitments.len() {
-            let even_index = if self.even_commitments.len() == self.odd_commitments.len() {
+            let even_index = if root_is_odd {
                 parent_index
             } else {
                 parent_index + 1
