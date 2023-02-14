@@ -10,9 +10,10 @@ extern crate relations;
 use relations::{curve_tree::*, select::*};
 
 use ark_pallas::{Fq as PallasBase, PallasConfig};
+use ark_vesta::VestaConfig;
+
 use ark_secp256k1::{Config as SecpConfig, Fq as SecpBase};
 use ark_secq256k1::Config as SecqConfig;
-use ark_vesta::VestaConfig;
 
 use ark_ec::short_weierstrass::{Affine, SWCurveConfig};
 use ark_serialize::{CanonicalSerialize, Compress};
@@ -25,11 +26,11 @@ use rayon::prelude::*;
 
 fn bench_accumulator(c: &mut Criterion) {
     bench_accumulator_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(
-        c, 3, 64, 11, 12,
+        c, 3, 64, 11, 12, "pasta",
     );
-    bench_accumulator_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(c, 3, 64, 11, 12);
-    // bench_accumulator_with_parameters::<512>(c, 3, 8, 11, 12);
-    // bench_accumulator_with_parameters::<1024>(c, 2, 1024, 12, 11);
+    bench_accumulator_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(
+        c, 3, 64, 11, 12, "secp&q",
+    );
 }
 
 // `L` is the branching factor of the curve tree
@@ -44,6 +45,7 @@ fn bench_accumulator_with_parameters<
     leaf_width: usize, // the maximum number of field elements stored in a curve tree leaf
     even_generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
     odd_generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
+    curves: &str,
 ) {
     let mut rng = rand::thread_rng();
     let even_generators_length = 1 << even_generators_length_log_2;
@@ -149,12 +151,12 @@ fn bench_accumulator_with_parameters<
 
     #[cfg(feature = "bench_prover")]
     {
-        let group_name = format!("acc.L={},d={}.", L, depth);
+        let group_name = format!("acc_{}.L={},d={}.", curves, L, depth);
         let mut group = c.benchmark_group(group_name);
         group.bench_function("prover", |b| b.iter(|| prove(false)));
     }
 
-    let group_name = format!("acc_batch_verification.L={},d={}.", L, depth);
+    let group_name = format!("acc_batch_verification_{}.L={},d={}.", curves, L, depth);
     let mut group = c.benchmark_group(group_name);
     use std::iter;
 

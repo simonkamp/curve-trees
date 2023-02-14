@@ -12,6 +12,9 @@ use relations::curve_tree::*;
 use ark_pallas::{Fq as PallasBase, PallasConfig};
 use ark_vesta::VestaConfig;
 
+use ark_secp256k1::{Config as SecpConfig, Fq as SecpBase};
+use ark_secq256k1::Config as SecqConfig;
+
 use ark_ec::short_weierstrass::{Affine, SWCurveConfig};
 use ark_serialize::{CanonicalSerialize, Compress};
 use ark_std::UniformRand;
@@ -32,14 +35,25 @@ fn bench_select_and_rerandomize(c: &mut Criterion) {
             "Single_threaded"
         }
     };
+    let curves = "pasta";
     bench_select_and_rerandomize_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
-        c, 2, 11, threaded,
+        c, 2, 11, threaded, curves,
     );
     bench_select_and_rerandomize_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(
-        c, 4, 12, threaded,
+        c, 4, 12, threaded, curves,
     );
     bench_select_and_rerandomize_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
-        c, 4, 12, threaded,
+        c, 4, 12, threaded, curves,
+    );
+    let curves = "secp&q";
+    bench_select_and_rerandomize_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
+        c, 2, 11, threaded, curves,
+    );
+    bench_select_and_rerandomize_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(
+        c, 4, 12, threaded, curves,
+    );
+    bench_select_and_rerandomize_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
+        c, 4, 12, threaded, curves,
     );
 }
 
@@ -54,6 +68,7 @@ fn bench_select_and_rerandomize_with_parameters<
     depth: usize,                   // the depth of the curve tree
     generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
     threaded: &str,
+    curves: &str,
 ) {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
@@ -125,7 +140,10 @@ fn bench_select_and_rerandomize_with_parameters<
     );
 
     {
-        let group_name = format!("{}_select&rerandomize.L={},d={}.", threaded, L, depth);
+        let group_name = format!(
+            "{}_{}_select&rerandomize.L={},d={}.",
+            threaded, curves, L, depth
+        );
         let mut group = c.benchmark_group(group_name);
 
         #[cfg(feature = "detailed_benchmarks")]
@@ -270,8 +288,8 @@ fn bench_select_and_rerandomize_with_parameters<
     }
 
     let group_name = format!(
-        "{}_select&rerandomize_batch_verification.L={},d={}.",
-        threaded, L, depth
+        "{}_{}_select&rerandomize_batch_verification.L={},d={}.",
+        threaded, curves, L, depth
     );
     let mut group = c.benchmark_group(group_name);
     use std::iter;

@@ -18,9 +18,10 @@ use relations::coin::*;
 use relations::curve_tree::*;
 
 use ark_pallas::{Fq as PallasBase, PallasConfig};
+use ark_vesta::VestaConfig;
+
 use ark_secp256k1::{Config as SecpConfig, Fq as SecpBase};
 use ark_secq256k1::Config as SecqConfig;
-use ark_vesta::VestaConfig;
 
 use ark_crypto_primitives::{signature::schnorr::Schnorr, signature::SignatureScheme};
 use ark_ec::short_weierstrass::Affine;
@@ -42,10 +43,24 @@ fn bench_pour(c: &mut Criterion) {
             "Single_threaded"
         }
     };
-    bench_pour_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(c, 2, 12, threaded);
-    bench_pour_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(c, 2, 12, threaded);
-    bench_pour_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(c, 4, 13, threaded);
-    bench_pour_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(c, 4, 13, threaded);
+    let curves = "pasta";
+    bench_pour_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
+        c, 2, 12, threaded, curves,
+    );
+    bench_pour_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(
+        c, 4, 13, threaded, curves,
+    );
+    bench_pour_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
+        c, 4, 13, threaded, curves,
+    );
+    let curves = "secp&q";
+    bench_pour_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
+        c, 2, 12, threaded, curves,
+    );
+    bench_pour_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(c, 4, 13, threaded, curves);
+    bench_pour_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
+        c, 4, 13, threaded, curves,
+    );
 }
 
 fn bench_pour_with_parameters<
@@ -58,6 +73,7 @@ fn bench_pour_with_parameters<
     depth: usize,                   // the depth of the curve tree
     generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
     threaded: &str,
+    curves: &str,
 ) {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2; // minimum sufficient power of 2
@@ -142,7 +158,7 @@ fn bench_pour_with_parameters<
     println!("Proof size in bytes {}", tx.serialized_size(Compress::Yes));
 
     {
-        let group_name = format!("{}_pour.L={},d={}.", threaded, L, depth);
+        let group_name = format!("{}_{}_pour.L={},d={}.", threaded, curves, L, depth);
         let mut group = c.benchmark_group(group_name);
 
         #[cfg(feature = "bench_prover")]
@@ -194,7 +210,10 @@ fn bench_pour_with_parameters<
     }
 
     use std::iter;
-    let group_name = format!("{}_pour_batch_verification.L={},d={}.", threaded, L, depth);
+    let group_name = format!(
+        "{}_{}_pour_batch_verification.L={},d={}.",
+        threaded, curves, L, depth
+    );
     let mut group = c.benchmark_group(group_name);
     for n in [1, 100] {
         group.bench_with_input(
