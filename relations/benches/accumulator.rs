@@ -139,6 +139,14 @@ fn bench_accumulator_with_parameters<const L: usize>(
             + vesta_proof.serialized_size(Compress::Yes)
     );
 
+    
+    #[cfg(feature = "bench_prover")]
+    {
+        let group_name = format!("acc.L={},d={}.", L, depth);
+        let mut group = c.benchmark_group(group_name);
+        group.bench_function("prover", |b| b.iter(|| prove(false)));
+    }
+
     let group_name = format!("acc_batch_verification.L={},d={}.", L, depth);
     let mut group = c.benchmark_group(group_name);
     use std::iter;

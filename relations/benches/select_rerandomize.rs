@@ -117,7 +117,7 @@ fn bench_select_and_rerandomize_with_parameters<const L: usize>(
     );
 
     {
-        let group_name = format!("{}_Select&Rerandomize.L={},d={}.", threaded, L, depth);
+        let group_name = format!("{}_select&rerandomize.L={},d={}.", threaded, L, depth);
         let mut group = c.benchmark_group(group_name);
 
         #[cfg(feature = "detailed_benchmarks")]
