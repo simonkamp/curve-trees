@@ -535,7 +535,7 @@ impl<
                         sr_parameters,
                         &spend_commitments_0,
                         &spend_commitments_1,
-                        &curve_tree,
+                        curve_tree,
                     )
                 },
                 || {
@@ -544,7 +544,7 @@ impl<
                         sr_parameters,
                         &spend_commitments_0,
                         &spend_commitments_1,
-                        &curve_tree,
+                        curve_tree,
                     )
                 },
             )
@@ -557,14 +557,14 @@ impl<
                     sr_parameters,
                     &spend_commitments_0,
                     &spend_commitments_1,
-                    &curve_tree,
+                    curve_tree,
                 ),
                 self.odd_verification_gadget(
                     ro_domain,
                     sr_parameters,
                     &spend_commitments_0,
                     &spend_commitments_1,
-                    &curve_tree,
+                    curve_tree,
                 ),
             )
         };

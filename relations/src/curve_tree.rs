@@ -261,7 +261,7 @@ impl<
                     }
                     _ => panic!(),
                 };
-                children.map(|c| constant(c)).to_vec()
+                children.map(constant).to_vec()
             } else {
                 let variables = even_verifier.commit_vec(L, self.even_commitments[parent_index]);
                 variables
@@ -320,10 +320,7 @@ impl<
                 odd_verifier,
                 &parameters.even_parameters,
                 &self.even_commitments[even_index],
-                variables
-                    .iter()
-                    .map(|v| LinearCombination::<F>::from(v.clone()))
-                    .collect(), // todo copy
+                variables,
                 None,
                 None,
             );
@@ -539,7 +536,7 @@ impl<
         child_rerandomization_scalar: P1::ScalarField,
     ) {
         let children_vars = if parent_rerandomization_scalar.is_zero() {
-            self.siblings.map(|scalar| constant(scalar)).to_vec()
+            self.siblings.map(constant).to_vec()
         } else {
             let (_, children_vars) = prover.commit_vec(
                 &self.siblings,

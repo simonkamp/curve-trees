@@ -96,11 +96,7 @@ pub fn single_level_select_and_rerandomize<
     let x_var = cs.allocate(selected_witness.map(|xy| xy.x)).unwrap();
     let y_var = cs.allocate(selected_witness.map(|xy| xy.y)).unwrap();
     // Show that the parent is committed to the child's x-coordinate
-    select(
-        cs,
-        x_var.into(),
-        children.into_iter().map(|v| v.into()).collect(),
-    );
+    select(cs, x_var.into(), children);
     // Proof that the child is a permissible point
     parameters
         .uh

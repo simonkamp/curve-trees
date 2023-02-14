@@ -2,6 +2,9 @@
 
 #[macro_use]
 extern crate criterion;
+use ark_ec::short_weierstrass::Projective;
+use ark_ec::short_weierstrass::SWCurveConfig;
+use ark_ff::PrimeField;
 use ark_serialize::Compress;
 use criterion::BenchmarkId;
 use criterion::Criterion;
@@ -14,7 +17,9 @@ use merlin::Transcript;
 use relations::coin::*;
 use relations::curve_tree::*;
 
-use ark_pallas::{PallasConfig, Projective as PallasP};
+use ark_pallas::{Fq as PallasBase, PallasConfig};
+use ark_secp256k1::{Config as SecpConfig, Fq as SecpBase};
+use ark_secq256k1::Config as SecqConfig;
 use ark_vesta::VestaConfig;
 
 use ark_crypto_primitives::{signature::schnorr::Schnorr, signature::SignatureScheme};
@@ -37,12 +42,18 @@ fn bench_pour(c: &mut Criterion) {
             "Single_threaded"
         }
     };
-    bench_pour_with_parameters::<1024>(c, 2, 12, threaded);
-    bench_pour_with_parameters::<256>(c, 4, 13, threaded);
-    bench_pour_with_parameters::<1024>(c, 4, 13, threaded);
+    bench_pour_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(c, 2, 12, threaded);
+    bench_pour_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(c, 2, 12, threaded);
+    bench_pour_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(c, 4, 13, threaded);
+    bench_pour_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(c, 4, 13, threaded);
 }
 
-fn bench_pour_with_parameters<const L: usize>(
+fn bench_pour_with_parameters<
+    const L: usize,
+    F: PrimeField,
+    P0: SWCurveConfig<BaseField = F> + Copy,
+    P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+>(
     c: &mut Criterion,
     depth: usize,                   // the depth of the curve tree
     generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
@@ -51,23 +62,20 @@ fn bench_pour_with_parameters<const L: usize>(
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2; // minimum sufficient power of 2
 
-    let sr_params = SelRerandParameters::<PallasConfig, VestaConfig>::new(
-        generators_length,
-        generators_length,
-        &mut rng,
-    );
+    let sr_params =
+        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
 
-    let schnorr_parameters = Schnorr::<PallasP, Blake2s>::setup(&mut rng).unwrap();
+    let schnorr_parameters = Schnorr::<Projective<P0>, Blake2s>::setup(&mut rng).unwrap();
     let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
 
-    let (coin_aux_0, coin_0) = Coin::<PallasConfig, PallasP>::new(
+    let (coin_aux_0, coin_0) = Coin::<P0, Projective<P0>>::new(
         19,
         &pk,
         &schnorr_parameters,
         &sr_params.even_parameters,
         &mut rng,
     );
-    let (coin_aux_1, coin_1) = Coin::<PallasConfig, PallasP>::new(
+    let (coin_aux_1, coin_1) = Coin::<P0, Projective<P0>>::new(
         23,
         &pk,
         &schnorr_parameters,
@@ -76,10 +84,9 @@ fn bench_pour_with_parameters<const L: usize>(
     );
     // Curve tree with two coins
     let set = vec![coin_0, coin_1];
-    let curve_tree =
-        CurveTree::<L, PallasConfig, VestaConfig>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
-    let randomized_pk_0 = Coin::<PallasConfig, PallasP>::rerandomized_pk(
+    let randomized_pk_0 = Coin::<P0, Projective<P0>>::rerandomized_pk(
         &pk,
         &coin_aux_0.pk_randomness,
         &schnorr_parameters,
@@ -90,7 +97,7 @@ fn bench_pour_with_parameters<const L: usize>(
         randomized_pk: randomized_pk_0,
         sk: sk.clone(),
     };
-    let randomized_pk_1 = Coin::<PallasConfig, PallasP>::rerandomized_pk(
+    let randomized_pk_1 = Coin::<P0, Projective<P0>>::rerandomized_pk(
         &pk,
         &coin_aux_1.pk_randomness,
         &schnorr_parameters,
@@ -103,11 +110,11 @@ fn bench_pour_with_parameters<const L: usize>(
     };
     let prove = || {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-        let pallas_prover: Prover<_, Affine<PallasConfig>> =
+        let pallas_prover: Prover<_, Affine<P0>> =
             Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-        let vesta_prover: Prover<_, Affine<VestaConfig>> =
+        let vesta_prover: Prover<_, Affine<P1>> =
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let receiver_pk_0 = pk;
@@ -130,8 +137,7 @@ fn bench_pour_with_parameters<const L: usize>(
     };
     let tx = prove();
     let pour_proof =
-        Pour::<L, PallasConfig, VestaConfig, PallasP>::deserialize_compressed(&tx.pour_bytes[..])
-            .unwrap();
+        Pour::<L, P0, P1, Projective<P0>>::deserialize_compressed(&tx.pour_bytes[..]).unwrap();
 
     println!("Proof size in bytes {}", tx.serialized_size(Compress::Yes));
 
@@ -156,10 +162,9 @@ fn bench_pour_with_parameters<const L: usize>(
         #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                let _pour = Pour::<L, PallasConfig, VestaConfig, PallasP>::deserialize_compressed(
-                    &tx.pour_bytes[..],
-                )
-                .unwrap();
+                let _pour =
+                    Pour::<L, P0, P1, Projective<P0>>::deserialize_compressed(&tx.pour_bytes[..])
+                        .unwrap();
             })
         });
         #[cfg(feature = "detailed_benchmarks")]

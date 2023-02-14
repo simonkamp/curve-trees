@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate criterion;
+use ark_ff::PrimeField;
 use criterion::{BenchmarkId, Criterion};
 
 extern crate bulletproofs;
@@ -8,10 +9,12 @@ use bulletproofs::r1cs::{batch_verify, LinearCombination, Prover, Verifier};
 extern crate relations;
 use relations::{curve_tree::*, select::*};
 
-use ark_pallas::{Fr as PallasScalar, PallasConfig};
+use ark_pallas::{Fq as PallasBase, PallasConfig};
+use ark_secp256k1::{Config as SecpConfig, Fq as SecpBase};
+use ark_secq256k1::Config as SecqConfig;
 use ark_vesta::VestaConfig;
 
-use ark_ec::short_weierstrass::Affine;
+use ark_ec::short_weierstrass::{Affine, SWCurveConfig};
 use ark_serialize::{CanonicalSerialize, Compress};
 use ark_std::{UniformRand, Zero};
 
@@ -21,13 +24,21 @@ use merlin::Transcript;
 use rayon::prelude::*;
 
 fn bench_accumulator(c: &mut Criterion) {
-    bench_accumulator_with_parameters::<256>(c, 3, 64, 11, 12);
+    bench_accumulator_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(
+        c, 3, 64, 11, 12,
+    );
+    bench_accumulator_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(c, 3, 64, 11, 12);
     // bench_accumulator_with_parameters::<512>(c, 3, 8, 11, 12);
     // bench_accumulator_with_parameters::<1024>(c, 2, 1024, 12, 11);
 }
 
 // `L` is the branching factor of the curve tree
-fn bench_accumulator_with_parameters<const L: usize>(
+fn bench_accumulator_with_parameters<
+    const L: usize,
+    F: PrimeField,
+    P0: SWCurveConfig<BaseField = F> + Copy,
+    P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+>(
     c: &mut Criterion,
     depth: usize,                        // the depth of the curve tree
     leaf_width: usize, // the maximum number of field elements stored in a curve tree leaf
@@ -38,21 +49,19 @@ fn bench_accumulator_with_parameters<const L: usize>(
     let even_generators_length = 1 << even_generators_length_log_2;
     let odd_generators_length = 1 << odd_generators_length_log_2;
 
-    let sr_params = SelRerandParameters::<PallasConfig, VestaConfig>::new(
-        even_generators_length,
-        odd_generators_length,
-        &mut rng,
-    );
+    let sr_params =
+        SelRerandParameters::<P0, P1>::new(even_generators_length, odd_generators_length, &mut rng);
 
     let leaf_elements: Vec<_> = (0..leaf_width)
-        .map(|_| PallasScalar::rand(&mut rng))
+        .map(|_| P0::ScalarField::rand(&mut rng))
         .collect();
     let element = leaf_elements[0];
     // Unless all leafs of the curve tree are occupied, it would always be possible to open to zero by using an empty leaf.
-    assert_ne!(element, PallasScalar::zero());
-    let leaf_commitment = sr_params
-        .even_parameters
-        .commit(&leaf_elements, PallasScalar::zero(), 0);
+    assert_ne!(element, P0::ScalarField::zero());
+    let leaf_commitment =
+        sr_params
+            .even_parameters
+            .commit(&leaf_elements, P0::ScalarField::zero(), 0);
 
     let (permissible_point, permissible_randomness) =
         sr_params.even_parameters.uh.permissible_commitment(
@@ -60,16 +69,15 @@ fn bench_accumulator_with_parameters<const L: usize>(
             &sr_params.even_parameters.pc_gens.B_blinding,
         );
     let set = vec![permissible_point];
-    let curve_tree =
-        CurveTree::<L, PallasConfig, VestaConfig>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let prove = |print| {
         let pallas_transcript = Transcript::new(b"acc");
-        let mut pallas_prover: Prover<_, Affine<PallasConfig>> =
+        let mut pallas_prover: Prover<_, Affine<P0>> =
             Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
         let vesta_transcript = Transcript::new(b"acc");
-        let mut vesta_prover: Prover<_, Affine<VestaConfig>> =
+        let mut vesta_prover: Prover<_, Affine<P1>> =
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let (path, rerandomization) = curve_tree.select_and_rerandomize_prover_gadget(
@@ -139,7 +147,6 @@ fn bench_accumulator_with_parameters<const L: usize>(
             + vesta_proof.serialized_size(Compress::Yes)
     );
 
-    
     #[cfg(feature = "bench_prover")]
     {
         let group_name = format!("acc.L={},d={}.", L, depth);
