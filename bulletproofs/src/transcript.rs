@@ -1,6 +1,6 @@
 //! Defines a `TranscriptProtocol` trait for using a Merlin transcript.
 
-use ark_ec::AffineCurve;
+use ark_ec::AffineRepr;
 use ark_ff::Field;
 use merlin::Transcript;
 
@@ -24,21 +24,21 @@ pub trait TranscriptProtocol {
     fn r1cs_2phase_domain_sep(&mut self);
 
     /// Append a `scalar` with the given `label`.
-    fn append_scalar<C: AffineCurve>(&mut self, label: &'static [u8], scalar: &C::ScalarField);
+    fn append_scalar<C: AffineRepr>(&mut self, label: &'static [u8], scalar: &C::ScalarField);
 
     /// Append a `point` with the given `label`.
-    fn append_point<C: AffineCurve>(&mut self, label: &'static [u8], point: &C);
+    fn append_point<C: AffineRepr>(&mut self, label: &'static [u8], point: &C);
 
     /// Check that a point is not the identity, then append it to the
     /// transcript.  Otherwise, return an error.
-    fn validate_and_append_point<C: AffineCurve>(
+    fn validate_and_append_point<C: AffineRepr>(
         &mut self,
         label: &'static [u8],
         point: &C,
     ) -> Result<(), ProofError>;
 
     /// Compute a `label`ed challenge variable.
-    fn challenge_scalar<C: AffineCurve>(&mut self, label: &'static [u8]) -> C::ScalarField;
+    fn challenge_scalar<C: AffineRepr>(&mut self, label: &'static [u8]) -> C::ScalarField;
 }
 
 impl TranscriptProtocol for Transcript {
@@ -65,19 +65,19 @@ impl TranscriptProtocol for Transcript {
         self.append_message(b"dom-sep", b"r1cs-2phase");
     }
 
-    fn append_scalar<C: AffineCurve>(&mut self, label: &'static [u8], scalar: &C::ScalarField) {
+    fn append_scalar<C: AffineRepr>(&mut self, label: &'static [u8], scalar: &C::ScalarField) {
         self.append_message(label, &util::field_as_bytes(scalar));
     }
 
-    fn append_point<C: AffineCurve>(&mut self, label: &'static [u8], point: &C) {
+    fn append_point<C: AffineRepr>(&mut self, label: &'static [u8], point: &C) {
         let mut bytes = Vec::new();
-        if let Err(e) = point.serialize(&mut bytes) {
+        if let Err(e) = point.serialize_compressed(&mut bytes) {
             panic!("{}", e)
         }
         self.append_message(label, &bytes);
     }
 
-    fn validate_and_append_point<C: AffineCurve>(
+    fn validate_and_append_point<C: AffineRepr>(
         &mut self,
         label: &'static [u8],
         point: &C,
@@ -86,14 +86,15 @@ impl TranscriptProtocol for Transcript {
             Err(ProofError::VerificationError)
         } else {
             let mut bytes = Vec::new();
-            if let Err(e) = point.serialize(&mut bytes) {
+            if let Err(e) = point.serialize_compressed(&mut bytes) {
                 panic!("{}", e)
             }
-            Ok(self.append_message(label, &bytes))
+            self.append_message(label, &bytes);
+            Ok(())
         }
     }
 
-    fn challenge_scalar<C: AffineCurve>(&mut self, label: &'static [u8]) -> C::ScalarField {
+    fn challenge_scalar<C: AffineRepr>(&mut self, label: &'static [u8]) -> C::ScalarField {
         extern crate crypto;
         use crypto::digest::Digest;
         use crypto::sha3::Sha3;

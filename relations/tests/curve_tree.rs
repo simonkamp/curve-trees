@@ -1,59 +1,71 @@
 extern crate bulletproofs;
-extern crate pasta;
 extern crate relations;
 
+use ark_ff::PrimeField;
 use bulletproofs::r1cs::*;
 
+use rand::thread_rng;
 use relations::curve_tree::*;
 
-use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, ProjectiveCurve};
+use ark_ec::{
+    short_weierstrass::{Affine, SWCurveConfig},
+    CurveGroup,
+};
 use ark_std::UniformRand;
 use merlin::Transcript;
 
-// use pasta;
-type PallasParameters = pasta::pallas::PallasParameters;
-type VestaParameters = pasta::vesta::VestaParameters;
-type PallasP = pasta::pallas::Projective;
+type PallasParameters = ark_pallas::PallasConfig;
+type VestaParameters = ark_vesta::VestaConfig;
+type PallasP = ark_pallas::Projective;
+
+use ark_pallas::{Fq as PallasBase, PallasConfig};
+use ark_vesta::VestaConfig;
+
+use ark_secp256k1::{Config as SecpConfig, Fq as SecpBase};
+use ark_secq256k1::Config as SecqConfig;
 
 #[test]
 pub fn test_curve_tree_even_depth() {
-    test_curve_tree_with_parameters::<32>(4, 11);
+    test_curve_tree_with_parameters::<32, PallasBase, PallasConfig, VestaConfig>(4, 11);
+    test_curve_tree_with_parameters::<32, SecpBase, SecpConfig, SecqConfig>(4, 11);
 }
 
 #[test]
 pub fn test_curve_tree_odd_depth() {
-    test_curve_tree_with_parameters::<32>(3, 11);
+    test_curve_tree_with_parameters::<32, PallasBase, PallasConfig, VestaConfig>(3, 11);
+    test_curve_tree_with_parameters::<32, SecpBase, SecpConfig, SecqConfig>(3, 11);
 }
 
-pub fn test_curve_tree_with_parameters<const L: usize>(
+pub fn test_curve_tree_with_parameters<
+    const L: usize,
+    F: PrimeField,
+    P0: SWCurveConfig<BaseField = F> + Copy,
+    P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+>(
     depth: usize,
     generators_length_log_2: usize,
 ) {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
-    let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
-        generators_length,
-        generators_length,
-        &mut rng,
-    );
+    let sr_params =
+        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
 
     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+    let mut pallas_prover: Prover<_, Affine<P0>> =
         Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
     let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+    let mut vesta_prover: Prover<_, Affine<P1>> =
         Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
-    let some_point = PallasP::rand(&mut rng).into_affine();
+    let some_point = Affine::<P0>::rand(&mut rng);
     let (permissible_point, _) = sr_params
         .even_parameters
         .uh
         .permissible_commitment(&some_point, &sr_params.even_parameters.pc_gens.B_blinding);
     let set = vec![permissible_point];
-    let curve_tree =
-        CurveTree::<L, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
     assert_eq!(curve_tree.height(), depth);
 
     let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
@@ -61,6 +73,7 @@ pub fn test_curve_tree_with_parameters<const L: usize>(
         &mut pallas_prover,
         &mut vesta_prover,
         &sr_params,
+        &mut rng,
     );
 
     let pallas_proof = pallas_prover
@@ -98,7 +111,7 @@ pub fn test_curve_tree_with_parameters<const L: usize>(
 }
 
 #[test]
-pub fn test_curve_tree_batched() {
+pub fn test_curve_tree_batch_verification() {
     let mut rng = rand::thread_rng();
     let generators_length = 1 << 12;
 
@@ -119,11 +132,11 @@ pub fn test_curve_tree_batched() {
     assert_eq!(curve_tree.height(), 4);
 
     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut pallas_prover: Prover<_, GroupAffine<PallasParameters>> =
+    let mut pallas_prover: Prover<_, Affine<PallasParameters>> =
         Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
 
     let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-    let mut vesta_prover: Prover<_, GroupAffine<VestaParameters>> =
+    let mut vesta_prover: Prover<_, Affine<VestaParameters>> =
         Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
     let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
@@ -131,6 +144,7 @@ pub fn test_curve_tree_batched() {
         &mut pallas_prover,
         &mut vesta_prover,
         &sr_params,
+        &mut thread_rng(),
     );
 
     let pallas_proof = pallas_prover

@@ -6,26 +6,30 @@ edition = "2021"
 [dependencies]
 rand = { version = "0.8", default-features = false }
 bulletproofs = { path = "../bulletproofs", default-features = false, features = ["std"]}
-ark-ff = { version = "0.3.0"}
-ark-ec = { version = "0.3.0"}
-ark-serialize = { version = "0.3.0" } 
-ark-std = { version = "0.3.0"}
+ark-ff = { version = "0.4.0"}
+ark-ec = { version = "0.4.0"}
+ark-serialize = { version = "0.4.0" } 
+ark-std = { version = "0.4.0"}
 merlin = { version = "2", default-features = false }
 rust-crypto = "^0.2"
-ark-crypto-primitives = { version = "0.3.0" } 
+ark-crypto-primitives = { version = "0.4.0", features = ["signature"]}
 digest = "0.9"
-blake2 = "0.9"
+blake2 = "0.10"
 rayon = {verison = "1.5.3", optional = true}
 
 [dev-dependencies]
 criterion = "0.3"
-pasta = { path = "../pasta", default-features = false }
+ark-pallas = "0.4.0"
+ark-vesta = "0.4.0"
+ark-secp256k1 = "0.4.0"
+ark-secq256k1 = "0.4.0"
 
 [features]
 default = ["asm", "parallel"]
-asm = ["ark-ff/asm", "bulletproofs/asm", "pasta/asm"]
-parallel = ["rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "bulletproofs/parallel", "pasta/parallel"]
+asm = ["ark-ff/asm", "bulletproofs/asm"]
+parallel = ["rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "bulletproofs/parallel"]
 bench_prover = []
+detailed_benchmarks = []
 
 [[bench]]
 name = "select_rerandomize"
@@ -35,8 +39,14 @@ harness = false
 name = "coin"
 harness = false
 
+[[bench]]
+name = "accumulator"
+harness = false
+
 [profile.release]
 lto = true
 
 [build]
-rustflags = "-C target-cpu=native" # check if this actually improves benchmarks
+ # Adds architecture specific optimizations including those enabling the asm backend for ark_ff. It could potentially cause slowdowns from other features.
+rustflags = "-C target-cpu=native"
+ # You could alternatively add support for the asm backend through "-C target-feature=+bmi2,+adx", but the binary would only run on systems supporting these instructions.

@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
-use ark_ec::{msm::VariableBaseMSM, AffineCurve};
-use ark_ff::{Field, PrimeField};
+use ark_ec::{AffineRepr, VariableBaseMSM};
+use ark_ff::Field;
 use ark_std::{One, UniformRand, Zero};
 use clear_on_drop::clear::Clear;
 use core::borrow::BorrowMut;
@@ -31,7 +31,7 @@ use super::op_splits;
 /// When all constraints are added, the proving code calls `prove`
 /// which consumes the `Prover` instance, samples random challenges
 /// that instantiate the randomized constraints, and creates a complete proof.
-pub struct Prover<'g, T: BorrowMut<Transcript>, C: AffineCurve> {
+pub struct Prover<'g, T: BorrowMut<Transcript>, C: AffineRepr> {
     transcript: T,
     pc_gens: &'g PedersenGens<C>,
     /// The constraints accumulated so far.
@@ -49,7 +49,7 @@ pub struct Prover<'g, T: BorrowMut<Transcript>, C: AffineCurve> {
 }
 
 // todo I assume this would be automatically implemented by the compiler if it did not have a a mutable borrow of a transcript
-unsafe impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Send for Prover<'g, T, C> {} // todo fix
+unsafe impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Send for Prover<'g, T, C> {} // todo fix after refactor
 
 /// Separate struct to implement Drop trait for (for zeroing),
 /// so that compiler does not prohibit us from moving the Transcript out of `prove()`.
@@ -75,7 +75,7 @@ struct Secrets<F: Field> {
 /// monomorphize the closures for the proving and verifying code.
 /// However, this type cannot be instantiated by the user and therefore can only be used within
 /// the callback provided to `specify_randomized_constraints`.
-pub struct RandomizingProver<'g, T: BorrowMut<Transcript>, C: AffineCurve> {
+pub struct RandomizingProver<'g, T: BorrowMut<Transcript>, C: AffineRepr> {
     prover: Prover<'g, T, C>,
 }
 
@@ -103,7 +103,7 @@ impl<F: Field> Drop for Secrets<F> {
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
+impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> ConstraintSystem<C::ScalarField>
     for Prover<'g, T, C>
 {
     fn transcript(&mut self) -> &mut Transcript {
@@ -208,7 +208,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarFie
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C::ScalarField>
+impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> RandomizableConstraintSystem<C::ScalarField>
     for Prover<'g, T, C>
 {
     type RandomizedCS = RandomizingProver<'g, T, C>;
@@ -222,7 +222,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
+impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> ConstraintSystem<C::ScalarField>
     for RandomizingProver<'g, T, C>
 {
     fn transcript(&mut self) -> &mut Transcript {
@@ -271,7 +271,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarFie
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C::ScalarField>
+impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> RandomizedConstraintSystem<C::ScalarField>
     for RandomizingProver<'g, T, C>
 {
     fn challenge_scalar(&mut self, label: &'static [u8]) -> C::ScalarField {
@@ -282,7 +282,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C:
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
+impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
     /// Construct an empty constraint system with specified external
     /// input variables.
     ///
@@ -371,20 +371,15 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         // [b] * H + [v_1] * G1 + ... + [v_n] * Gn
         let generators: Vec<_> = iter::once(&self.pc_gens.B_blinding)
             .chain(gens.G(v.len()))
-            .cloned()
+            .copied()
             .collect::<Vec<_>>();
 
-        let scalars: Vec<<C::ScalarField as PrimeField>::BigInt> = iter::once(&v_blinding)
-            .chain(v.iter())
-            .map(|s| {
-                let s: <C::ScalarField as PrimeField>::BigInt = (*s).into();
-                s
-            })
-            .collect();
+        let scalars: Vec<C::ScalarField> =
+            iter::once(&v_blinding).chain(v.iter()).copied().collect();
 
         assert_eq!(generators.len(), scalars.len());
 
-        let comm = VariableBaseMSM::multi_scalar_mul(generators.as_slice(), scalars.as_slice());
+        let comm = C::Group::msm_unchecked(generators.as_slice(), scalars.as_slice());
 
         // create variables for all the addressable coordinates
         let comm_idx = self.secrets.vec_open.len();
@@ -617,22 +612,22 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             let A_I1_scalars = iter::once(&i_blinding1)
                 .chain(self.secrets.a_L.iter())
                 .chain(self.secrets.a_R.iter())
-                .map(|s| (*s).into())
-                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>();
+                .copied()
+                .collect::<Vec<C::ScalarField>>();
             let A_O1_scalars = iter::once(&o_blinding1)
                 .chain(self.secrets.a_O.iter())
-                .map(|s| (*s).into())
-                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>();
+                .copied()
+                .collect::<Vec<C::ScalarField>>();
             let (mut A_I1, mut A_O1, mut S1) = (None, None, None);
             rayon::scope(|s| {
                 // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
                 s.spawn(|_| {
                     A_I1 = Some(
-                        VariableBaseMSM::multi_scalar_mul(
+                        C::Group::msm_unchecked(
                             iter::once(&blinding)
                                 .chain(gens.G(n1))
                                 .chain(gens.H(n1))
-                                .cloned()
+                                .copied()
                                 .collect::<Vec<C>>()
                                 .as_slice(),
                             A_I1_scalars.as_slice(),
@@ -643,10 +638,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                 // A_O = <a_O, G> + o_blinding * B_blinding
                 s.spawn(|_| {
                     A_O1 = Some(
-                        VariableBaseMSM::multi_scalar_mul(
+                        C::Group::msm_unchecked(
                             iter::once(&blinding)
                                 .chain(gens.G(n1))
-                                .cloned()
+                                .copied()
                                 .collect::<Vec<C>>()
                                 .as_slice(),
                             A_O1_scalars.as_slice(),
@@ -661,18 +656,18 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
                 // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
                 s.spawn(|_| {
                     S1 = Some(
-                        VariableBaseMSM::multi_scalar_mul(
+                        C::Group::msm_unchecked(
                             iter::once(&blinding)
                                 .chain(gens.G(n1))
                                 .chain(gens.H(n1))
-                                .cloned()
+                                .copied()
                                 .collect::<Vec<C>>()
                                 .as_slice(),
                             iter::once(&s_blinding1)
                                 .chain(s_L1.iter())
                                 .chain(s_R1.iter())
-                                .map(|s| (*s).into())
-                                .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                                .copied()
+                                .collect::<Vec<C::ScalarField>>()
                                 .as_slice(),
                         )
                         .into(),
@@ -685,33 +680,33 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
         #[cfg(not(feature = "parallel"))]
         let (A_I1, A_O1, S1) = {
             // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
-            let A_I1 = VariableBaseMSM::multi_scalar_mul(
+            let A_I1 = C::Group::msm_unchecked(
                 iter::once(&self.pc_gens.B_blinding)
                     .chain(gens.G(n1))
                     .chain(gens.H(n1))
-                    .cloned()
+                    .copied()
                     .collect::<Vec<C>>()
                     .as_slice(),
                 iter::once(&i_blinding1)
                     .chain(self.secrets.a_L.iter())
                     .chain(self.secrets.a_R.iter())
                     .map(|s| (*s).into())
-                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
             .into();
 
             // A_O = <a_O, G> + o_blinding * B_blinding
-            let A_O1 = VariableBaseMSM::multi_scalar_mul(
+            let A_O1 = C::Group::msm_unchecked(
                 iter::once(&self.pc_gens.B_blinding)
                     .chain(gens.G(n1))
-                    .cloned()
+                    .copied()
                     .collect::<Vec<C>>()
                     .as_slice(),
                 iter::once(&o_blinding1)
                     .chain(self.secrets.a_O.iter())
                     .map(|s| (*s).into())
-                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
             .into();
@@ -720,18 +715,18 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             // <Vi, G> + vi_blinding * B:blinding
 
             // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
-            let S1 = VariableBaseMSM::multi_scalar_mul(
+            let S1 = C::Group::msm_unchecked(
                 iter::once(&self.pc_gens.B_blinding)
                     .chain(gens.G(n1))
                     .chain(gens.H(n1))
-                    .cloned()
+                    .copied()
                     .collect::<Vec<C>>()
                     .as_slice(),
                 iter::once(&s_blinding1)
                     .chain(s_L1.iter())
                     .chain(s_R1.iter())
                     .map(|s| (*s).into())
-                    .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                    .collect::<Vec<C::ScalarField>>()
                     .as_slice(),
             )
             .into();
@@ -788,48 +783,48 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             println!("second phase");
             (
                 // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
-                VariableBaseMSM::multi_scalar_mul(
+                C::Group::msm_unchecked(
                     iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
                         .chain(gens.H(n).skip(n1))
-                        .cloned()
+                        .copied()
                         .collect::<Vec<C>>()
                         .as_slice(),
                     iter::once(&i_blinding2)
                         .chain(self.secrets.a_L.iter().skip(n1))
                         .chain(self.secrets.a_R.iter().skip(n1))
-                        .map(|s| (*s).into())
-                        .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                        .copied()
+                        .collect::<Vec<C::ScalarField>>()
                         .as_slice(),
                 )
                 .into(),
                 // A_O = <a_O, G> + o_blinding * B_blinding
-                VariableBaseMSM::multi_scalar_mul(
+                C::Group::msm_unchecked(
                     iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
-                        .cloned()
+                        .copied()
                         .collect::<Vec<C>>()
                         .as_slice(),
                     iter::once(&o_blinding2)
                         .chain(self.secrets.a_O.iter().skip(n1))
-                        .map(|s| (*s).into())
-                        .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                        .copied()
+                        .collect::<Vec<C::ScalarField>>()
                         .as_slice(),
                 )
                 .into(),
                 // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
-                VariableBaseMSM::multi_scalar_mul(
+                C::Group::msm_unchecked(
                     iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
                         .chain(gens.H(n).skip(n1))
-                        .cloned()
+                        .copied()
                         .collect::<Vec<C>>()
                         .as_slice(),
                     iter::once(&s_blinding2)
                         .chain(s_L2.iter())
                         .chain(s_R2.iter())
-                        .map(|s| (*s).into())
-                        .collect::<Vec<<C::ScalarField as PrimeField>::BigInt>>()
+                        .copied()
+                        .collect::<Vec<C::ScalarField>>()
                         .as_slice(),
                 )
                 .into(),
@@ -1158,8 +1153,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
 
         #[cfg(debug_assertions)]
         {
-            for i in 0..e_terms.len() {
-                println!("e_terms, x^{} = {:?}", i, e_terms[i]);
+            for (i, e) in e_terms.iter().enumerate() {
+                println!("e_terms, x^{} = {:?}", i, e);
             }
         }
 
@@ -1202,8 +1197,8 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineCurve> Prover<'g, T, C> {
             &Q,
             &G_factors,
             &H_factors,
-            gens.G(padded_n).cloned().collect(),
-            gens.H(padded_n).cloned().collect(),
+            gens.G(padded_n).copied().collect(),
+            gens.H(padded_n).copied().collect(),
             l_vec,
             r_vec,
         );

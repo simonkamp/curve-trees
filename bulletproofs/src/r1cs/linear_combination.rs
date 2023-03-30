@@ -154,7 +154,7 @@ impl<'a, F: Field> FromIterator<&'a (Variable<F>, F)> for LinearCombination<F> {
         T: IntoIterator<Item = &'a (Variable<F>, F)>,
     {
         LinearCombination {
-            terms: iter.into_iter().cloned().collect(),
+            terms: iter.into_iter().copied().collect(),
         }
     }
 }
@@ -165,7 +165,7 @@ impl<F: Field, L: Into<LinearCombination<F>>> Add<L> for LinearCombination<F> {
     type Output = Self;
 
     fn add(mut self, rhs: L) -> Self::Output {
-        self.terms.extend(rhs.into().terms.iter().cloned());
+        self.terms.extend(rhs.into().terms.iter().copied());
         LinearCombination { terms: self.terms }
     }
 }

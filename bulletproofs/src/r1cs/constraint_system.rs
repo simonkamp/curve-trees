@@ -1,6 +1,5 @@
 //! Definition of the constraint system trait.
 
-// use super::{LinearCombination, R1CSError, Variable};
 use super::linear_combination::{LinearCombination, Variable};
 use super::R1CSError;
 use ark_ff::Field;

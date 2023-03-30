@@ -2,5 +2,4 @@
 members = [
     "bulletproofs",
     "relations",
-    "pasta"
 ]

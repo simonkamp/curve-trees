@@ -2,12 +2,12 @@ use bulletproofs::r1cs::*;
 
 use crate::curve::*;
 
-use ark_ec::{models::short_weierstrass_jacobian::GroupAffine, SWModelParameters};
-use ark_ff::SquareRootField;
+use ark_ec::models::short_weierstrass::{Affine, SWCurveConfig};
+use ark_ff::Field;
 use ark_std::rand::Rng;
 
 #[derive(Clone, Copy, Debug)]
-pub struct UniversalHash<F: SquareRootField> {
+pub struct UniversalHash<F: Field> {
     alpha: F,
     beta: F,
     // coefficients in curve equation
@@ -15,7 +15,7 @@ pub struct UniversalHash<F: SquareRootField> {
     b: F,
 }
 
-impl<F: SquareRootField> UniversalHash<F> {
+impl<F: Field> UniversalHash<F> {
     pub fn new<R: Rng>(rng: &mut R, a: F, b: F) -> Self {
         Self {
             alpha: F::rand(rng),
@@ -25,15 +25,15 @@ impl<F: SquareRootField> UniversalHash<F> {
         }
     }
     /// Given a commitment c, blinded using h, returns c' and r s.t. c' = c+h*r and c' is a permissible point
-    pub fn permissible_commitment<C: SWModelParameters<BaseField = F>>(
+    pub fn permissible_commitment<S: Field, C: SWCurveConfig<BaseField = F, ScalarField = S>>(
         &self,
-        c: &GroupAffine<C>,
-        h: &GroupAffine<C>,
-    ) -> (GroupAffine<C>, C::ScalarField) {
+        c: &Affine<C>,
+        h: &Affine<C>,
+    ) -> (Affine<C>, C::ScalarField) {
         let mut r = 0u64;
         let mut c_prime = *c;
         while !self.is_permissible(c_prime) {
-            c_prime += h;
+            c_prime = (c_prime + h).into();
             r += 1;
         }
         (c_prime, C::ScalarField::from(r))
@@ -45,10 +45,7 @@ impl<F: SquareRootField> UniversalHash<F> {
             .expect("point must be permissible")
     }
 
-    pub fn is_permissible<C: SWModelParameters<BaseField = F>>(
-        &self,
-        point: GroupAffine<C>,
-    ) -> bool {
+    pub fn is_permissible<C: SWCurveConfig<BaseField = F>>(&self, point: Affine<C>) -> bool {
         let hash_of_y_is_qr = self.universal_hash_to_bit(point.y);
         let hash_of_neg_y_is_not_qr = !self.universal_hash_to_bit(-point.y);
         hash_of_y_is_qr && hash_of_neg_y_is_not_qr
@@ -87,27 +84,25 @@ impl<F: SquareRootField> UniversalHash<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ec::{AffineCurve, ProjectiveCurve};
+    use ark_ec::AffineRepr;
     use ark_std::UniformRand;
     use bulletproofs::{BulletproofGens, PedersenGens};
     use merlin::Transcript;
 
-    use pasta;
-    type PallasA = pasta::pallas::Affine;
-    type PallasP = pasta::pallas::Projective;
-    type PallasBase = <PallasA as AffineCurve>::BaseField;
-    type VestaA = pasta::vesta::Affine;
-    type VestaScalar = <VestaA as AffineCurve>::ScalarField;
+    type PallasA = ark_pallas::Affine;
+    type PallasBase = <PallasA as AffineRepr>::BaseField;
+    type VestaA = ark_vesta::Affine;
+    type VestaScalar = <VestaA as AffineRepr>::ScalarField;
 
     #[test]
     fn test_permissible() {
         let mut rng = rand::thread_rng();
-        let c = PallasP::rand(&mut rng).into_affine();
-        let h = PallasP::rand(&mut rng).into_affine();
+        let c = PallasA::rand(&mut rng);
+        let h = PallasA::rand(&mut rng);
         let uh = UniversalHash::<PallasBase>::new(
             &mut rng,
-            pasta::pallas::PallasParameters::COEFF_A,
-            pasta::pallas::PallasParameters::COEFF_B,
+            ark_pallas::PallasConfig::COEFF_A,
+            ark_pallas::PallasConfig::COEFF_B,
         );
         let (c2, _) = uh.permissible_commitment(&c, &h);
 

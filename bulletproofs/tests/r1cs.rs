@@ -4,11 +4,11 @@ extern crate bulletproofs;
 extern crate merlin;
 extern crate rand;
 
-use ark_ec::AffineCurve;
+use ark_ec::AffineRepr;
 use ark_ff::Field;
 use ark_std::UniformRand;
 
-use pasta::pallas::Affine;
+use ark_pallas::Affine;
 
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
@@ -18,9 +18,9 @@ use rand::seq::SliceRandom;
 // Shuffle gadget (documented in markdown file)
 
 /// A proof-of-shuffle.
-struct ShuffleProof<C: AffineCurve>(R1CSProof<C>);
+struct ShuffleProof<C: AffineRepr>(R1CSProof<C>);
 
-impl<C: AffineCurve> ShuffleProof<C> {
+impl<C: AffineRepr> ShuffleProof<C> {
     fn gadget<CS: RandomizableConstraintSystem<C::ScalarField>>(
         cs: &mut CS,
         x: Vec<Variable<C::ScalarField>>,
@@ -63,7 +63,7 @@ impl<C: AffineCurve> ShuffleProof<C> {
     }
 }
 
-impl<C: AffineCurve> ShuffleProof<C> {
+impl<C: AffineRepr> ShuffleProof<C> {
     /// Attempt to construct a proof that `output` is a permutation of `input`.
     ///
     /// Returns a tuple `(proof, input_commitments || output_commitments)`.
@@ -104,7 +104,7 @@ impl<C: AffineCurve> ShuffleProof<C> {
     }
 }
 
-impl<C: AffineCurve> ShuffleProof<C> {
+impl<C: AffineRepr> ShuffleProof<C> {
     /// Attempt to verify a `ShuffleProof`.
     pub fn verify<'a, 'b>(
         &self,
@@ -169,7 +169,7 @@ impl<C: AffineCurve> ShuffleProof<C> {
 
 fn kshuffle_helper(k: usize) {
     use rand::Rng;
-    type Scalar = <Affine as AffineCurve>::ScalarField;
+    type Scalar = <Affine as AffineRepr>::ScalarField;
 
     // Common code
     let pc_gens = PedersenGens::<Affine>::default();
@@ -205,7 +205,7 @@ fn kshuffle_helper(k: usize) {
 
 fn kshuffle_batch_helper(k: usize, n: usize) {
     use rand::Rng;
-    type Scalar = <Affine as AffineCurve>::ScalarField;
+    type Scalar = <Affine as AffineRepr>::ScalarField;
 
     // Common code
     let pc_gens = PedersenGens::<Affine>::default();
@@ -310,7 +310,7 @@ fn example_gadget<F: Field, CS: ConstraintSystem<F>>(
 }
 
 // Prover's scope
-fn example_gadget_proof<C: AffineCurve>(
+fn example_gadget_proof<C: AffineRepr>(
     pc_gens: &PedersenGens<C>,
     bp_gens: &BulletproofGens<C>,
     a1: u64,
@@ -350,7 +350,7 @@ fn example_gadget_proof<C: AffineCurve>(
 }
 
 // Verifier logic
-fn example_gadget_verify<C: AffineCurve>(
+fn example_gadget_verify<C: AffineRepr>(
     pc_gens: &PedersenGens<C>,
     bp_gens: &BulletproofGens<C>,
     c2: u64,
@@ -382,7 +382,7 @@ fn example_gadget_verify<C: AffineCurve>(
         .map_err(|_| R1CSError::VerificationError)
 }
 
-fn example_gadget_roundtrip_helper<C: AffineCurve>(
+fn example_gadget_roundtrip_helper<C: AffineRepr>(
     a1: u64,
     a2: u64,
     b1: u64,
@@ -464,7 +464,7 @@ fn range_proof_gadget() {
     }
 }
 
-fn range_proof_helper<C: AffineCurve>(v_val: u64, n: usize) -> Result<(), R1CSError> {
+fn range_proof_helper<C: AffineRepr>(v_val: u64, n: usize) -> Result<(), R1CSError> {
     // Common
     let pc_gens = PedersenGens::<C>::default();
     let bp_gens = BulletproofGens::<C>::new(128, 1);

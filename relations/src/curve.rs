@@ -1,3 +1,4 @@
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::Field;
 use bulletproofs::r1cs::*;
 use std::marker::PhantomData;
@@ -6,19 +7,115 @@ pub fn curve_check<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
     x: LinearCombination<F>,
     y: LinearCombination<F>,
-    a: F, // 0 for pallas and vesta
-    b: F, // 5 for pallas and vesta
+    a: F,
+    b: F,
 ) {
-    let (_, _, x_r) = cs.multiply(x.clone(), x.clone());
-    let (_, _, x_o) = cs.multiply(x, x_r.into());
-    let (_, _, y_r) = cs.multiply(y.clone(), y);
+    let (_, _, x_squared) = cs.multiply(x.clone(), x.clone());
+    let (_, _, x_cubed) = cs.multiply(x, x_squared.into());
+    let (_, _, y_squared) = cs.multiply(y.clone(), y);
 
     // x^3 + A*x^2 + B - y^2 = 0
     cs.constrain(
-        LinearCombination::<F>::from(x_o) + LinearCombination::<F>::from(x_r).scalar_mul(a) + b
-            - y_r,
+        LinearCombination::<F>::from(x_cubed)
+            + LinearCombination::<F>::from(x_squared).scalar_mul(a)
+            + b
+            - y_squared,
     )
-    // todo can anything be optimized by checking for a = 0?
+}
+
+/// A point represented by variables corresponding to its affine coordinates and optionally the value of those,
+/// which must be known by the prover.
+#[derive(Clone)]
+pub struct PointRepresentation<F: Field, C: AffineRepr<BaseField = F>> {
+    pub x: LinearCombination<F>,
+    pub y: LinearCombination<F>,
+    pub witness: Option<C>, // Some(x,y) for the prover, otherwise None
+}
+
+/// Given variables representing the coordinates of two points returns two variables representing the sum.
+/// The prover must additionally provide the two summands as input and gets the sum as output.
+pub fn incomplete_curve_addition_helper<
+    F: Field,
+    Cs: ConstraintSystem<F>,
+    P: AffineRepr<BaseField = F>,
+>(
+    cs: &mut Cs,
+    left: PointRepresentation<F, P>,
+    right: PointRepresentation<F, P>,
+) -> PointRepresentation<F, P> {
+    let (out_witness, delta) = match (left.witness, right.witness) {
+        (Some(left), Some(right)) => {
+            let out = (left + right).into_affine();
+            let delta = (*right.y().unwrap() - *left.y().unwrap())
+                / (*right.x().unwrap() - *left.x().unwrap());
+            (Some(out), Some(delta))
+        }
+        _ => (None, None),
+    };
+    let x_out = cs.allocate(out_witness.map(|o| *o.x().unwrap())).unwrap();
+    let y_out = cs.allocate(out_witness.map(|o| *o.y().unwrap())).unwrap();
+    incomplete_curve_addition(
+        cs,
+        &CurveAddition {
+            x_l: left.x,
+            y_l: left.y,
+            x_r: right.x,
+            y_r: right.y,
+            x_o: x_out.into(),
+            y_o: y_out.into(),
+            delta,
+        },
+    );
+    PointRepresentation {
+        x: x_out.into(),
+        y: y_out.into(),
+        witness: out_witness,
+    }
+}
+
+/// Given variables representing the coordinates of two points returns two variables representing the sum
+/// and checks that the result is not point at inf.
+/// The prover must additionally provide the two summands as input and gets the sum as output.
+pub fn checked_curve_addition_helper<
+    F: Field,
+    Cs: ConstraintSystem<F>,
+    P: AffineRepr<BaseField = F>,
+>(
+    cs: &mut Cs,
+    left: PointRepresentation<F, P>,
+    right: PointRepresentation<F, P>,
+) -> PointRepresentation<F, P> {
+    let (out_witness, delta, x_l_minus_x_r_inv) = match (left.witness, right.witness) {
+        (Some(left), Some(right)) => {
+            let out = (left + right).into_affine();
+            let delta = (*right.y().unwrap() - left.y().unwrap())
+                / (*right.x().unwrap() - left.x().unwrap());
+            assert_ne!(left.x().unwrap(), right.x().unwrap());
+            let x_l_minus_x_r_inv = F::one() / (*left.x().unwrap() - right.x().unwrap());
+            (Some(out), Some(delta), Some(x_l_minus_x_r_inv))
+        }
+        _ => (None, None, None),
+    };
+    let x_out = cs.allocate(out_witness.map(|o| *o.x().unwrap())).unwrap();
+    let y_out = cs.allocate(out_witness.map(|o| *o.y().unwrap())).unwrap();
+    checked_curve_addition(
+        cs,
+        &CurveAddition {
+            x_l: left.x,
+            y_l: left.y,
+            x_r: right.x,
+            y_r: right.y,
+            x_o: x_out.into(),
+            y_o: y_out.into(),
+            delta,
+        },
+        x_l_minus_x_r_inv,
+    );
+    PointRepresentation {
+        x: x_out.into(),
+        y: y_out.into(),
+        witness: out_witness,
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -92,28 +189,24 @@ fn not_zero<F: Field, Cs: ConstraintSystem<F>>(
 mod tests {
     use super::*;
 
-    use ark_ec::ProjectiveCurve;
-    use ark_std::UniformRand;
+    use ark_std::{One, UniformRand};
     use bulletproofs::{BulletproofGens, PedersenGens};
-    use pasta::{
-        pallas::Affine as PallasA, pallas::Projective as PallasP, vesta::Affine as VestaA,
-        vesta::Projective as VestaP,
-    };
-    type VestaScalar = <VestaP as ProjectiveCurve>::ScalarField;
+
+    use ark_pallas::Affine as PallasA;
+    use ark_vesta::Affine as VestaA;
+    type VestaScalar = <VestaA as AffineRepr>::ScalarField;
     use merlin::Transcript;
 
     #[test]
     fn test_curve_addition() {
         let mut rng = rand::thread_rng();
-        let p = <PallasP as UniformRand>::rand(&mut rng);
-        let pa = p.into_affine();
-        let x_l: VestaScalar = (pa as PallasA).x;
-        let y_l: VestaScalar = (pa as PallasA).y;
+        let p = <PallasA as UniformRand>::rand(&mut rng);
+        let x_l: VestaScalar = (p as PallasA).x;
+        let y_l: VestaScalar = (p as PallasA).y;
 
-        let q = <PallasP as UniformRand>::rand(&mut rng);
-        let qa = q.into_affine();
-        let x_r: VestaScalar = (qa as PallasA).x;
-        let y_r: VestaScalar = (qa as PallasA).y;
+        let q = <PallasA as UniformRand>::rand(&mut rng);
+        let x_r: VestaScalar = (q as PallasA).x;
+        let y_r: VestaScalar = (q as PallasA).y;
 
         let p_plus_q = p + q;
         let p_plus_qa = p_plus_q.into_affine();
@@ -137,7 +230,7 @@ mod tests {
         let (y_r_comm, y_r_var) = prover.commit(y_r, VestaScalar::rand(&mut rng));
         let (x_o_comm, x_o_var) = prover.commit(x_o, VestaScalar::rand(&mut rng));
         let (y_o_comm, y_o_var) = prover.commit(y_o, VestaScalar::rand(&mut rng));
-        let x_l_minus_x_r_inv = VestaScalar::from(1) / (x_l - x_r);
+        let x_l_minus_x_r_inv = VestaScalar::one() / (x_l - x_r);
 
         let add_prms = CurveAddition {
             x_l: x_l_var.into(),
@@ -174,6 +267,138 @@ mod tests {
         };
 
         checked_curve_addition(&mut verifier, &add_prms, None);
+
+        verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
+    }
+
+    #[test]
+    fn test_curve_addition_helper() {
+        let mut rng = rand::thread_rng();
+        let p = <PallasA as UniformRand>::rand(&mut rng);
+        let x_l: VestaScalar = (p as PallasA).x;
+        let y_l: VestaScalar = (p as PallasA).y;
+
+        let q = <PallasA as UniformRand>::rand(&mut rng);
+        let x_r: VestaScalar = (q as PallasA).x;
+        let y_r: VestaScalar = (q as PallasA).y;
+
+        let pc_gens = PedersenGens::<VestaA>::default();
+        let bp_gens = BulletproofGens::<VestaA>::new(8, 1);
+
+        let mut transcript = Transcript::new(b"CurveAdditionGadget");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+        let (x_l_comm, x_l_var) = prover.commit(x_l, VestaScalar::rand(&mut rng));
+        let (y_l_comm, y_l_var) = prover.commit(y_l, VestaScalar::rand(&mut rng));
+        let (x_r_comm, x_r_var) = prover.commit(x_r, VestaScalar::rand(&mut rng));
+        let (y_r_comm, y_r_var) = prover.commit(y_r, VestaScalar::rand(&mut rng));
+
+        let addition_result = incomplete_curve_addition_helper(
+            &mut prover,
+            PointRepresentation {
+                x: x_l_var.into(),
+                y: y_l_var.into(),
+                witness: Some(p),
+            },
+            PointRepresentation {
+                x: x_r_var.into(),
+                y: y_r_var.into(),
+                witness: Some(q),
+            },
+        );
+        assert_eq!(
+            addition_result.witness.map(|out| out == (p + q)),
+            Some(true)
+        );
+
+        let proof = prover.prove(&bp_gens).unwrap();
+
+        let mut transcript = Transcript::new(b"CurveAdditionGadget");
+        let mut verifier = Verifier::new(&mut transcript);
+
+        let x_l_var = verifier.commit(x_l_comm);
+        let y_l_var = verifier.commit(y_l_comm);
+        let x_r_var = verifier.commit(x_r_comm);
+        let y_r_var = verifier.commit(y_r_comm);
+        incomplete_curve_addition_helper::<_, _, PallasA>(
+            &mut verifier,
+            PointRepresentation {
+                x: x_l_var.into(),
+                y: y_l_var.into(),
+                witness: None,
+            },
+            PointRepresentation {
+                x: x_r_var.into(),
+                y: y_r_var.into(),
+                witness: None,
+            },
+        );
+
+        verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
+    }
+
+    #[test]
+    fn test_checked_curve_addition_helper() {
+        let mut rng = rand::thread_rng();
+        let p = <PallasA as UniformRand>::rand(&mut rng);
+        let x_l: VestaScalar = (p as PallasA).x;
+        let y_l: VestaScalar = (p as PallasA).y;
+
+        let q = <PallasA as UniformRand>::rand(&mut rng);
+        let x_r: VestaScalar = (q as PallasA).x;
+        let y_r: VestaScalar = (q as PallasA).y;
+
+        let pc_gens = PedersenGens::<VestaA>::default();
+        let bp_gens = BulletproofGens::<VestaA>::new(8, 1);
+
+        let mut transcript = Transcript::new(b"CurveAdditionGadget");
+        let mut prover = Prover::new(&pc_gens, &mut transcript);
+        let (x_l_comm, x_l_var) = prover.commit(x_l, VestaScalar::rand(&mut rng));
+        let (y_l_comm, y_l_var) = prover.commit(y_l, VestaScalar::rand(&mut rng));
+        let (x_r_comm, x_r_var) = prover.commit(x_r, VestaScalar::rand(&mut rng));
+        let (y_r_comm, y_r_var) = prover.commit(y_r, VestaScalar::rand(&mut rng));
+
+        let addition_result = checked_curve_addition_helper(
+            &mut prover,
+            PointRepresentation {
+                x: x_l_var.into(),
+                y: y_l_var.into(),
+                witness: Some(p),
+            },
+            PointRepresentation {
+                x: x_r_var.into(),
+                y: y_r_var.into(),
+                witness: Some(q),
+            },
+        );
+        assert_eq!(
+            addition_result
+                .witness
+                .map(|out| out == (p + q) && out != PallasA::zero()),
+            Some(true)
+        );
+
+        let proof = prover.prove(&bp_gens).unwrap();
+
+        let mut transcript = Transcript::new(b"CurveAdditionGadget");
+        let mut verifier = Verifier::new(&mut transcript);
+
+        let x_l_var = verifier.commit(x_l_comm);
+        let y_l_var = verifier.commit(y_l_comm);
+        let x_r_var = verifier.commit(x_r_comm);
+        let y_r_var = verifier.commit(y_r_comm);
+        checked_curve_addition_helper::<_, _, PallasA>(
+            &mut verifier,
+            PointRepresentation {
+                x: x_l_var.into(),
+                y: y_l_var.into(),
+                witness: None,
+            },
+            PointRepresentation {
+                x: x_r_var.into(),
+                y: y_r_var.into(),
+                witness: None,
+            },
+        );
 
         verifier.verify(&proof, &pc_gens, &bp_gens).unwrap();
     }

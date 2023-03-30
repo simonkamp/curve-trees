@@ -4,11 +4,11 @@ extern crate bulletproofs;
 extern crate merlin;
 extern crate rand;
 
-use ark_ec::AffineCurve;
+use ark_ec::AffineRepr;
 use ark_ff::Field;
 use ark_std::UniformRand;
 
-use pasta::pallas::Affine;
+use ark_pallas::Affine;
 
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
@@ -18,7 +18,7 @@ mod veccom_twice {
     use super::*;
 
     // Prover's scope
-    fn gadget_proof<C: AffineCurve>(
+    fn gadget_proof<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(R1CSProof<C>, C, C), R1CSError> {
@@ -43,7 +43,7 @@ mod veccom_twice {
     }
 
     // Verifier logic
-    fn gadget_verify<C: AffineCurve>(
+    fn gadget_verify<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         proof: R1CSProof<C>,
@@ -63,7 +63,7 @@ mod veccom_twice {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>() -> Result<(), R1CSError> {
+    fn gadget_roundtrip_helper<C: AffineRepr>() -> Result<(), R1CSError> {
         // Common
         let pc_gens = PedersenGens::<C>::default();
         let bp_gens = BulletproofGens::<C>::new(128, 1);
@@ -98,7 +98,7 @@ mod veccom_empty {
     }
 
     // Prover's scope
-    fn gadget_proof<C: AffineCurve>(
+    fn gadget_proof<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         c2: u64,
@@ -139,7 +139,7 @@ mod veccom_empty {
     }
 
     // Verifier logic
-    fn gadget_verify<C: AffineCurve>(
+    fn gadget_verify<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         c2: u64,
@@ -174,7 +174,7 @@ mod veccom_empty {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>(c2: u64, d1: u64, d2: u64) -> Result<(), R1CSError> {
+    fn gadget_roundtrip_helper<C: AffineRepr>(c2: u64, d1: u64, d2: u64) -> Result<(), R1CSError> {
         // Common
         let pc_gens = PedersenGens::<C>::default();
         let bp_gens = BulletproofGens::<C>::new(128, 1);
@@ -208,7 +208,7 @@ mod veccom_non_empty_do_nothing {
     }
 
     // Prover's scope
-    fn gadget_proof<C: AffineCurve>(
+    fn gadget_proof<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         a1: u64,
@@ -265,7 +265,7 @@ mod veccom_non_empty_do_nothing {
     }
 
     // Verifier logic
-    fn gadget_verify<C: AffineCurve>(
+    fn gadget_verify<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         proof: R1CSProof<C>,
@@ -303,7 +303,7 @@ mod veccom_non_empty_do_nothing {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>(
+    fn gadget_roundtrip_helper<C: AffineRepr>(
         a1: u64,
         a2: u64,
         a3: u64,
@@ -353,7 +353,7 @@ mod veccom_non_trivial_linear {
     }
 
     // Prover's scope
-    fn gadget_proof<C: AffineCurve>(
+    fn gadget_proof<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         a1: u64,
@@ -410,7 +410,7 @@ mod veccom_non_trivial_linear {
     }
 
     // Verifier logic
-    fn gadget_verify<C: AffineCurve>(
+    fn gadget_verify<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         proof: R1CSProof<C>,
@@ -448,7 +448,7 @@ mod veccom_non_trivial_linear {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>(
+    fn gadget_roundtrip_helper<C: AffineRepr>(
         a1: u64,
         a2: u64,
         a3: u64,
@@ -491,7 +491,7 @@ mod veccom_large_linear {
     }
 
     // Prover's scope
-    fn gadget_proof<C: AffineCurve>(
+    fn gadget_proof<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
     ) -> Result<(R1CSProof<C>, C), R1CSError> {
@@ -527,7 +527,7 @@ mod veccom_large_linear {
     }
 
     // Verifier logic
-    fn gadget_verify<C: AffineCurve>(
+    fn gadget_verify<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         proof: R1CSProof<C>,
@@ -553,7 +553,7 @@ mod veccom_large_linear {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>() -> Result<(), R1CSError> {
+    fn gadget_roundtrip_helper<C: AffineRepr>() -> Result<(), R1CSError> {
         // Common
         let pc_gens = PedersenGens::<C>::default();
         let bp_gens = BulletproofGens::<C>::new(DIM, 1);
@@ -584,7 +584,7 @@ mod veccom_mul_seperate {
     }
 
     // Prover's scope
-    fn gadget_proof<C: AffineCurve>(
+    fn gadget_proof<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         a: C::ScalarField,
@@ -620,7 +620,7 @@ mod veccom_mul_seperate {
     }
 
     // Verifier logic
-    fn gadget_verify<C: AffineCurve>(
+    fn gadget_verify<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         proof: R1CSProof<C>,
@@ -647,7 +647,7 @@ mod veccom_mul_seperate {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>(
+    fn gadget_roundtrip_helper<C: AffineRepr>(
         a: C::ScalarField,
         b: C::ScalarField,
         ab: C::ScalarField,
@@ -682,7 +682,7 @@ mod veccom_mul {
     }
 
     // Prover's scope
-    fn gadget_proof<C: AffineCurve>(
+    fn gadget_proof<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         a: C::ScalarField,
@@ -713,7 +713,7 @@ mod veccom_mul {
     }
 
     // Verifier logic
-    fn gadget_verify<C: AffineCurve>(
+    fn gadget_verify<C: AffineRepr>(
         pc_gens: &PedersenGens<C>,
         bp_gens: &BulletproofGens<C>,
         proof: R1CSProof<C>,
@@ -741,7 +741,7 @@ mod veccom_mul {
             .map_err(|_| R1CSError::VerificationError)
     }
 
-    fn gadget_roundtrip_helper<C: AffineCurve>(
+    fn gadget_roundtrip_helper<C: AffineRepr>(
         a: C::ScalarField,
         b: C::ScalarField,
         ab: C::ScalarField,

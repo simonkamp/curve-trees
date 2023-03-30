@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use ark_ec::{msm::VariableBaseMSM, AffineCurve};
+use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::Field;
 use ark_std::{One, UniformRand, Zero};
 use core::borrow::BorrowMut;
@@ -29,7 +29,7 @@ use super::op_splits;
 /// When all constraints are added, the verifying code calls `verify`
 /// which consumes the `Verifier` instance, samples random challenges
 /// that instantiate the randomized constraints, and verifies the proof.
-pub struct Verifier<T: BorrowMut<Transcript>, C: AffineCurve> {
+pub struct Verifier<T: BorrowMut<Transcript>, C: AffineRepr> {
     transcript: T,
     constraints: Vec<LinearCombination<C::ScalarField>>,
 
@@ -63,11 +63,11 @@ pub struct Verifier<T: BorrowMut<Transcript>, C: AffineCurve> {
 /// monomorphize the closures for the proving and verifying code.
 /// However, this type cannot be instantiated by the user and therefore can only be used within
 /// the callback provided to `specify_randomized_constraints`.
-pub struct RandomizingVerifier<T: BorrowMut<Transcript>, C: AffineCurve> {
+pub struct RandomizingVerifier<T: BorrowMut<Transcript>, C: AffineRepr> {
     verifier: Verifier<T, C>,
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField> for Verifier<T, C> {
+impl<T: BorrowMut<Transcript>, C: AffineRepr> ConstraintSystem<C::ScalarField> for Verifier<T, C> {
     fn transcript(&mut self) -> &mut Transcript {
         self.transcript.borrow_mut()
     }
@@ -155,7 +155,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField> 
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C::ScalarField>
+impl<T: BorrowMut<Transcript>, C: AffineRepr> RandomizableConstraintSystem<C::ScalarField>
     for Verifier<T, C>
 {
     type RandomizedCS = RandomizingVerifier<T, C>;
@@ -169,7 +169,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizableConstraintSystem<C::S
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
+impl<T: BorrowMut<Transcript>, C: AffineRepr> ConstraintSystem<C::ScalarField>
     for RandomizingVerifier<T, C>
 {
     fn transcript(&mut self) -> &mut Transcript {
@@ -218,7 +218,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> ConstraintSystem<C::ScalarField>
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C::ScalarField>
+impl<T: BorrowMut<Transcript>, C: AffineRepr> RandomizedConstraintSystem<C::ScalarField>
     for RandomizingVerifier<T, C>
 {
     fn challenge_scalar(&mut self, label: &'static [u8]) -> C::ScalarField {
@@ -229,7 +229,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> RandomizedConstraintSystem<C::Sca
     }
 }
 
-impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
+impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
     /// Construct an empty constraint system with specified external
     /// input variables.
     ///
@@ -403,7 +403,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             // Note: the wrapper could've used &mut instead of ownership,
             // but specifying lifetimes for boxed closures is not going to be nice,
             // so we move the self into wrapper and then move it back out afterwards.
-            let mut callbacks = mem::replace(&mut self.deferred_constraints, Vec::new());
+            let mut callbacks = mem::take(&mut self.deferred_constraints);
             let mut wrapped_self = RandomizingVerifier { verifier: self };
             for callback in callbacks.drain(..) {
                 callback(&mut wrapped_self)?;
@@ -443,7 +443,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(gens.G(padded_n).copied())
             .chain(gens.H(padded_n).copied());
 
-        let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
+        let mega_check: C::Group = C::Group::msm_unchecked(
             verification_tuple
                 .proof_dependent_points
                 .into_iter()
@@ -454,7 +454,6 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
                 .proof_dependent_scalars
                 .into_iter()
                 .chain(verification_tuple.proof_independent_scalars.into_iter())
-                .map(|s| s.into())
                 .collect::<Vec<_>>()
                 .as_slice(),
         );
@@ -642,7 +641,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
 
                     // add terms for vector commitments (higher degrees).
                     for j in 0..wVCs.len() {
-                        let wVCji = wVCs[j].get(i).cloned().unwrap_or_default();
+                        let wVCji = wVCs[j].get(i).copied().unwrap_or_default();
                         comb += xs[op_vec[j].1] * wVCji;
                     }
                 }
@@ -681,7 +680,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
         let xS = xs[op_degree + 1];
 
         let vscalar = (0..ncomm).map(|j| xs[op_vec[j].0]);
-        let vcomm = self.vec_comms.iter().cloned().map(|(comm, _)| comm);
+        let vcomm = self.vec_comms.iter().copied().map(|(comm, _)| comm);
 
         let proof_points = vcomm
             .chain(iter::once(proof.A_I1))
@@ -690,10 +689,10 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(iter::once(proof.A_I2))
             .chain(iter::once(proof.A_O2))
             .chain(iter::once(proof.S2))
-            .chain(self.V.iter().cloned())
-            .chain(T_points.iter().cloned())
-            .chain(proof.ipp_proof.L_vec.iter().cloned())
-            .chain(proof.ipp_proof.R_vec.iter().cloned())
+            .chain(self.V.iter().copied())
+            .chain(T_points.iter().copied())
+            .chain(proof.ipp_proof.L_vec.iter().copied())
+            .chain(proof.ipp_proof.R_vec.iter().copied())
             .collect();
 
         let proof_scalars = vscalar
@@ -704,7 +703,7 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
             .chain(iter::once(xO * u)) // A_O2
             .chain(iter::once(xS * u)) // S2
             .chain(wV.iter().map(|wVi| *wVi * rxs[op_degree])) // V : at op-degree
-            .chain(T_scalars.iter().cloned()) // T_points
+            .chain(T_scalars.iter().copied()) // T_points
             .chain(u_sq.into_iter()) // ipp_proof.L_vec
             .chain(u_inv_sq.into_iter()) // ipp_proof.R_vec
             .collect::<Vec<_>>();
@@ -724,13 +723,13 @@ impl<T: BorrowMut<Transcript>, C: AffineCurve> Verifier<T, C> {
     }
 }
 
-pub struct VerificationTuple<C: AffineCurve> {
+pub struct VerificationTuple<C: AffineRepr> {
     pub proof_dependent_points: Vec<C>,
     pub proof_dependent_scalars: Vec<C::ScalarField>,
     pub proof_independent_scalars: Vec<C::ScalarField>,
 }
 
-pub fn batch_verify<C: AffineCurve>(
+pub fn batch_verify<C: AffineRepr>(
     verification_tuples: Vec<VerificationTuple<C>>,
     pc_gens: &PedersenGens<C>,
     bp_gens: &BulletproofGens<C>,
@@ -782,7 +781,7 @@ pub fn batch_verify<C: AffineCurve>(
         .chain(gens.G(padded_n).copied())
         .chain(gens.H(padded_n).copied());
 
-    let mega_check: C::Projective = VariableBaseMSM::multi_scalar_mul(
+    let mega_check: C::Group = C::Group::msm_unchecked(
         proof_points
             .into_iter()
             .chain(fixed_points)
@@ -791,7 +790,6 @@ pub fn batch_verify<C: AffineCurve>(
         proof_point_scalars
             .into_iter()
             .chain(linear_combination)
-            .map(|s| s.into())
             .collect::<Vec<_>>()
             .as_slice(),
     );

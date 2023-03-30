@@ -17,9 +17,9 @@ extern crate bulletproofs;
 extern crate merlin;
 extern crate rand;
 
-use pasta::pallas::Affine;
+use ark_pallas::Affine;
 
-use ark_ec::AffineCurve;
+use ark_ec::AffineRepr;
 use ark_std::UniformRand;
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
@@ -27,7 +27,7 @@ use merlin::Transcript;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-type Scalar = <Affine as AffineCurve>::ScalarField;
+type Scalar = <Affine as AffineRepr>::ScalarField;
 // Shuffle gadget (documented in markdown file)
 
 /// A proof-of-shuffle.
@@ -84,8 +84,8 @@ impl ShuffleProof {
         pc_gens: &'b PedersenGens<Affine>,
         bp_gens: &'b BulletproofGens<Affine>,
         transcript: &'a mut Transcript,
-        input: &[<Affine as AffineCurve>::ScalarField],
-        output: &[<Affine as AffineCurve>::ScalarField],
+        input: &[<Affine as AffineRepr>::ScalarField],
+        output: &[<Affine as AffineRepr>::ScalarField],
     ) -> Result<(ShuffleProof, Vec<Affine>, Vec<Affine>), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?

@@ -4,10 +4,11 @@ This is a benchmarking implementation for Curve Trees. It is not for production 
 
 This repository contains:
 - A modified version of [dalek bulletproofs](https://github.com/dalek/bulletproofs), 
-which is adapted to support curves implemented using the [arkworks algebra library](https://github.com/arkworks-rs/algebra)
+which is adapted to support any curve implemented using the [arkworks algebra library](https://github.com/arkworks-rs/algebra)
 in addition to batch verification and vector commitments.
 - Bulletproof constraints to show that a commitment is a rerandomization of a member of the set represented by a curve tree. I.e. the select and rerandomize relation.
 - Benchmarks for the VCash anonymous payment system.
+- Benchmarks for an accumulator based on opening a commitment extracted using the select and rerandomize relation.
 
 ## Running Benchmarks
 
@@ -24,8 +25,6 @@ cargo bench --features bench_prover --no-default-features
 ## Acknowledgements
 
 The bulletproofs implementation is based on [dalek bulletproofs](https://github.com/dalek/bulletproofs) and the [arkworks algebra library](https://github.com/arkworks-rs/algebra).
-
-The implementation of the pasta curves is copied from [the Mina proof-systems repo](https://github.com/o1-labs/proof-systems/tree/master/curves).
 
 ## LICENSE
 
