@@ -124,7 +124,7 @@ fn bench_pour_with_parameters<
         randomized_pk: randomized_pk_1,
         sk: sk,
     };
-    let prove = || {
+    let prove = |print| {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
         let pallas_prover: Prover<_, Affine<P0>> =
             Prover::new(&sr_params.even_parameters.pc_gens, pallas_transcript);
@@ -149,9 +149,10 @@ fn bench_pour_with_parameters<
             receiver_pk_1,
             &schnorr_parameters,
             &mut rand::thread_rng(),
+            print,
         )
     };
-    let tx = prove();
+    let tx = prove(true);
     let pour_proof =
         Pour::<L, P0, P1, Projective<P0>>::deserialize_compressed(&tx.pour_bytes[..]).unwrap();
 
@@ -162,7 +163,7 @@ fn bench_pour_with_parameters<
         let mut group = c.benchmark_group(group_name);
 
         #[cfg(feature = "bench_prover")]
-        group.bench_function("prove", |b| b.iter(|| prove()));
+        group.bench_function("prove", |b| b.iter(|| prove(false)));
 
         #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("verification_gadget", |b| {

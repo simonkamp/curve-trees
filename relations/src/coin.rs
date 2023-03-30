@@ -187,6 +187,7 @@ pub fn prove_pour<
     receiver_pk_1: PublicKey<C>,
     sig_parameters: &Parameters<C, Blake2s>,
     rng: &mut R,
+    print_number_of_constraints: bool,
 ) -> SignedTx<P0, P1, C> {
     // mint coins
     let (_, minted_coin_commitment_0, minted_amount_var_0) = Coin::<P0, C>::mint(
@@ -226,6 +227,17 @@ pub fn prove_pour<
     even_prover.constrain(
         minted_amount_var_0 + minted_amount_var_1 - spent_amount_var_0 - spent_amount_var_1,
     );
+
+    if print_number_of_constraints {
+        println!(
+            "Number of constraints pallas: {}",
+            even_prover.number_of_constraints()
+        );
+        println!(
+            "Number of constraints vesta: {}",
+            odd_prover.number_of_constraints()
+        );
+    }
 
     // prove
     #[cfg(not(feature = "parallel"))]
@@ -963,6 +975,7 @@ mod tests {
             receiver_pk_1,
             &schnorr_parameters,
             &mut rng,
+            false,
         );
 
         {
