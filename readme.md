@@ -1,14 +1,14 @@
 # Curve Trees
 
-This is a benchmarking implementation for [Curve Trees](https://eprint.iacr.org/2022/756). It is not for production purposes.
+This is a benchmarking implementation of [Curve Trees](https://eprint.iacr.org/2022/756). It is not for production purposes.
 
 This repository contains:
 - A modified version of [dalek bulletproofs](https://github.com/dalek/bulletproofs), 
 which is adapted to support any curve implemented using the [arkworks algebra library](https://github.com/arkworks-rs/algebra)
-in addition to batch verification and vector commitments.
+in addition to batch verification and vector commitments (see [Generalized Bulletproofs](./bulletproofs/generalized-bulletproofs.md)).
 - Bulletproof constraints to show that a commitment is a rerandomization of a member of the set represented by a curve tree. I.e. the select and rerandomize relation.
-- Benchmarks for the VCash anonymous payment system.
-- Benchmarks for an accumulator based on opening a commitment extracted using the select and rerandomize relation.
+- Benchmarks of the VCash anonymous payment system.
+- Benchmarks of an accumulator based on opening a commitment extracted using the select and rerandomize relation.
 
 ## Running Benchmarks
 
