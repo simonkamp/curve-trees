@@ -44,15 +44,21 @@ fn bench_select_and_rerandomize(c: &mut Criterion) {
             c, 4, 12, threaded, curves,
         );
         let curves = "secp&secq";
-        println!("Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^20\n");
+        println!(
+            "Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^20\n"
+        );
         bench_select_and_rerandomize_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
             c, 2, 11, threaded, curves,
         );
-        println!("Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^32\n");
+        println!(
+            "Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^32\n"
+        );
         bench_select_and_rerandomize_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(
             c, 4, 12, threaded, curves,
         );
-        println!("Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^40\n");
+        println!(
+            "Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^40\n"
+        );
         bench_select_and_rerandomize_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
             c, 4, 12, threaded, curves,
         );
