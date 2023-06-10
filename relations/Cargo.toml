@@ -30,6 +30,10 @@ asm = ["ark-ff/asm", "bulletproofs/asm"]
 parallel = ["rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "bulletproofs/parallel"]
 bench_prover = []
 detailed_benchmarks = []
+usenix = ["bench_prover"]
+table1 = ["usenix"]
+table2 = ["usenix"]
+table3 = ["usenix"]
 
 [[bench]]
 name = "select_rerandomize"

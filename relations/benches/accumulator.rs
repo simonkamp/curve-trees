@@ -24,6 +24,23 @@ use merlin::Transcript;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+#[cfg(feature = "usenix")]
+fn bench_accumulator(c: &mut Criterion) {
+    #[cfg(feature = "table2")]
+    {
+        println!("Table 2\n");
+        println!("Benchmark accumulator over the pasta cycle, |S|=2^30\n");
+        bench_accumulator_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(
+            c, 3, 64, 11, 12, "pasta",
+        );
+        println!("Benchmark accumulator over the secp256k1 / secq256k1 cycle, |S|=2^30\n");
+        bench_accumulator_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(
+            c, 3, 64, 11, 12, "secp&q",
+        );
+    }
+}
+
+#[cfg(not(feature = "usenix"))]
 fn bench_accumulator(c: &mut Criterion) {
     bench_accumulator_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(
         c, 3, 64, 11, 12, "pasta",
@@ -108,11 +125,11 @@ fn bench_accumulator_with_parameters<
 
         if print {
             println!(
-                "Number of constraints pallas: {}",
+                "Number of constraints over even curve: {}",
                 pallas_prover.number_of_constraints()
             );
             println!(
-                "Number of constraints vesta: {}",
+                "Number of constraints over odd curve: {}",
                 vesta_prover.number_of_constraints()
             );
         }
@@ -143,7 +160,7 @@ fn bench_accumulator_with_parameters<
     let (path, pallas_proof, vesta_proof) = prove(true);
 
     println!(
-        "Proof size in bytes: {}",
+        "Proof size in bytes: {}\n",
         path.serialized_size(Compress::Yes)
             + pallas_proof.serialized_size(Compress::Yes)
             + vesta_proof.serialized_size(Compress::Yes)

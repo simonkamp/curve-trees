@@ -24,6 +24,42 @@ use merlin::Transcript;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+#[cfg(feature = "usenix")]
+fn bench_select_and_rerandomize(c: &mut Criterion) {
+    #[cfg(feature = "table1")]
+    {
+        println!("Table 1\n");
+        let threaded = "";
+        let curves = "pasta";
+        println!("Benchmark Select and rerandomize over the pasta cycle, |S|=2^20\n");
+        bench_select_and_rerandomize_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
+            c, 2, 11, threaded, curves,
+        );
+        println!("Benchmark Select and rerandomize over the pasta cycle, |S|=2^32\n");
+        bench_select_and_rerandomize_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(
+            c, 4, 12, threaded, curves,
+        );
+        println!("Benchmark Select and rerandomize over the pasta cycle, |S|=2^40\n");
+        bench_select_and_rerandomize_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
+            c, 4, 12, threaded, curves,
+        );
+        let curves = "secp&secq";
+        println!("Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^20\n");
+        bench_select_and_rerandomize_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
+            c, 2, 11, threaded, curves,
+        );
+        println!("Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^32\n");
+        bench_select_and_rerandomize_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(
+            c, 4, 12, threaded, curves,
+        );
+        println!("Benchmark Select and rerandomize over the secp256k1 / seqp256k1 cycle, |S|=2^40\n");
+        bench_select_and_rerandomize_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
+            c, 4, 12, threaded, curves,
+        );
+    }
+}
+
+#[cfg(not(feature = "usenix"))]
 fn bench_select_and_rerandomize(c: &mut Criterion) {
     let threaded = {
         #[cfg(feature = "parallel")]
@@ -45,7 +81,7 @@ fn bench_select_and_rerandomize(c: &mut Criterion) {
     bench_select_and_rerandomize_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
         c, 4, 12, threaded, curves,
     );
-    let curves = "secp&q";
+    let curves = "secp&secq";
     bench_select_and_rerandomize_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
         c, 2, 11, threaded, curves,
     );
@@ -102,7 +138,7 @@ fn bench_select_and_rerandomize_with_parameters<
         );
         if print {
             println!(
-                "Number of constraints: {}",
+                "Number of constraints per curve: {}\n",
                 pallas_prover.number_of_constraints()
             );
         }
@@ -133,7 +169,7 @@ fn bench_select_and_rerandomize_with_parameters<
     let (path, pallas_proof, vesta_proof) = prove(true);
 
     println!(
-        "Proof size in bytes: {}",
+        "Proof size in bytes: {}\n",
         path.serialized_size(Compress::Yes)
             + pallas_proof.serialized_size(Compress::Yes)
             + vesta_proof.serialized_size(Compress::Yes)

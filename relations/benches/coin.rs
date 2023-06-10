@@ -32,6 +32,44 @@ use blake2::Blake2s256 as Blake2s;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+#[cfg(feature = "usenix")]
+fn bench_pour(c: &mut Criterion) {
+    #[cfg(feature = "table3")]
+    {
+        let threaded = "";
+
+        let curves = "pasta";
+        println!("Table 3\n");
+        println!("Benchmark Pour over the pasta cycle, |S|=2^20\n");
+        bench_pour_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
+            c, 2, 12, threaded, curves,
+        );
+        println!("Benchmark Pour over the pasta cycle, |S|=2^32\n");
+        bench_pour_with_parameters::<256, PallasBase, PallasConfig, VestaConfig>(
+            c, 4, 13, threaded, curves,
+        );
+        println!("Benchmark Pour over the pasta cycle, |S|=2^40\n");
+        bench_pour_with_parameters::<1024, PallasBase, PallasConfig, VestaConfig>(
+            c, 4, 13, threaded, curves,
+        );
+        let curves = "secp&q";
+        println!("Benchmark Pour over the secp256k1 / seqp256k1 cycle, |S|=2^20\n");
+        bench_pour_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
+            c, 2, 12, threaded, curves,
+        );
+        println!("Benchmark Pour over the secp256k1 / seqp256k1 cycle, |S|=2^32\n");
+        bench_pour_with_parameters::<256, SecpBase, SecpConfig, SecqConfig>(
+            c, 4, 13, threaded, curves,
+        );
+
+        println!("Benchmark Pour over the secp256k1 / seqp256k1 cycle, |S|=2^40\n");
+        bench_pour_with_parameters::<1024, SecpBase, SecpConfig, SecqConfig>(
+            c, 4, 13, threaded, curves,
+        );
+    }
+}
+
+#[cfg(not(feature = "usenix"))]
 fn bench_pour(c: &mut Criterion) {
     let threaded = {
         #[cfg(feature = "parallel")]
