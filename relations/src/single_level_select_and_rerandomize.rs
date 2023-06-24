@@ -1,3 +1,4 @@
+use ark_serialize::CanonicalSerialize;
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
 
@@ -93,6 +94,17 @@ pub fn single_level_select_and_rerandomize<
     selected_witness: Option<Affine<C2>>, // Witness of the commitment being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. selected_witness * randomness_offset = rerandomized
 ) {
+    // add rerandomised point to the transcript
+    {
+        // TODO: clean this up. The transcript in CS should be restricted restricted to `ProtocolTranscript'
+        let mut bytes = Vec::new();
+        if let Err(e) = rerandomized.serialize_compressed(&mut bytes) {
+            panic!("{}", e)
+        }
+        cs.transcript()
+            .append_message(b"rerandomized_child", &bytes);
+    }
+
     let x_var = cs.allocate(selected_witness.map(|xy| xy.x)).unwrap();
     let y_var = cs.allocate(selected_witness.map(|xy| xy.y)).unwrap();
     // Show that the parent is committed to the child's x-coordinate
