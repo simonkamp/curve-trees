@@ -780,7 +780,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
         assert!(!has_2nd_phase_commitments || self.secrets.vec_open.is_empty());
 
         let (A_I2, A_O2, S2) = if has_2nd_phase_commitments {
-            println!("second phase");
             (
                 // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
                 C::Group::msm_unchecked(

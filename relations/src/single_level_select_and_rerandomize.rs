@@ -94,7 +94,7 @@ pub fn single_level_select_and_rerandomize<
     selected_witness: Option<Affine<C2>>, // Witness of the commitment being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. selected_witness * randomness_offset = rerandomized
 ) {
-    // add rerandomised point to the transcript
+    // add rerandomised child to the transcript
     {
         // TODO: clean this up. The transcript in CS should be restricted restricted to `ProtocolTranscript'
         let mut bytes = Vec::new();

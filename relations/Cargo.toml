@@ -15,7 +15,7 @@ rust-crypto = "^0.2"
 ark-crypto-primitives = { version = "0.4.0", features = ["signature"]}
 digest = "0.9"
 blake2 = "0.10"
-rayon = {verison = "1.5.3", optional = true}
+rayon = {version = "1.5.3", optional = true}
 
 [dev-dependencies]
 criterion = "0.3"
