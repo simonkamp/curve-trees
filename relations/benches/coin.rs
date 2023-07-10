@@ -113,6 +113,7 @@ fn bench_pour_with_parameters<
     threaded: &str,
     curves: &str,
 ) {
+    let prefix_string = format!("{threaded}Pour_Curves:{curves}_L:{L}_D:{depth}");
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2; // minimum sufficient power of 2
 
@@ -193,11 +194,14 @@ fn bench_pour_with_parameters<
     let pour_proof =
         Pour::<L, P0, P1, Projective<P0>>::deserialize_compressed(&tx.pour_bytes[..]).unwrap();
 
-    println!("Proof size in bytes {}", tx.serialized_size(Compress::Yes));
+    println!(
+        "{}_ProofSize: {} bytes",
+        &prefix_string,
+        tx.serialized_size(Compress::Yes)
+    );
 
     {
-        let group_name = format!("{}_{}_pour.L={},d={}.", threaded, curves, L, depth);
-        let mut group = c.benchmark_group(group_name);
+        let mut group = c.benchmark_group(&prefix_string);
 
         #[cfg(feature = "bench_prover")]
         group.bench_function("prove", |b| b.iter(|| prove()));
@@ -248,10 +252,7 @@ fn bench_pour_with_parameters<
     }
 
     use std::iter;
-    let group_name = format!(
-        "{}_{}_pour_batch_verification.L={},d={}.",
-        threaded, curves, L, depth
-    );
+    let group_name = format!("{}_batch_verification", &prefix_string);
     let mut group = c.benchmark_group(group_name);
     for n in [1, 100] {
         group.bench_with_input(

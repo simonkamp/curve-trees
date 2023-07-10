@@ -64,6 +64,7 @@ fn bench_accumulator_with_parameters<
     odd_generators_length_log_2: usize, // should be minimal but larger than the number of constraints.
     curves: &str,
 ) {
+    let prefix_string = format!("Acc_Curves:{curves}_L:{L}_D:{depth}_LeafWidth:{leaf_width}");
     let mut rng = rand::thread_rng();
     let even_generators_length = 1 << even_generators_length_log_2;
     let odd_generators_length = 1 << odd_generators_length_log_2;
@@ -125,12 +126,8 @@ fn bench_accumulator_with_parameters<
 
         if print {
             println!(
-                "Number of constraints over even curve: {}",
-                pallas_prover.number_of_constraints()
-            );
-            println!(
-                "Number of constraints over odd curve: {}",
-                vesta_prover.number_of_constraints()
+                "{prefix_string}_Constraints: {}",
+                pallas_prover.number_of_constraints() + vesta_prover.number_of_constraints()
             );
         }
         #[cfg(not(feature = "parallel"))]
@@ -160,7 +157,8 @@ fn bench_accumulator_with_parameters<
     let (path, pallas_proof, vesta_proof) = prove(true);
 
     println!(
-        "Proof size in bytes: {}\n",
+        "{}_ProofSize: {} bytes\n",
+        &prefix_string,
         path.serialized_size(Compress::Yes)
             + pallas_proof.serialized_size(Compress::Yes)
             + vesta_proof.serialized_size(Compress::Yes)
@@ -168,12 +166,11 @@ fn bench_accumulator_with_parameters<
 
     #[cfg(feature = "bench_prover")]
     {
-        let group_name = format!("acc_{}.L={},d={}.", curves, L, depth);
-        let mut group = c.benchmark_group(group_name);
+        let mut group = c.benchmark_group(&prefix_string);
         group.bench_function("prover", |b| b.iter(|| prove(false)));
     }
 
-    let group_name = format!("acc_batch_verification_{}.L={},d={}.", curves, L, depth);
+    let group_name = format!("{}_batch_verification", &prefix_string);
     let mut group = c.benchmark_group(group_name);
     use std::iter;
 

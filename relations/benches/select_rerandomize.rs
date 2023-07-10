@@ -112,6 +112,7 @@ fn bench_select_and_rerandomize_with_parameters<
     threaded: &str,
     curves: &str,
 ) {
+    let prefix_string = format!("{threaded}SelRand_Curves:{curves}_L:{L}_D:{depth}");
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
@@ -144,8 +145,9 @@ fn bench_select_and_rerandomize_with_parameters<
         );
         if print {
             println!(
-                "Number of constraints per curve: {}\n",
-                pallas_prover.number_of_constraints()
+                "{}_Constraints: {}",
+                &prefix_string,
+                2 * pallas_prover.number_of_constraints()
             );
         }
         #[cfg(feature = "parallel")]
@@ -175,18 +177,15 @@ fn bench_select_and_rerandomize_with_parameters<
     let (path, pallas_proof, vesta_proof) = prove(true);
 
     println!(
-        "Proof size in bytes: {}\n",
+        "{}_ProofSize: {} bytes\n",
+        &prefix_string,
         path.serialized_size(Compress::Yes)
             + pallas_proof.serialized_size(Compress::Yes)
             + vesta_proof.serialized_size(Compress::Yes)
     );
 
     {
-        let group_name = format!(
-            "{}_{}_select&rerandomize.L={},d={}.",
-            threaded, curves, L, depth
-        );
-        let mut group = c.benchmark_group(group_name);
+        let mut group = c.benchmark_group(&prefix_string);
 
         #[cfg(feature = "detailed_benchmarks")]
         group.bench_function("prover_gadget", |b| {
@@ -329,10 +328,7 @@ fn bench_select_and_rerandomize_with_parameters<
         });
     }
 
-    let group_name = format!(
-        "{}_{}_select&rerandomize_batch_verification.L={},d={}.",
-        threaded, curves, L, depth
-    );
+    let group_name = format!("{}_batch_verification", &prefix_string);
     let mut group = c.benchmark_group(group_name);
     use std::iter;
 
