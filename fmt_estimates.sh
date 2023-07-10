@@ -28,7 +28,7 @@ function estimate_info_acc() {
 export -f estimate_info_acc
 
 function estimate_info_selrand() {
-    estimate_info "$1" "selrand "
+    estimate_info "$1" "selrand"
 }
 export -f estimate_info_selrand
 
