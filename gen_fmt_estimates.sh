@@ -40,7 +40,6 @@ export -f estimate_info_pour
 # Main code
 
 # Generate all benchmarks
-cargo clean
 cargo bench --package relations --features "all-tables" | grep -i -E "constraint|proof" > proof_constraints.txt
 
 
