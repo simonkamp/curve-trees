@@ -34,6 +34,7 @@ usenix = ["bench_prover"]
 table1 = ["usenix"]
 table2 = ["usenix"]
 table3 = ["usenix"]
+all-tables = ["table1", "table2", "table3"]
 
 [[bench]]
 name = "select_rerandomize"
