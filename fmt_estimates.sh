@@ -39,20 +39,14 @@ export -f estimate_info_pour
 
 # Main code
 
-# Generate all benchmarks
-cargo clean
-cargo bench --package relations --features "all-tables" | grep -i -E "constraint|proof" > proof_constraints.txt
-
-
 echo
 echo
 
 echo "--- Table 1 (Accumulator)----"
 echo "- Proof sizes and constraints -"
 grep -i acc proof_constraints.txt 
-echo "-Timing-"
+echo "- Timing -"
 find . -type f -name "estimates.json" -exec bash -c "estimate_info_acc \"{}\"" \;
-
 echo 
 
 echo "--- Table 2 (SelectAndRerand)----"
@@ -65,7 +59,7 @@ echo
 echo "--- Table 3 (Pour)----"
 echo "- Proof sizes and constraints -"
 grep -i pour proof_constraints.txt
-echo "-Timing-"
+echo "- Timing -"
 find . -type f -name "estimates.json" -exec bash -c "estimate_info_pour \"{}\"" \;
 echo
 
