@@ -3,10 +3,10 @@
 use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::Field;
 use ark_std::{One, UniformRand, Zero};
-use clear_on_drop::clear::Clear;
 use core::borrow::BorrowMut;
 use core::mem;
 use merlin::Transcript;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use super::constraint_system::{
     ConstraintSystem, RandomizableConstraintSystem, RandomizedConstraintSystem,
@@ -53,6 +53,7 @@ unsafe impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Send for Prover<'g, T, 
 
 /// Separate struct to implement Drop trait for (for zeroing),
 /// so that compiler does not prohibit us from moving the Transcript out of `prove()`.
+#[derive(ZeroizeOnDrop)]
 struct Secrets<F: Field> {
     /// Stores assignments to the "left" of multiplication gates
     a_L: Vec<F>,
@@ -77,30 +78,6 @@ struct Secrets<F: Field> {
 /// the callback provided to `specify_randomized_constraints`.
 pub struct RandomizingProver<'g, T: BorrowMut<Transcript>, C: AffineRepr> {
     prover: Prover<'g, T, C>,
-}
-
-/// Overwrite secrets with null bytes when they go out of scope.
-impl<F: Field> Drop for Secrets<F> {
-    fn drop(&mut self) {
-        self.v.clear();
-        self.v_blinding.clear();
-
-        // Important: due to how ClearOnDrop auto-implements InitializableFromZeroed
-        // for T: Default, calling .clear() on Vec compiles, but does not
-        // clear the content. Instead, it only clears the Vec's header.
-        // Clearing the underlying buffer item-by-item will do the job, but will
-        // keep the header as-is, which is fine since the header does not contain secrets.
-        for e in self.a_L.iter_mut() {
-            e.clear();
-        }
-        for e in self.a_R.iter_mut() {
-            e.clear();
-        }
-        for e in self.a_O.iter_mut() {
-            e.clear();
-        }
-        // XXX use ClearOnDrop instead of doing the above
-    }
 }
 
 impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> ConstraintSystem<C::ScalarField>
@@ -600,10 +577,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
         let o_blinding1 = C::ScalarField::rand(&mut rng);
         let s_blinding1 = C::ScalarField::rand(&mut rng);
 
-        let mut s_L1: Vec<C::ScalarField> =
-            (0..n1).map(|_| C::ScalarField::rand(&mut rng)).collect();
-        let mut s_R1: Vec<C::ScalarField> =
-            (0..n1).map(|_| C::ScalarField::rand(&mut rng)).collect();
+        let s_L1: Zeroizing<Vec<C::ScalarField>> =
+            Zeroizing::new((0..n1).map(|_| C::ScalarField::rand(&mut rng)).collect());
+        let s_R1: Zeroizing<Vec<C::ScalarField>> =
+            Zeroizing::new((0..n1).map(|_| C::ScalarField::rand(&mut rng)).collect());
 
         #[cfg(feature = "parallel")]
         let (A_I1, A_O1, S1) = {
@@ -771,10 +748,10 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
             )
         };
 
-        let mut s_L2: Vec<C::ScalarField> =
-            (0..n2).map(|_| C::ScalarField::rand(&mut rng)).collect();
-        let mut s_R2: Vec<C::ScalarField> =
-            (0..n2).map(|_| C::ScalarField::rand(&mut rng)).collect();
+        let s_L2: Zeroizing<Vec<C::ScalarField>> =
+            Zeroizing::new((0..n2).map(|_| C::ScalarField::rand(&mut rng)).collect());
+        let s_R2: Zeroizing<Vec<C::ScalarField>> =
+            Zeroizing::new((0..n2).map(|_| C::ScalarField::rand(&mut rng)).collect());
 
         // both not supported atm.
         assert!(!has_2nd_phase_commitments || self.secrets.vec_open.is_empty());
@@ -1201,18 +1178,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
             l_vec,
             r_vec,
         );
-
-        // We do not yet have a ClearOnDrop wrapper for Vec<Scalar>.
-        // When PR 202 [1] is merged, we can simply wrap s_L and s_R at the point of creation.
-        // [1] https://github.com/dalek-cryptography/curve25519-dalek/pull/202
-        for scalar in s_L1
-            .iter_mut()
-            .chain(s_L2.iter_mut())
-            .chain(s_R1.iter_mut())
-            .chain(s_R2.iter_mut())
-        {
-            scalar.clear();
-        }
 
         let proof = R1CSProof {
             A_I1,

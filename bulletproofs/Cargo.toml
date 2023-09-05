@@ -19,13 +19,13 @@ rand = { version = "0.8", default-features = false, optional = true }
 byteorder = { version = "1", default-features = false }
 thiserror = { version = "1", optional = true }
 merlin = { version = "2", default-features = false }
-clear_on_drop = { version = "0.2", default-features = false }
 ark-ec = { version = "0.4.0"}
 ark-ff = { version = "0.4.0"}
 ark-serialize = { version = "0.4.0" } 
 ark-std = { version = "0.4.0" } 
 rust-crypto = "^0.2"
 rayon = {version = "1.5.3", optional = true}
+zeroize = { version = "1", features = ["zeroize_derive"] }
 
 [dev-dependencies]
 criterion = "0.3"
@@ -38,7 +38,6 @@ default = ["std", "parallel", "asm"]
 std = ["rand", "rand/std", "thiserror"]
 asm = ["ark-ff/asm"]
 parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel", "rayon"]
-nightly = ["clear_on_drop/nightly"]
 
 [[test]]
 name = "r1cs"
