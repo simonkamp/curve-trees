@@ -43,6 +43,6 @@ jobs:
           toolchain: nightly
           override: true
     - name: Run tests
-      run: cargo test --release --features="std,nightly" --verbose
+      run: cargo test --release --features="std" --verbose
     - name: Build benchmarks
-      run: cargo bench --features="std,nightly" --verbose DONTRUNBENCHMARKS
+      run: cargo bench --features="std" --verbose DONTRUNBENCHMARKS
