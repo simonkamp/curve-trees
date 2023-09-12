@@ -7,15 +7,17 @@ use alloc::vec;
 use alloc::vec::Vec;
 use ark_ec::AffineRepr;
 use ark_ff::Field;
-use clear_on_drop::clear::Clear;
+use zeroize::ZeroizeOnDrop;
 
 use crate::inner_product_proof::inner_product;
 
 /// Represents a degree-1 vector polynomial \\(\mathbf{a} + \mathbf{b} \cdot x\\).
+#[derive(ZeroizeOnDrop)]
 pub struct VecPoly1<F: Field>(pub Vec<F>, pub Vec<F>);
 
 /// Represents a degree-3 vector polynomial
 /// \\(\mathbf{a} + \mathbf{b} \cdot x + \mathbf{c} \cdot x^2 + \mathbf{d} \cdot x^3 \\).
+#[derive(ZeroizeOnDrop)]
 pub struct VecPoly3<F: Field>(pub Vec<F>, pub Vec<F>, pub Vec<F>, pub Vec<F>);
 
 pub const T_LABELS: [&[u8]; 25] = [
@@ -114,10 +116,12 @@ impl<F: Field> VecPoly<F> {
 }
 
 /// Represents a degree-2 scalar polynomial \\(a + b \cdot x + c \cdot x^2\\)
+#[derive(ZeroizeOnDrop)]
 pub struct Poly2<F: Field>(pub F, pub F, pub F);
 
 /// Represents a degree-6 scalar polynomial, without the zeroth degree
 /// \\(a \cdot x + b \cdot x^2 + c \cdot x^3 + d \cdot x^4 + e \cdot x^5 + f \cdot x^6\\)
+#[derive(ZeroizeOnDrop)]
 pub struct Poly6<F: Field> {
     pub t1: F,
     pub t2: F,
@@ -251,53 +255,6 @@ impl<F: Field> Poly2<F> {
 impl<F: Field> Poly6<F> {
     pub fn eval(&self, x: F) -> F {
         x * (self.t1 + x * (self.t2 + x * (self.t3 + x * (self.t4 + x * (self.t5 + x * self.t6)))))
-    }
-}
-
-impl<F: Field> Drop for VecPoly1<F> {
-    fn drop(&mut self) {
-        for e in self.0.iter_mut() {
-            e.clear();
-        }
-        for e in self.1.iter_mut() {
-            e.clear();
-        }
-    }
-}
-
-impl<F: Field> Drop for Poly2<F> {
-    fn drop(&mut self) {
-        self.0.clear();
-        self.1.clear();
-        self.2.clear();
-    }
-}
-
-impl<F: Field> Drop for VecPoly3<F> {
-    fn drop(&mut self) {
-        for e in self.0.iter_mut() {
-            e.clear();
-        }
-        for e in self.1.iter_mut() {
-            e.clear();
-        }
-        for e in self.2.iter_mut() {
-            e.clear();
-        }
-        for e in self.3.iter_mut() {
-            e.clear();
-        }
-    }
-}
-
-impl<F: Field> Drop for Poly6<F> {
-    fn drop(&mut self) {
-        self.t1.clear();
-        self.t2.clear();
-        self.t3.clear();
-        self.t4.clear();
-        self.t5.clear();
-        self.t6.clear();
     }
 }
 
@@ -438,50 +395,5 @@ mod tests {
         assert_eq!(sum_of_powers_slow(&x, 4), Scalar::from(1111u64));
         assert_eq!(sum_of_powers_slow(&x, 5), Scalar::from(11111u64));
         assert_eq!(sum_of_powers_slow(&x, 6), Scalar::from(111111u64));
-    }
-
-    #[test]
-    fn vec_of_scalars_clear_on_drop() {
-        let mut v = vec![Scalar::from(24u64), Scalar::from(42u64)];
-
-        for e in v.iter_mut() {
-            e.clear();
-        }
-
-        fn flat_slice<T>(x: &[T]) -> &[u8] {
-            use core::mem;
-            use core::slice;
-
-            unsafe { slice::from_raw_parts(x.as_ptr() as *const u8, mem::size_of_val(x)) }
-        }
-
-        assert_eq!(flat_slice(&v.as_slice()), &[0u8; 64][..]);
-        assert_eq!(v[0], Scalar::zero());
-        assert_eq!(v[1], Scalar::zero());
-    }
-
-    #[test]
-    fn tuple_of_scalars_clear_on_drop() {
-        let mut v = Poly2(
-            Scalar::from(24u64),
-            Scalar::from(42u64),
-            Scalar::from(255u64),
-        );
-
-        v.0.clear();
-        v.1.clear();
-        v.2.clear();
-
-        fn as_bytes<T>(x: &T) -> &[u8] {
-            use core::mem;
-            use core::slice;
-
-            unsafe { slice::from_raw_parts(x as *const T as *const u8, mem::size_of_val(x)) }
-        }
-
-        assert_eq!(as_bytes(&v), &[0u8; 96][..]);
-        assert_eq!(v.0, Scalar::zero());
-        assert_eq!(v.1, Scalar::zero());
-        assert_eq!(v.2, Scalar::zero());
     }
 }
