@@ -120,11 +120,7 @@ fn bench_select_and_rerandomize_with_parameters<
         SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
 
     let some_point = Affine::<P0>::rand(&mut rng);
-    let (permissible_point, _) = sr_params
-        .even_parameters
-        .uh
-        .permissible_commitment(&some_point, &sr_params.even_parameters.pc_gens.B_blinding);
-    let set = vec![permissible_point];
+    let set = vec![some_point];
     let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let prove = |print| {

@@ -453,7 +453,7 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
             verification_tuple
                 .proof_dependent_scalars
                 .into_iter()
-                .chain(verification_tuple.proof_independent_scalars.into_iter())
+                .chain(verification_tuple.proof_independent_scalars)
                 .collect::<Vec<_>>()
                 .as_slice(),
         );
@@ -704,8 +704,8 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
             .chain(iter::once(xS * u)) // S2
             .chain(wV.iter().map(|wVi| *wVi * rxs[op_degree])) // V : at op-degree
             .chain(T_scalars.iter().copied()) // T_points
-            .chain(u_sq.into_iter()) // ipp_proof.L_vec
-            .chain(u_inv_sq.into_iter()) // ipp_proof.R_vec
+            .chain(u_sq) // ipp_proof.L_vec
+            .chain(u_inv_sq) // ipp_proof.R_vec
             .collect::<Vec<_>>();
 
         let fixed_point_scalars: Vec<C::ScalarField> =

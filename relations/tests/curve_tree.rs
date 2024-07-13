@@ -60,11 +60,7 @@ pub fn test_curve_tree_with_parameters<
         Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
     let some_point = Affine::<P0>::rand(&mut rng);
-    let (permissible_point, _) = sr_params
-        .even_parameters
-        .uh
-        .permissible_commitment(&some_point, &sr_params.even_parameters.pc_gens.B_blinding);
-    let set = vec![permissible_point];
+    let set = vec![some_point];
     let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
     assert_eq!(curve_tree.height(), depth);
 
@@ -122,11 +118,7 @@ pub fn test_curve_tree_batch_verification() {
     );
 
     let some_point = PallasP::rand(&mut rng).into_affine();
-    let (permissible_point, _) = sr_params
-        .even_parameters
-        .uh
-        .permissible_commitment(&some_point, &sr_params.even_parameters.pc_gens.B_blinding);
-    let set = vec![permissible_point];
+    let set = vec![some_point];
     let curve_tree =
         CurveTree::<32, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
     assert_eq!(curve_tree.height(), 4);
