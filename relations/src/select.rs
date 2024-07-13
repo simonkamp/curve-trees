@@ -41,7 +41,6 @@ mod tests {
         let bpg = BulletproofGens::new(1024, 1);
         let (proof, xs_comm, x_comm) = {
             // have a prover commit to a vector of random elements in Pallas base field
-            // (will be x-coordinates of permissible points in the end)
             let xs: Vec<_> = iter::from_fn(|| Some(VestaScalar::rand(&mut rng)))
                 .take(256)
                 .collect();

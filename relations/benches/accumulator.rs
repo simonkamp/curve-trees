@@ -83,12 +83,7 @@ fn bench_accumulator_with_parameters<
             .even_parameters
             .commit(&leaf_elements, P0::ScalarField::zero(), 0);
 
-    let (permissible_point, permissible_randomness) =
-        sr_params.even_parameters.uh.permissible_commitment(
-            &leaf_commitment,
-            &sr_params.even_parameters.pc_gens.B_blinding,
-        );
-    let set = vec![permissible_point];
+    let set = vec![leaf_commitment];
     let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let prove = |print| {
@@ -110,7 +105,7 @@ fn bench_accumulator_with_parameters<
 
         let (leaf_commitment, leaf_vars) = pallas_prover.commit_vec(
             &leaf_elements,
-            permissible_randomness + rerandomization,
+            rerandomization,
             &sr_params.even_parameters.bp_gens,
         );
         assert_eq!(leaf_commitment, path.get_rerandomized_leaf()); // sanity check

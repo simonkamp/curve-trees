@@ -22,8 +22,8 @@ use std::marker::PhantomData;
 pub struct Coin<P0: SWCurveConfig + Clone, C: CurveGroup> {
     pub value: u64,
     pub tag: P0::ScalarField, // spending tag derived from the rerandomized public key
-    pub permissible_randomness: P0::ScalarField, // hiding and permissible randomness used to commit to `tag` and `value`
-    pub pk_randomness: C::ScalarField, // the randomness used to randomize the public key, needed for the receivers signature
+    pub blinding: P0::ScalarField, // randomness used to commit to `tag` and `value`
+    pub pk_randomness: C::ScalarField, // randomness used to randomize the public key, needed for the receivers signature
 }
 
 impl<
@@ -45,7 +45,7 @@ impl<
 
         let (coin_commitment, variables) = prover.commit_vec(
             &[P0::ScalarField::from(value), coin.tag],
-            coin.permissible_randomness,
+            coin.blinding,
             &sr_parameters.bp_gens,
         );
         range_proof(prover, variables[0].into(), Some(value), 64).unwrap(); // todo what range do we want to enforce? Table of benchmarks for different powers?
@@ -64,17 +64,15 @@ impl<
         let randomized_pk = Self::rerandomized_pk(pk, &pk_rerandomization, parameters);
         let output_tag = Self::pk_to_scalar(&randomized_pk);
 
-        let (coin_commitment, permissible_randomness) = sr_parameters.permissible_commitment(
-            &[P0::ScalarField::from(value), output_tag],
-            P0::ScalarField::rand(rng),
-            0, // todo
-        );
+        let blinding = P0::ScalarField::rand(rng);
+        let coin_commitment =
+            sr_parameters.commit(&[P0::ScalarField::from(value), output_tag], blinding, 0);
 
         (
             Coin {
                 value,
                 tag: output_tag,
-                permissible_randomness,
+                blinding,
                 pk_randomness: pk_rerandomization,
             },
             coin_commitment,
@@ -123,7 +121,7 @@ impl<
 
         let (rerandomized_point, variables) = even_prover.commit_vec(
             &[P0::ScalarField::from(self.value), self.tag],
-            self.permissible_randomness + rerandomization,
+            self.blinding + rerandomization,
             &parameters.even_parameters.bp_gens,
         );
         assert_eq!(

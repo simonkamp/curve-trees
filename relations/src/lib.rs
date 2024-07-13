@@ -10,9 +10,6 @@ pub mod rerandomize;
 // Show that a value is in a set of variables
 pub mod select;
 
-// Prove that a commitment to x defines a canonical point (x,y)
-pub mod permissible;
-
 // Given a set of committed variables (vars) and a public commitment (C)
 // prove that vars contain an x-coordinate that expands a commitment (C')
 // s.t. C is a rerandomization of C'
