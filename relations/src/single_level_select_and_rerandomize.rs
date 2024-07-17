@@ -33,7 +33,7 @@ impl<P: SWCurveConfig + Copy> SingleLayerParameters<P> {
         SingleLayerParameters {
             bp_gens: BulletproofGens::<Affine<P>>::new(generators_length, 1),
             pc_gens,
-            delta: Affine::<P>::rand(rng),
+            delta: Affine::<P>::rand(rng), // todo choose as a hash to be convincingly independent from all generators in the commitment
             coeff_a: P::COEFF_A,
             coeff_b: P::COEFF_B,
             tables,
@@ -137,10 +137,10 @@ pub fn single_level_batched_select_and_rerandomize<
 >(
     cs: &mut Cs, // Prover or verifier
     parameters: &SingleLayerParameters<C2>,
-    rerandomized: Affine<C2>, // The public rerandomization of the sum of selected children
+    sum_of_rerandomized: Affine<C2>, // The public rerandomization of the sum of selected children
     children: Vec<Variable<Fs>>, // Variables representing members of the vector commitment (i.e. the sum of M parents)
     children_plus_delta: Option<[&Affine<C2>; M]>, // Witnesses of the commitments being selected and rerandomized
-    randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. \sum selected_witnesses * randomness_offset = rerandomized
+    randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. \sum selected_witnesses + randomness_offset * H = sum_of_rerandomized + M * Delta
 ) {
     // Initialize the accumulated sum of the selected children to dummy values.
     let mut sum_of_selected = PointRepresentation {
@@ -184,13 +184,13 @@ pub fn single_level_batched_select_and_rerandomize<
             // In the first iteration, the sum is the first selected child.
             sum_of_selected = ith_selected;
         } else {
-            // In the consecutive iterations, the ith selected child to the accumulated sum
+            // In the consecutive iterations, add the ith selected child to the accumulated sum
             sum_of_selected = checked_curve_addition_helper(cs, sum_of_selected, ith_selected);
         }
     }
     // Add M*Delta to the public sum of the children
     let shifted_rerandomized =
-        (rerandomized + (parameters.delta * C2::ScalarField::from(M as u32))).into_affine();
+        (sum_of_rerandomized + (parameters.delta * C2::ScalarField::from(M as u32))).into_affine();
     // Show that `rerandomized`, is a rerandomization of sum of the selected children
     re_randomize(
         cs,
@@ -275,6 +275,97 @@ mod tests {
             &rerandomized_child.into_affine(),
             xs_vars.into_iter().map(|x| x.into()).collect(),
             None,
+            None,
+        );
+
+        let res = verifier.verify(
+            &proof,
+            &sr_params.odd_parameters.pc_gens,
+            &sr_params.odd_parameters.bp_gens,
+        );
+        assert_eq!(res, Ok(()))
+    }
+
+    #[test]
+    fn test_single_level_batched() {
+        let mut rng = rand::thread_rng();
+        let generators_length = 1 << 12;
+
+        let sr_params =
+            SelRerandParameters::<ark_pallas::PallasConfig, ark_vesta::VestaConfig>::new(
+                generators_length,
+                generators_length,
+                &mut rng,
+            );
+
+        const M: usize = 2;
+        let arity = 32;
+        let children: Vec<_> = iter::from_fn(|| Some(PallasA::rand(&mut rng)))
+            .take(M * arity)
+            .collect();
+        // Pick M children
+        let child_index_1 = 3;
+        let child_index_2 = arity + 7;
+        assert_ne!(children[child_index_1], children[child_index_2]);
+
+        let children_plus_delta: Vec<_> = children
+            .iter()
+            .map(|child| (*child + sr_params.even_parameters.delta).into_affine())
+            .collect();
+        let xs: Vec<_> = children_plus_delta
+            .iter()
+            .map(|child_plus_delta| *child_plus_delta.x().unwrap())
+            .collect();
+        let blinding = VestaScalar::rand(&mut rng);
+        let parent = sr_params.odd_parameters.commit(xs.as_slice(), blinding, 0);
+
+        // Rerandomize the selected children
+        let rerandomization_1 = PallasScalar::rand(&mut rng);
+        let rerandomized_child_1 = (children[child_index_1]
+            + (sr_params.even_parameters.pc_gens.B_blinding * rerandomization_1))
+            .into_affine();
+
+        let rerandomization_2 = PallasScalar::rand(&mut rng);
+        let rerandomized_child_2 = (children[child_index_2]
+            + (sr_params.even_parameters.pc_gens.B_blinding * rerandomization_2))
+            .into_affine();
+
+        let rerandomized_sum = (rerandomized_child_1 + rerandomized_child_2).into_affine();
+
+        let proof = {
+            let mut transcript: Transcript =
+                Transcript::new(b"single_level_select_and_rerandomize");
+            let mut prover: Prover<_, VestaA> =
+                Prover::new(&sr_params.odd_parameters.pc_gens, &mut transcript);
+
+            let (xs_comm, xs_vars) =
+                prover.commit_vec(xs.as_slice(), blinding, &sr_params.odd_parameters.bp_gens);
+            assert_eq!(xs_comm, parent);
+
+            single_level_batched_select_and_rerandomize(
+                &mut prover,
+                &sr_params.even_parameters,
+                rerandomized_sum,
+                xs_vars.into_iter().map(|x| x.into()).collect(),
+                Some([
+                    &children_plus_delta[child_index_1],
+                    &children_plus_delta[child_index_2],
+                ]),
+                Some(rerandomization_1 + rerandomization_2),
+            );
+            let proof = prover.prove(&sr_params.odd_parameters.bp_gens).unwrap();
+            proof
+        };
+
+        let mut transcript: Transcript = Transcript::new(b"single_level_select_and_rerandomize");
+        let mut verifier = Verifier::<_, VestaA>::new(&mut transcript);
+        let xs_vars = verifier.commit_vec(M * arity, parent);
+        single_level_batched_select_and_rerandomize(
+            &mut verifier,
+            &sr_params.even_parameters,
+            rerandomized_sum,
+            xs_vars.into_iter().map(|x| x.into()).collect(),
+            None::<[&PallasA; M]>,
             None,
         );
 
