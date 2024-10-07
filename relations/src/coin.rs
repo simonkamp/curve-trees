@@ -106,19 +106,21 @@ impl<
         even_prover: &mut Prover<Transcript, Affine<P0>>,
         odd_prover: &mut Prover<Transcript, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
     ) -> (
         SelectAndRerandomizePath<L, P0, P1>,
         Variable<P0::ScalarField>,
     ) {
         let (path, rerandomization) = curve_tree.select_and_rerandomize_prover_gadget(
             index,
+            0,
             even_prover,
             odd_prover,
             parameters,
             &mut rand::thread_rng(),
         );
 
+        // Todo: Avoid using vector commitment for efficiency. Can just subtract tag*G_tag from the coin outside the circuit. But we will need to change the generator of the value as well. To do that we need to prove knowledge of opening when minting using e.g. sigma protocols.
         let (rerandomized_point, variables) = even_prover.commit_vec(
             &[P0::ScalarField::from(self.value), self.tag],
             self.blinding + rerandomization,
@@ -176,7 +178,7 @@ pub fn prove_pour<
     mut even_prover: Prover<Transcript, Affine<P0>>,
     mut odd_prover: Prover<Transcript, Affine<P1>>,
     sr_parameters: &SelRerandParameters<P0, P1>,
-    curve_tree: &CurveTree<L, P0, P1>,
+    curve_tree: &CurveTree<L, 1, P0, P1>,
     input_0: &SpendingInfo<P0, C>,
     input_1: &SpendingInfo<P0, C>,
     receiver_value_0: u64,
@@ -427,7 +429,7 @@ impl<
         sr_parameters: &SelRerandParameters<P0, P1>,
         spend_commitments_0: &SelectAndRerandomizePath<L, P0, P1>,
         spend_commitments_1: &SelectAndRerandomizePath<L, P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
     ) -> VerificationTuple<Affine<P0>> {
         let mut even_verifier = Verifier::new(Transcript::new(ro_domain));
         // mint
@@ -467,7 +469,7 @@ impl<
         sr_parameters: &SelRerandParameters<P0, P1>,
         spend_commitments_0: &SelectAndRerandomizePath<L, P0, P1>,
         spend_commitments_1: &SelectAndRerandomizePath<L, P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
     ) -> VerificationTuple<Affine<P1>> {
         let mut odd_verifier = Verifier::new(Transcript::new(ro_domain));
         // spend
@@ -494,7 +496,7 @@ impl<
         self,
         ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
     ) -> (VerificationTuple<Affine<P0>>, VerificationTuple<Affine<P1>>) {
         #[cfg(feature = "parallel")]
         let (spend_commitments_0, spend_commitments_1) = {
@@ -585,7 +587,7 @@ fn verify_spend_even<
     commitments: &SelectAndRerandomizePath<L, P0, P1>,
     sr_parameters: &SelRerandParameters<P0, P1>,
     pk: &PublicKey<C>,
-    curve_tree: &CurveTree<L, P0, P1>,
+    curve_tree: &CurveTree<L, 1, P0, P1>,
 ) -> Variable<P0::ScalarField> {
     commitments.even_verifier_gadget(even_verifier, sr_parameters, curve_tree);
     let vars = even_verifier.commit_vec(L, commitments.get_rerandomized_leaf());
@@ -606,7 +608,7 @@ fn verify_spend_odd<
     odd_verifier: &mut Verifier<Transcript, Affine<P1>>,
     commitments: &SelectAndRerandomizePath<L, P0, P1>,
     sr_parameters: &SelRerandParameters<P0, P1>,
-    curve_tree: &CurveTree<L, P0, P1>,
+    curve_tree: &CurveTree<L, 1, P0, P1>,
 ) {
     commitments.odd_verifier_gadget(odd_verifier, sr_parameters, curve_tree);
 }
@@ -637,7 +639,7 @@ impl<
         self,
         ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
         sig_parameters: &Parameters<C, Blake2s>,
     ) -> (VerificationTuple<Affine<P0>>, VerificationTuple<Affine<P1>>) {
         let pour =
@@ -825,7 +827,7 @@ mod tests {
         );
         // Curve tree with two coins
         let set = vec![coin];
-        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+        let curve_tree = CurveTree::<256, 1, PallasParameters, VestaParameters>::from_set(
             &set,
             &sr_params,
             Some(4),
@@ -917,7 +919,7 @@ mod tests {
         );
         // Curve tree with two coins
         let set = vec![coin_0, coin_1];
-        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+        let curve_tree = CurveTree::<256, 1, PallasParameters, VestaParameters>::from_set(
             &set,
             &sr_params,
             Some(4),

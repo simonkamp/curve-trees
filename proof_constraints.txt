@@ -1,0 +1,22 @@
+Acc_Curves:pasta_L:256_D:3_LeafWidth:64_Constraints: 3562
+Acc_Curves:pasta_L:256_D:3_LeafWidth:64_ProofSize: 2795 bytes
+Acc_Curves:secp&q_L:256_D:3_LeafWidth:64_Constraints: 3562
+Acc_Curves:secp&q_L:256_D:3_LeafWidth:64_ProofSize: 2795 bytes
+Pour_Curves:pasta_L:1024_D:2_ProofSize: 3442 bytes
+Pour_Curves:pasta_L:256_D:4_ProofSize: 3970 bytes
+Pour_Curves:pasta_L:1024_D:4_ProofSize: 3970 bytes
+Pour_Curves:secp&q_L:1024_D:2_ProofSize: 3442 bytes
+Pour_Curves:secp&q_L:256_D:4_ProofSize: 3970 bytes
+Pour_Curves:secp&q_L:1024_D:4_ProofSize: 3970 bytes
+SelRand_Curves:pasta_L:1024_D:2_Constraints: 3868
+SelRand_Curves:pasta_L:1024_D:2_ProofSize: 2564 bytes
+SelRand_Curves:pasta_L:256_D:4_Constraints: 4664
+SelRand_Curves:pasta_L:256_D:4_ProofSize: 2894 bytes
+SelRand_Curves:pasta_L:1024_D:4_Constraints: 7736
+SelRand_Curves:pasta_L:1024_D:4_ProofSize: 2894 bytes
+SelRand_Curves:secp&secq_L:1024_D:2_Constraints: 3868
+SelRand_Curves:secp&secq_L:1024_D:2_ProofSize: 2564 bytes
+SelRand_Curves:secp&secq_L:256_D:4_Constraints: 4664
+SelRand_Curves:secp&secq_L:256_D:4_ProofSize: 2894 bytes
+SelRand_Curves:secp&secq_L:1024_D:4_Constraints: 7736
+SelRand_Curves:secp&secq_L:1024_D:4_ProofSize: 2894 bytes

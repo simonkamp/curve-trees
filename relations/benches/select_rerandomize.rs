@@ -121,7 +121,7 @@ fn bench_select_and_rerandomize_with_parameters<
 
     let some_point = Affine::<P0>::rand(&mut rng);
     let set = vec![some_point];
-    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, 1, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let prove = |print| {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -133,6 +133,7 @@ fn bench_select_and_rerandomize_with_parameters<
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let (path, _) = curve_tree.select_and_rerandomize_prover_gadget(
+            0,
             0,
             &mut pallas_prover,
             &mut vesta_prover,

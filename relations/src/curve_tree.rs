@@ -2,6 +2,7 @@ use bulletproofs::r1cs::*;
 
 use crate::single_level_select_and_rerandomize::*;
 
+use ark_ec::AffineRepr;
 use ark_ec::{models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, CurveGroup};
 use ark_ff::PrimeField;
 use ark_serialize::{
@@ -12,18 +13,24 @@ use merlin::Transcript;
 use rand::Rng;
 use std::{borrow::BorrowMut, ops::Mul};
 
-pub enum CurveTree<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> {
-    Even(CurveTreeNode<L, P0, P1>),
-    Odd(CurveTreeNode<L, P1, P0>),
+pub enum CurveTree<
+    const L: usize, // L is te branching factor, i.e. the number of children per branch
+    const M: usize, // M the maximal batch size for which efficient parallel membership proofs are supported.
+    P0: SWCurveConfig,
+    P1: SWCurveConfig,
+> {
+    Even(CurveTreeNode<L, M, P0, P1>),
+    Odd(CurveTreeNode<L, M, P1, P0>),
 }
 
 impl<
         const L: usize,
+        const M: usize,
         F0: PrimeField,
         F1: PrimeField,
         P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy + Send,
         P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy + Send,
-    > CurveTree<L, P0, P1>
+    > CurveTree<L, M, P0, P1>
 {
     /// Build a curve tree from a set of commitments
     pub fn from_set(
@@ -39,7 +46,7 @@ impl<
         let mut next_forest_length = (forest_length + L - 1) / L;
         let mut even_forest = Vec::with_capacity(forest_length);
         for leaf in set {
-            even_forest.push(CurveTreeNode::<L, P0, P1>::leaf(*leaf));
+            even_forest.push(CurveTreeNode::<L, M, P0, P1>::Leaf(*leaf));
         }
         while forest_length > 1 {
             // Combine forest of trees with even roots, into a forest of trees with odd roots.
@@ -52,7 +59,7 @@ impl<
                     }
                     chunk.push(tree.clone());
                 }
-                odd_forest.push(CurveTreeNode::<L, P1, P0>::combine(
+                odd_forest.push(CurveTreeNode::<L, M, P1, P0>::combine(
                     chunk,
                     &parameters.odd_parameters,
                     &parameters.even_parameters.delta,
@@ -75,7 +82,7 @@ impl<
                     }
                     chunk.push(tree.clone());
                 }
-                even_forest.push(CurveTreeNode::<L, P0, P1>::combine(
+                even_forest.push(CurveTreeNode::<L, M, P0, P1>::combine(
                     chunk,
                     &parameters.even_parameters,
                     &parameters.odd_parameters.delta,
@@ -99,14 +106,14 @@ impl<
                 while res.height() < height {
                     match res {
                         Self::Even(ct) => {
-                            res = Self::Odd(CurveTreeNode::<L, P1, P0>::combine(
+                            res = Self::Odd(CurveTreeNode::<L, M, P1, P0>::combine(
                                 vec![ct],
                                 &parameters.odd_parameters,
                                 &parameters.even_parameters.delta,
                             ));
                         }
                         Self::Odd(ct) => {
-                            res = Self::Even(CurveTreeNode::<L, P0, P1>::combine(
+                            res = Self::Even(CurveTreeNode::<L, M, P0, P1>::combine(
                                 vec![ct],
                                 &parameters.even_parameters,
                                 &parameters.odd_parameters.delta,
@@ -123,6 +130,7 @@ impl<
     pub fn select_and_rerandomize_prover_witness(
         &self,
         index: usize,
+        tree_index: usize,
         params: &SelRerandParameters<P0, P1>,
     ) -> CurveTreeWitnessPath<L, P0, P1> {
         // todo capacity
@@ -132,6 +140,7 @@ impl<
         match self {
             Self::Even(ct) => ct.select_and_rerandomize_prover_witness(
                 index,
+                tree_index,
                 &mut even_nodes,
                 &mut odd_nodes,
                 &params.even_parameters.delta,
@@ -139,6 +148,7 @@ impl<
             ),
             Self::Odd(ct) => ct.select_and_rerandomize_prover_witness(
                 index,
+                tree_index,
                 &mut odd_nodes,
                 &mut even_nodes,
                 &params.odd_parameters.delta,
@@ -158,12 +168,13 @@ impl<
     pub fn select_and_rerandomize_prover_gadget<R: Rng>(
         &self,
         index: usize,
+        tree_index: usize, // todo give a vector of leafs instead?
         even_prover: &mut Prover<Transcript, Affine<P0>>,
         odd_prover: &mut Prover<Transcript, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
         rng: &mut R,
     ) -> (SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField) {
-        let witness = self.select_and_rerandomize_prover_witness(index, parameters);
+        let witness = self.select_and_rerandomize_prover_witness(index, tree_index, parameters);
         witness.select_and_rerandomize_prover_gadget(even_prover, odd_prover, parameters, rng)
     }
 
@@ -179,7 +190,7 @@ impl<
                     randomized_path.even_commitments.len(),
                     randomized_path.odd_commitments.len() + 1
                 );
-                let mut odd_commitments_with_root = vec![ct.parent_commitment];
+                let mut odd_commitments_with_root = vec![ct.commitment(0)]; // todo index
                 odd_commitments_with_root.append(&mut randomized_path.odd_commitments);
                 (randomized_path.even_commitments, odd_commitments_with_root)
             }
@@ -188,7 +199,7 @@ impl<
                     randomized_path.even_commitments.len(),
                     randomized_path.odd_commitments.len()
                 );
-                let mut even_commitments_with_root = vec![ct.parent_commitment];
+                let mut even_commitments_with_root = vec![ct.commitment(0)]; // todo index
                 even_commitments_with_root.append(&mut randomized_path.even_commitments);
                 (even_commitments_with_root, randomized_path.odd_commitments)
             }
@@ -200,6 +211,24 @@ impl<
         }
     }
 
+    pub fn height(&self) -> usize {
+        match self {
+            Self::Even(ct) => ct.height(),
+            Self::Odd(ct) => ct.height(),
+        }
+    }
+
+    //todo add a function to add a single/several commitments
+}
+
+impl<
+        const L: usize,
+        F0: PrimeField,
+        F1: PrimeField,
+        P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy + Send,
+        P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy + Send,
+    > CurveTree<L, 1, P0, P1>
+{
     pub fn select_and_rerandomize_verifier_gadget<T: BorrowMut<Transcript>>(
         &self,
         even_verifier: &mut Verifier<T, Affine<P0>>,
@@ -214,18 +243,8 @@ impl<
 
         commitments.get_rerandomized_leaf()
     }
-
-    pub fn height(&self) -> usize {
-        match self {
-            Self::Even(ct) => ct.height,
-            Self::Odd(ct) => ct.height,
-        }
-    }
-
-    //todo add a function to add a single/several commitments
 }
 
-// todo don't include the root
 #[derive(Clone)]
 pub struct SelectAndRerandomizePath<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> {
     pub even_commitments: Vec<Affine<P0>>,
@@ -248,7 +267,7 @@ impl<
         &self,
         even_verifier: &mut Verifier<T, Affine<P0>>,
         parameters: &SelRerandParameters<P0, P1>,
-        ct: &CurveTree<L, P0, P1>,
+        ct: &CurveTree<L, 1, P0, P1>,
     ) {
         // Determine the parity of the root:
         let root_is_odd = self.even_commitments.len() == self.odd_commitments.len();
@@ -266,8 +285,14 @@ impl<
             let variables = if parent_index == 0 && !root_is_odd {
                 let children = match &ct {
                     CurveTree::Even(root) => {
-                        if let Some(children) = &root.children {
-                            x_coordinates(children, &parameters.odd_parameters.delta)
+                        if let CurveTreeNode::Branch {
+                            parent_commitment: _,
+                            children,
+                            height: _,
+                            elements: _,
+                        } = root
+                        {
+                            x_coordinates(children, &parameters.odd_parameters.delta, 0)
                         } else {
                             panic!()
                         }
@@ -297,7 +322,7 @@ impl<
         &self,
         odd_verifier: &mut Verifier<T, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
-        ct: &CurveTree<L, P0, P1>,
+        ct: &CurveTree<L, 1, P0, P1>,
     ) {
         // Determine the parity of the root:
         let root_is_odd = self.even_commitments.len() == self.odd_commitments.len();
@@ -313,8 +338,14 @@ impl<
             let variables = if parent_index == 0 && root_is_odd {
                 let children = match &ct {
                     CurveTree::Odd(root) => {
-                        if let Some(children) = &root.children {
-                            x_coordinates(children, &parameters.even_parameters.delta)
+                        if let CurveTreeNode::Branch {
+                            parent_commitment: _,
+                            children,
+                            height: _,
+                            elements: _,
+                        } = root
+                        {
+                            x_coordinates(children, &parameters.even_parameters.delta, 0)
                         } else {
                             panic!()
                         }
@@ -524,7 +555,7 @@ impl<
     }
 }
 
-/// A witness of a Curve Tree path including siblings of randomness.
+/// A witness of a Curve Tree path including siblings.
 /// Contains the information needed to prove the single level select and rerandomize relation.
 #[derive(Copy, Clone)]
 pub struct CurveTreeWitness<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> {
@@ -575,19 +606,24 @@ impl<
     }
 }
 
-type Children<const L: usize, P0, P1> = [Option<CurveTreeNode<L, P1, P0>>; L];
+type Children<const L: usize, const M: usize, P0, P1> = [Option<CurveTreeNode<L, M, P1, P0>>; L];
 
 // map L children to their x-coordinate with 0 representing the empty node.
-// todo: what happens when we use (c+delta).x to represent c? Can the empty node be opened to -delta?
-fn x_coordinates<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig>(
-    children: &Children<L, P0, P1>,
+fn x_coordinates<
+    const L: usize,
+    const M: usize,
+    P0: SWCurveConfig + Copy,
+    P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
+>(
+    children: &Children<L, M, P0, P1>,
     delta: &Affine<P1>,
+    tree_index: usize,
 ) -> [P1::BaseField; L] {
     children
         .iter()
         .map(|opt| match opt {
             None => P1::BaseField::zero(),
-            Some(child) => (child.parent_commitment + delta).into_affine().x,
+            Some(child) => (child.commitment(tree_index) + delta).into_affine().x,
         })
         .collect::<Vec<_>>()
         .try_into()
@@ -595,15 +631,18 @@ fn x_coordinates<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig>(
 }
 
 #[derive(Clone)]
-pub struct CurveTreeNode<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> {
-    parent_commitment: Affine<P0>,
-    children: Option<Box<Children<L, P0, P1>>>,
-    height: usize,
-    elements: usize,
+pub enum CurveTreeNode<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> {
+    Branch {
+        parent_commitment: [Affine<P0>; M],
+        children: Box<Children<L, M, P0, P1>>,
+        height: usize,
+        elements: usize,
+    },
+    Leaf(Affine<P0>),
 }
 
-impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> std::fmt::Debug
-    for CurveTreeNode<L, P0, P1>
+impl<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> std::fmt::Debug
+    for CurveTreeNode<L, M, P0, P1>
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(fmt, "")
@@ -612,52 +651,89 @@ impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> std::fmt::Debug
 
 impl<
         const L: usize,
+        const M: usize,
         P0: SWCurveConfig + Copy,
         P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = P0::BaseField> + Copy,
-    > CurveTreeNode<L, P0, P1>
+    > CurveTreeNode<L, M, P0, P1>
 {
-    fn leaf(commitment: Affine<P0>) -> Self {
-        Self {
-            parent_commitment: commitment,
-            children: None,
-            height: 0,
-            elements: 1,
+    fn commitment(&self, tree_index: usize) -> Affine<P0> {
+        match self {
+            Self::Branch {
+                parent_commitment,
+                children: _,
+                height: _,
+                elements: _,
+            } => parent_commitment[tree_index],
+            Self::Leaf(c) => *c,
+        }
+    }
+
+    fn height(&self) -> usize {
+        match self {
+            Self::Branch {
+                parent_commitment: _,
+                children: _,
+                height,
+                elements: _,
+            } => *height,
+            Self::Leaf(_) => 0,
+        }
+    }
+
+    fn elements(&self) -> usize {
+        match self {
+            Self::Branch {
+                parent_commitment: _,
+                children: _,
+                height: _,
+                elements,
+            } => *elements,
+            Self::Leaf(_) => 1,
         }
     }
 
     fn child_index(&self, index: usize) -> usize {
-        let capacity = L.pow(self.height as u32);
-        let child_capacity = L.pow((self.height - 1) as u32);
+        let capacity = L.pow(self.height() as u32);
+        let child_capacity = L.pow((self.height() - 1) as u32);
         (index % capacity) / child_capacity
     }
 
     fn select_and_rerandomize_prover_witness(
         &self,
         index: usize,
+        tree_index: usize,
         even_nodes: &mut Vec<CurveTreeWitness<L, P0, P1>>,
         odd_nodes: &mut Vec<CurveTreeWitness<L, P1, P0>>,
         delta_even: &Affine<P0>,
         delta_odd: &Affine<P1>,
     ) {
-        if let Some(children) = &self.children {
+        if let Self::Branch {
+            parent_commitment: _,
+            children,
+            height: _,
+            elements: _,
+        } = &self
+        {
             let child_index = self.child_index(index);
             let child = match &children[self.child_index(index)] {
                 None => panic!(
                     "Child index out of bounds. Height: {}, Index: {}, Local index: {}",
-                    self.height, index, child_index
+                    self.height(),
+                    index,
+                    child_index
                 ),
                 Some(child) => child,
             };
-            let siblings = x_coordinates(children, delta_odd);
+            let siblings = x_coordinates(children, delta_odd, tree_index);
 
             even_nodes.push(CurveTreeWitness {
                 siblings,
-                child_witness: child.parent_commitment,
+                child_witness: child.commitment(tree_index),
             });
 
             // recursively add the remaining path
             child.select_and_rerandomize_prover_witness(
-                index, odd_nodes, even_nodes, delta_odd, delta_even,
+                index, tree_index, odd_nodes, even_nodes, delta_odd, delta_even,
             );
         }
     }
@@ -666,7 +742,7 @@ impl<
     // The children are assumed to be of appropriate identical height.
     // All but the last should be full.
     fn combine(
-        children: Vec<CurveTreeNode<L, P1, P0>>,
+        children: Vec<CurveTreeNode<L, M, P1, P0>>,
         parameters: &SingleLayerParameters<P0>,
         delta: &Affine<P1>,
     ) -> Self {
@@ -678,27 +754,33 @@ impl<
         };
 
         let mut elements = 0;
-        let mut cs: Vec<Option<CurveTreeNode<L, P1, P0>>> = Vec::with_capacity(L);
+        let mut cs: Vec<Option<CurveTreeNode<L, M, P1, P0>>> = Vec::with_capacity(L);
         for c in children {
-            elements += c.elements;
+            elements += c.elements();
             cs.push(Some(c));
         }
         // Let the rest of the children be dummy elements.
         while cs.len() < L {
             cs.push(None)
         }
-        let children: [Option<CurveTreeNode<L, P1, P0>>; L] = cs.try_into().unwrap();
+        let children: [Option<CurveTreeNode<L, M, P1, P0>>; L] = cs.try_into().unwrap();
         let height = if let Some(c) = &children[0] {
-            c.height + 1
+            c.height() + 1
         } else {
             1
         };
-        // commit to the children's x-coordinates with randomness zero.
-        let c: Affine<P0> =
-            parameters.commit(&x_coordinates(&children, delta), P0::ScalarField::zero(), 0); // todo index
-        Self {
-            parent_commitment: c,
-            children: Some(Box::new(children)),
+        // For each set of generators commit to the children's x-coordinates with randomness zero.
+        let mut commitments = [Affine::<P0>::zero(); M];
+        for (tree_index, c) in commitments.iter_mut().enumerate() {
+            *c = parameters.commit(
+                &x_coordinates(&children, delta, tree_index),
+                P0::ScalarField::zero(),
+                tree_index,
+            );
+        }
+        Self::Branch {
+            parent_commitment: commitments,
+            children: Box::new(children),
             height,
             elements,
         }

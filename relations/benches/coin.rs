@@ -139,7 +139,7 @@ fn bench_pour_with_parameters<
     );
     // Curve tree with two coins
     let set = vec![coin_0, coin_1];
-    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, 1, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let randomized_pk_0 = Coin::<P0, Projective<P0>>::rerandomized_pk(
         &pk,

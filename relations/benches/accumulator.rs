@@ -84,7 +84,7 @@ fn bench_accumulator_with_parameters<
             .commit(&leaf_elements, P0::ScalarField::zero(), 0);
 
     let set = vec![leaf_commitment];
-    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, 1, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let prove = |print| {
         let pallas_transcript = Transcript::new(b"acc");
@@ -96,6 +96,7 @@ fn bench_accumulator_with_parameters<
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let (path, rerandomization) = curve_tree.select_and_rerandomize_prover_gadget(
+            0,
             0,
             &mut pallas_prover,
             &mut vesta_prover,
