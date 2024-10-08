@@ -147,16 +147,13 @@ pub fn verify_mint<P: SWCurveConfig>(
 }
 
 pub fn element_from_bytes_stat<F: PrimeField>(bytes: &[u8]) -> F {
-    // for the purpose of hashing to a 256 bit prime field, provides statistical security of ... todo
-    extern crate crypto;
-    use crypto::digest::Digest;
-    use crypto::sha3::Sha3;
+    // for the purpose of hashing to a 256 bit prime field F_p, reducing 512 bits mod p is statistically close to uniform.
+    use sha3::{Digest, Sha3_512};
 
-    let mut sha = Sha3::sha3_512();
-    sha.input(bytes);
-    let mut buf = [0u8; 32];
-    sha.result(&mut buf);
-    F::from_le_bytes_mod_order(&buf)
+    let mut sha = Sha3_512::new();
+    sha.update(bytes);
+    let result = sha.finalize();
+    F::from_le_bytes_mod_order(result.as_slice())
 }
 
 pub struct SpendingInfo<P: SWCurveConfig + Clone, C: CurveGroup> {

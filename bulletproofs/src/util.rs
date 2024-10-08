@@ -149,7 +149,7 @@ impl<F: Field> Iterator for ScalarExp<F> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (usize::max_value(), None)
+        (usize::MAX, None)
     }
 }
 
@@ -310,17 +310,14 @@ pub fn read32(data: &[u8]) -> [u8; 32] {
 }
 
 pub fn affine_from_bytes_tai<C: AffineRepr>(bytes: &[u8]) -> C {
-    extern crate crypto;
-    use crypto::digest::Digest;
-    use crypto::sha3::Sha3;
+    use sha3::{Digest, Sha3_256};
 
-    for i in 0..=u8::max_value() {
-        let mut sha = Sha3::sha3_256();
-        sha.input(bytes);
-        sha.input(&[i]);
-        let mut buf = [0u8; 32];
-        sha.result(&mut buf);
-        let res = C::from_random_bytes(&buf);
+    for i in 0..=u8::MAX {
+        let mut sha = Sha3_256::new();
+        sha.update(bytes);
+        sha.update([i]);
+        let result = sha.finalize();
+        let res = C::from_random_bytes(result.as_slice());
         if let Some(point) = res {
             return point;
         }

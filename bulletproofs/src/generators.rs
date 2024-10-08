@@ -101,7 +101,7 @@ impl<C: AffineRepr> Iterator for GeneratorsChain<C> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (usize::max_value(), None)
+        (usize::MAX, None)
     }
 }
 
