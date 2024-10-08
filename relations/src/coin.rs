@@ -414,8 +414,8 @@ impl<
         const L: usize,
         F0: PrimeField,
         F1: PrimeField,
-        P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
         P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy,
+        P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
         C: CurveGroup,
     > Pour<L, P0, P1, C>
 {
@@ -769,6 +769,7 @@ impl<
 mod tests {
     use super::*;
     use merlin::Transcript;
+
     type PallasParameters = ark_pallas::PallasConfig;
     type VestaParameters = ark_vesta::VestaConfig;
     type PallasP = ark_pallas::Projective;

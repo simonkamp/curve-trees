@@ -114,10 +114,7 @@ fn bench_accumulator_with_parameters<
         select(
             &mut pallas_prover,
             LinearCombination::from(element),
-            leaf_vars
-                .iter()
-                .map(|var| LinearCombination::from(*var))
-                .collect(),
+            leaf_vars.iter().map(|var| LinearCombination::from(*var)),
         );
 
         if print {
@@ -200,8 +197,7 @@ fn bench_accumulator_with_parameters<
                                             LinearCombination::from(element),
                                             leaf_vars
                                                 .iter()
-                                                .map(|var| LinearCombination::from(*var))
-                                                .collect(),
+                                                .map(|var| LinearCombination::from(*var)),
                                         );
                                         let pallas_vt = pallas_verifier
                                             .verification_scalars_and_points(&pallas_proof)

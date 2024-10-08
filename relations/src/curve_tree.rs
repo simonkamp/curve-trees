@@ -3,11 +3,17 @@ use bulletproofs::r1cs::*;
 use crate::single_level_select_and_rerandomize::*;
 
 use ark_ec::AffineRepr;
-use ark_ec::{models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, CurveGroup};
+use ark_ec::{
+    models::short_weierstrass::{Projective, SWCurveConfig},
+    short_weierstrass::Affine,
+    CurveGroup,
+};
 use ark_ff::PrimeField;
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Valid, Write,
 };
+use ark_std::fmt::Debug;
+use ark_std::fmt::Formatter;
 use ark_std::Zero;
 use merlin::Transcript;
 use rand::Rng;
@@ -126,7 +132,34 @@ impl<
         }
     }
 
-    /// Produce a witness of the path to the commitment at `index` including siblings and randomness.
+    /// Produce a witness of the paths to the commitments indexed by `indices` including siblings.
+    pub fn select_and_rerandomize_prover_multi_witness(
+        &self,
+        indices: [usize; M],
+        params: &SelRerandParameters<P0, P1>,
+    ) -> CurveTreeWitnessMultiPath<L, M, P0, P1> {
+        let mut single_witnesses: Vec<CurveTreeWitnessPath<L, P0, P1>> = Vec::with_capacity(M);
+        for i in 0..M {
+            single_witnesses
+                .push(self.select_and_rerandomize_prover_witness(indices[i], i, params));
+        }
+        let mut even_nodes: Vec<[CurveTreeWitness<L, P0, P1>; M]> = Vec::new();
+        for i in 0..single_witnesses[0].even_nodes.len() - 1 {
+            let witnesses: Vec<_> = single_witnesses.iter().map(|w| w.even_nodes[i]).collect();
+            even_nodes.push(witnesses.try_into().unwrap());
+        }
+        let mut odd_nodes: Vec<[CurveTreeWitness<L, P1, P0>; M]> = Vec::new();
+        for i in 0..single_witnesses[0].odd_nodes.len() - 1 {
+            let witnesses: Vec<_> = single_witnesses.iter().map(|w| w.odd_nodes[i]).collect();
+            odd_nodes.push(witnesses.try_into().unwrap());
+        }
+        CurveTreeWitnessMultiPath {
+            even_nodes,
+            odd_nodes,
+        }
+    }
+
+    /// Produce a witness of the path to the commitment at `index` including siblings.
     pub fn select_and_rerandomize_prover_witness(
         &self,
         index: usize,
@@ -425,13 +458,28 @@ impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> CanonicalDeserialize
 
 /// A witness of a Curve Tree path including siblings for all nodes on the path.
 /// Contains all information needed to prove the select and rerandomize relation.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct CurveTreeWitnessPath<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy>
 {
     // list of internal even nodes
     pub even_nodes: Vec<CurveTreeWitness<L, P0, P1>>,
     // list of internal odd nodes
     pub odd_nodes: Vec<CurveTreeWitness<L, P1, P0>>,
+}
+
+/// A witness of M Curve Tree paths including siblings for all nodes on the paths.
+/// Contains all information needed to prove M batched select and rerandomize relations.
+#[derive(Clone)]
+pub struct CurveTreeWitnessMultiPath<
+    const L: usize,
+    const M: usize,
+    P0: SWCurveConfig + Copy,
+    P1: SWCurveConfig + Copy,
+> {
+    // list of internal even nodes
+    pub even_nodes: Vec<[CurveTreeWitness<L, P0, P1>; M]>,
+    // list of internal odd nodes
+    pub odd_nodes: Vec<[CurveTreeWitness<L, P1, P0>; M]>,
 }
 
 impl<
@@ -563,6 +611,15 @@ pub struct CurveTreeWitness<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurv
     child_witness: Affine<P1>,
 }
 
+impl<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> Debug
+    for CurveTreeWitness<L, P0, P1>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "CurveTreeWitness")
+    }
+}
+// todo: the batched version implements this for a vector. How do we represent leafs?
+
 impl<
         const L: usize,
         F: PrimeField,
@@ -579,8 +636,10 @@ impl<
         child_rerandomization_scalar: P1::ScalarField,
     ) {
         let children_vars = if parent_rerandomization_scalar.is_zero() {
+            // In this case the parent is the root and the children are treated as public input to the circuit.
             self.siblings.map(constant).to_vec()
         } else {
+            // In this case the parent is a rerandomized commitment and the children (and the scalar used for rerandomizing) are part of the witness.
             let (_, children_vars) = prover.commit_vec(
                 &self.siblings,
                 parent_rerandomization_scalar,
@@ -601,6 +660,61 @@ impl<
             &rerandomized_child.into(),
             children_vars,
             Some((child_commitment + odd_parameters.delta).into_affine()),
+            Some(child_rerandomization_scalar),
+        );
+    }
+
+    pub fn single_level_batched_select_and_rerandomize_prover_gadget<const M: usize>(
+        nodes: &[Self; M],
+        prover: &mut Prover<Transcript, Affine<P0>>,
+        even_parameters: &SingleLayerParameters<P0>,
+        odd_parameters: &SingleLayerParameters<P1>,
+        parent_rerandomization_scalar: P0::ScalarField,
+        child_rerandomization_scalar: P1::ScalarField,
+    ) {
+        let children_vars = if parent_rerandomization_scalar.is_zero() {
+            let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
+            for i in 0..M {
+                children_vars.append(&mut nodes[i].siblings.map(constant).to_vec());
+            }
+            children_vars
+        } else {
+            // todo quick fix, clean up
+            let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
+            for i in 0..M {
+                let (_, node_children_vars) = prover.commit_vec(
+                    &nodes[i].siblings,
+                    parent_rerandomization_scalar,
+                    &even_parameters.bp_gens,
+                );
+                let mut node_children_lin_combs = node_children_vars
+                    .iter()
+                    .map(|var| LinearCombination::<P0::ScalarField>::from(*var))
+                    .collect();
+                children_vars.append(&mut node_children_lin_combs);
+            }
+            children_vars
+        };
+
+        // let child_commitment = self.child_witness;
+        let (selected_children, sum_of_selected) = {
+            let mut sum_of_selected = Projective::<P1>::zero();
+            let mut children: [Affine<P1>; M] = [Affine::<P1>::zero(); M];
+            for i in 0..M {
+                sum_of_selected = sum_of_selected + nodes[i].child_witness;
+                children[i] = (nodes[i].child_witness + odd_parameters.delta).into_affine();
+            }
+            (children, sum_of_selected)
+        };
+        let blinding = odd_parameters.pc_gens.B_blinding * child_rerandomization_scalar;
+        let rerandomized_sum_of_selected = (sum_of_selected + blinding).into_affine();
+
+        single_level_batched_select_and_rerandomize(
+            prover,
+            odd_parameters,
+            &rerandomized_sum_of_selected,
+            children_vars,
+            Some(&selected_children),
             Some(child_rerandomization_scalar),
         );
     }

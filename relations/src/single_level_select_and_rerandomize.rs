@@ -97,7 +97,7 @@ pub fn single_level_select_and_rerandomize<
 
     // Show that the parent is committed to the witnessed child's x-coordinate
     let x_var = cs.allocate(child_plus_delta.map(|xy| xy.x)).unwrap();
-    select(cs, x_var.into(), children);
+    select(cs, x_var.into(), children.to_owned().into_iter());
 
     // Proof that the opened x coordinate with the witnessed y is a point on the curve
     // Note that empty branches are encoded as 0 which works because x=0 does not satisfy the curve equation for any of the curves used.
@@ -137,9 +137,9 @@ pub fn single_level_batched_select_and_rerandomize<
 >(
     cs: &mut Cs, // Prover or verifier
     parameters: &SingleLayerParameters<C2>,
-    sum_of_rerandomized: Affine<C2>, // The public rerandomization of the sum of selected children
-    children: Vec<Variable<Fs>>, // Variables representing members of the vector commitment (i.e. the sum of M parents)
-    children_plus_delta: Option<[&Affine<C2>; M]>, // Witnesses of the commitments being selected and rerandomized
+    sum_of_rerandomized: &Affine<C2>, // The public rerandomization of the sum of selected children
+    children: Vec<LinearCombination<Fs>>, // Variables representing members of the combined and rerandomized parent vector commitment (i.e. the rerandomized sum of M parents)
+    children_plus_delta: Option<&[Affine<C2>; M]>, // Witnesses of the commitments being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. \sum selected_witnesses + randomness_offset * H = sum_of_rerandomized + M * Delta
 ) {
     // Initialize the accumulated sum of the selected children to dummy values.
@@ -151,7 +151,7 @@ pub fn single_level_batched_select_and_rerandomize<
     // Split the variables of the vector commitments into chunks corresponding to the M parents.
     let chunks = children.chunks_exact(children.len() / M);
     for (i, chunk) in chunks.enumerate() {
-        let ith_selected_witness = children_plus_delta.map(|xy| *xy[i]);
+        let ith_selected_witness = children_plus_delta.map(|xy| xy[i]);
         let x_var = cs.allocate(ith_selected_witness.map(|xy| xy.x)).unwrap();
         let y_var = cs.allocate(ith_selected_witness.map(|xy| xy.y)).unwrap();
         let ith_selected = PointRepresentation {
@@ -160,14 +160,7 @@ pub fn single_level_batched_select_and_rerandomize<
             witness: ith_selected_witness,
         };
         // Show that the parent is committed to the ith child's x-coordinate
-        select(
-            cs,
-            x_var.into(),
-            chunk
-                .iter()
-                .map(|v| LinearCombination::<Fs>::from(*v))
-                .collect(),
-        );
+        select(cs, x_var.into(), chunk.to_owned().into_iter());
 
         // Proof that the opened x coordinate with the witnessed y is a point on the curve
         // Note that empty branches are encoded as 0 which works because x=0 does not satisfy the curve equation for any of the curves used.
@@ -190,7 +183,7 @@ pub fn single_level_batched_select_and_rerandomize<
     }
     // Add M*Delta to the public sum of the children
     let shifted_rerandomized =
-        (sum_of_rerandomized + (parameters.delta * C2::ScalarField::from(M as u32))).into_affine();
+        (*sum_of_rerandomized + (parameters.delta * C2::ScalarField::from(M as u32))).into_affine();
     // Show that `rerandomized`, is a rerandomization of sum of the selected children
     re_randomize(
         cs,
@@ -345,11 +338,11 @@ mod tests {
             single_level_batched_select_and_rerandomize(
                 &mut prover,
                 &sr_params.even_parameters,
-                rerandomized_sum,
+                &rerandomized_sum,
                 xs_vars.into_iter().map(|x| x.into()).collect(),
-                Some([
-                    &children_plus_delta[child_index_1],
-                    &children_plus_delta[child_index_2],
+                Some(&[
+                    children_plus_delta[child_index_1],
+                    children_plus_delta[child_index_2],
                 ]),
                 Some(rerandomization_1 + rerandomization_2),
             );
@@ -363,9 +356,9 @@ mod tests {
         single_level_batched_select_and_rerandomize(
             &mut verifier,
             &sr_params.even_parameters,
-            rerandomized_sum,
+            &rerandomized_sum,
             xs_vars.into_iter().map(|x| x.into()).collect(),
-            None::<[&PallasA; M]>,
+            None::<&[PallasA; M]>,
             None,
         );
 
