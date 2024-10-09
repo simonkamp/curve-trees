@@ -174,9 +174,28 @@ impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> CanonicalSerialize
 }
 
 #[derive(Clone)]
+/// A rerandomized path in the tree.
+/// The last element in `even_commitments` is the selected and rerandomized commitment.
+/// The last element in `odd_commitments` is the rerandomized parent of the selected leaf, etc.
 pub struct SelectAndRerandomizePath<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> {
     pub even_commitments: Vec<Affine<P0>>,
     pub odd_commitments: Vec<Affine<P1>>,
+}
+
+#[derive(Clone)]
+/// A rerandomized multi path in the tree.
+/// The elements in `selected_commitments` are the selected and rerandomized commitments.
+/// The last element in `odd_commitments` is the rerandomized parent of the selected leaves.
+/// The last element in `even_commitments` is the rerandomized parent of the last element in `odd_commitments`, etc.
+pub struct SelectAndRerandomizeMultiPath<
+    const L: usize,
+    const M: usize,
+    P0: SWCurveConfig,
+    P1: SWCurveConfig,
+> {
+    pub even_commitments: Vec<Affine<P0>>,
+    pub odd_commitments: Vec<Affine<P1>>,
+    pub selected_commitments: [Affine<P0>; M],
 }
 
 impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> Valid
@@ -283,7 +302,7 @@ impl<
         }
     }
 
-    fn elements(&self) -> usize {
+    pub fn elements(&self) -> usize {
         match self {
             Self::Branch {
                 parent_commitment: _,
@@ -301,7 +320,7 @@ impl<
         (index % capacity) / child_capacity
     }
 
-    // Combine up to L nodes of level d into a single level d+1 node.
+    // Combine up to L child nodes of level d into a single level d+1 node.
     // The children are assumed to be of appropriate identical height.
     // All but the last should be full.
     fn combine(
@@ -349,4 +368,3 @@ impl<
         }
     }
 }
-

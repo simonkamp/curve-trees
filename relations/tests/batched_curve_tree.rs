@@ -60,7 +60,7 @@ pub fn test_batched_curve_tree_with_parameters<
     let mut vesta_prover: Prover<_, Affine<P1>> =
         Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
-    let mut set = Vec::<Affine::<P0>>::new();
+    let mut set = Vec::<Affine<P0>>::new();
     let mut indices = [0usize; M];
     for i in 0..M {
         set.push(Affine::<P0>::rand(&mut rng));

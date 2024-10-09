@@ -3,7 +3,8 @@ use bulletproofs::r1cs::*;
 use crate::single_level_select_and_rerandomize::*;
 
 use crate::curve_tree::{
-    x_coordinates, CurveTree, CurveTreeNode, SelRerandParameters, SelectAndRerandomizePath,
+    x_coordinates, CurveTree, CurveTreeNode, SelRerandParameters, SelectAndRerandomizeMultiPath,
+    SelectAndRerandomizePath,
 };
 use ark_ec::AffineRepr;
 use ark_ec::{
@@ -128,7 +129,7 @@ impl<
         let witness = self.select_and_rerandomize_prover_witness(index, tree_index, parameters);
         witness.select_and_rerandomize_prover_gadget(even_prover, odd_prover, parameters, rng)
     }
-    
+
     /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
     /// and proves the Select and rerandomize relation for each level.
     /// Returns the rerandomized commitments on the path to (and including) the selected leaf and the rerandomization scalar of the selected leaf.
@@ -139,10 +140,18 @@ impl<
         odd_prover: &mut Prover<Transcript, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
         rng: &mut R,
-    ) -> (SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField) {
+    ) -> (
+        SelectAndRerandomizeMultiPath<L, M, P0, P1>,
+        [P0::ScalarField; M],
+    ) {
         let witness = self.select_and_rerandomize_prover_multi_witness(indices, parameters);
 
-        witness.select_and_rerandomize_prover_gadget(even_prover, odd_prover, parameters, rng)
+        witness.batched_select_and_rerandomize_prover_gadget(
+            even_prover,
+            odd_prover,
+            parameters,
+            rng,
+        )
     }
 
     /// Produce a witness of the paths to the commitments indexed by `indices` including siblings.
@@ -161,6 +170,7 @@ impl<
             let witnesses: Vec<_> = single_witnesses.iter().map(|w| w.even_nodes[i]).collect();
             even_nodes.push(witnesses.try_into().unwrap());
         }
+
         let mut odd_nodes: Vec<[CurveTreeWitness<L, P1, P0>; M]> = Vec::new();
         for i in 0..single_witnesses[0].odd_nodes.len() - 1 {
             let witnesses: Vec<_> = single_witnesses.iter().map(|w| w.odd_nodes[i]).collect();
@@ -196,7 +206,7 @@ impl<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> Debug
 pub struct CurveTreeWitnessPath<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy>
 {
     // list of internal even nodes
-    pub even_nodes: Vec<CurveTreeWitness<L, P0, P1>>,
+    pub even_nodes: Vec<CurveTreeWitness<L, P0, P1>>, // todo: this also contains the leaf, right?
     // list of internal odd nodes
     pub odd_nodes: Vec<CurveTreeWitness<L, P1, P0>>,
 }
@@ -319,7 +329,7 @@ impl<
                 even_commitments: even_rerandomized_commitments,
                 odd_commitments: odd_rerandomized_commitments,
             },
-            *even_rerandomization_scalars.last().unwrap(),
+            *even_rerandomization_scalars.last().unwrap(), // This is the scalar applied to the selected leaf for rerandomization
         )
     }
 }
@@ -425,7 +435,7 @@ impl<
     }
 }
 
-/// A witness of M Curve Tree paths including siblings for all nodes on the paths.
+/// A witness of M paths in M independently generated Curve Trees including siblings for all nodes on the paths.
 /// Contains all information needed to prove M batched select and rerandomize relations.
 #[derive(Clone)]
 pub struct CurveTreeWitnessMultiPath<
@@ -435,7 +445,7 @@ pub struct CurveTreeWitnessMultiPath<
     P1: SWCurveConfig + Copy,
 > {
     // list of internal even nodes
-    pub even_nodes: Vec<[CurveTreeWitness<L, P0, P1>; M]>,
+    pub even_nodes: Vec<[CurveTreeWitness<L, P0, P1>; M]>, // todo this includes the leaf node
     // list of internal odd nodes
     pub odd_nodes: Vec<[CurveTreeWitness<L, P1, P0>; M]>,
 }
@@ -459,18 +469,21 @@ impl<
         }
         panic!("Invalid witness path");
     }
-    
+
     /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
     /// and proves the Select and rerandomize relation for each level.
     /// Returns the rerandomized commitments on the path to (and including) the selected leaf
     /// and the rerandomization scalar of the selected leaf.
-    pub fn select_and_rerandomize_prover_gadget<R: Rng>(
+    pub fn batched_select_and_rerandomize_prover_gadget<R: Rng>(
         &self,
         even_prover: &mut Prover<Transcript, Affine<P0>>,
         odd_prover: &mut Prover<Transcript, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
         rng: &mut R,
-    ) -> (SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField) {
+    ) -> (
+        SelectAndRerandomizeMultiPath<L, M, P0, P1>,
+        [P0::ScalarField; M],
+    ) {
         // for each even internal node, there must be a rerandomization of a commitment in the odd curve
         let even_length = self.even_nodes.len();
         let mut odd_rerandomization_scalars: Vec<P1::ScalarField> = Vec::with_capacity(even_length);
@@ -497,23 +510,40 @@ impl<
             odd_rerandomized_commitments.push((sum_of_selected + blinding).into());
         }
 
-        for odd in &self.odd_nodes {
-            let mut sum_of_selected = Projective::<P0>::zero();
-            for i in 0..M {
-                sum_of_selected = sum_of_selected + odd[i].child_witness; // todo: delta?
-            }
+        let mut rerandomization_scalars_of_selected = [F0::ZERO; M];
+        let mut rerandomizations_of_selected = [Affine::<P0>::default(); M];
+        for (index, odd) in self.odd_nodes.iter().enumerate() {
+            if index < self.odd_nodes.len() - 1 {
+                let mut sum_of_selected = Projective::<P0>::zero();
+                for i in 0..M {
+                    sum_of_selected = sum_of_selected + odd[i].child_witness; // todo: I believe delta is accounted for?
+                }
 
-            let rerandomization = F0::rand(rng);
-            even_rerandomization_scalars.push(rerandomization);
-            let blinding = parameters
-                .even_parameters
-                .pc_gens
-                .B_blinding
-                .mul(rerandomization)
-                .into_affine();
-            even_rerandomized_commitments.push((sum_of_selected + blinding).into());
+                let rerandomization: F0 = F0::rand(rng);
+                even_rerandomization_scalars.push(rerandomization);
+                let blinding = parameters
+                    .even_parameters
+                    .pc_gens
+                    .B_blinding
+                    .mul(rerandomization)
+                    .into_affine();
+                even_rerandomized_commitments.push((sum_of_selected + blinding).into());
+            } else {
+                for i in 0..M {
+                    let rerandomization: F0 = F0::rand(rng);
+                    rerandomization_scalars_of_selected[i] = rerandomization;
+                    let blinding = parameters
+                        .even_parameters
+                        .pc_gens
+                        .B_blinding
+                        .mul(rerandomization)
+                        .into_affine();
+                    rerandomizations_of_selected[i] = (odd[i].child_witness + blinding).into();
+                }
+            }
         }
 
+        // Todo: The leaf level needs separate select and rerandomize relations for soundness. Fix after implementing for the verifier and testing.
         let prove_even = |prover: &mut Prover<Transcript, Affine<P0>>| {
             for i in 0..even_length {
                 let parent_rerandomization = if self.root_is_even() {
@@ -550,14 +580,28 @@ impl<
                 } else {
                     odd_rerandomization_scalars[i]
                 };
-                CurveTreeWitness::single_level_batched_select_and_rerandomize_prover_gadget(
-                    &self.odd_nodes[i],
-                    prover,
-                    &parameters.odd_parameters,
-                    &parameters.even_parameters,
-                    parent_rerandomization,
-                    even_rerandomization_scalars[i],
-                );
+                if i < odd_length - 1 {
+                    CurveTreeWitness::single_level_batched_select_and_rerandomize_prover_gadget(
+                        &self.odd_nodes[i],
+                        prover,
+                        &parameters.odd_parameters,
+                        &parameters.even_parameters,
+                        parent_rerandomization,
+                        even_rerandomization_scalars[i],
+                    );
+                } else {
+                    // The selected leaves are rerandomized individually, as we allow these commitments to use the same generators.
+                    for inclusion_index in 0..M {
+                        self.odd_nodes[i][inclusion_index]
+                            .single_level_select_and_rerandomize_prover_gadget(
+                                prover,
+                                &parameters.odd_parameters,
+                                &parameters.even_parameters,
+                                parent_rerandomization,
+                                rerandomization_scalars_of_selected[inclusion_index],
+                            )
+                    }
+                }
             }
         };
         #[cfg(not(feature = "parallel"))]
@@ -567,12 +611,12 @@ impl<
         rayon::join(|| prove_even(even_prover), || prove_odd(odd_prover));
 
         (
-            SelectAndRerandomizePath {
+            SelectAndRerandomizeMultiPath {
                 even_commitments: even_rerandomized_commitments,
                 odd_commitments: odd_rerandomized_commitments,
+                selected_commitments: rerandomizations_of_selected,
             },
-            *even_rerandomization_scalars.last().unwrap(),
+            rerandomization_scalars_of_selected,
         )
-
     }
 }
