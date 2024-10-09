@@ -156,8 +156,9 @@ impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> CanonicalSerialize
     for SelectAndRerandomizePath<L, P0, P1>
 {
     fn serialized_size(&self, compress: ark_serialize::Compress) -> usize {
-        self.even_commitments.serialized_size(compress)
+        self.selected_commitment.serialized_size(compress)
             + self.odd_commitments.serialized_size(compress)
+            + self.even_commitments.serialized_size(compress)
     }
 
     fn serialize_with_mode<W: Write>(
@@ -165,9 +166,11 @@ impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> CanonicalSerialize
         mut writer: W,
         compress: ark_serialize::Compress,
     ) -> Result<(), SerializationError> {
-        self.even_commitments
+        self.selected_commitment
             .serialize_with_mode(&mut writer, compress)?;
         self.odd_commitments
+            .serialize_with_mode(&mut writer, compress)?;
+        self.even_commitments
             .serialize_with_mode(&mut writer, compress)?;
         Ok(())
     }
@@ -175,11 +178,13 @@ impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> CanonicalSerialize
 
 #[derive(Clone)]
 /// A rerandomized path in the tree.
-/// The last element in `even_commitments` is the selected and rerandomized commitment.
-/// The last element in `odd_commitments` is the rerandomized parent of the selected leaf, etc.
+/// The `selected_commitment` is the selected and rerandomized commitment.
+/// The last element in `odd_commitments` is the rerandomized parent of the selected leaf.
+/// The last element in `even_commitments` is the rerandomized parent of the last element in `odd_commitments`, etc.
 pub struct SelectAndRerandomizePath<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> {
-    pub even_commitments: Vec<Affine<P0>>,
+    pub selected_commitment: Affine<P0>,
     pub odd_commitments: Vec<Affine<P1>>,
+    pub even_commitments: Vec<Affine<P0>>,
 }
 
 #[derive(Clone)]
@@ -193,9 +198,9 @@ pub struct SelectAndRerandomizeMultiPath<
     P0: SWCurveConfig,
     P1: SWCurveConfig,
 > {
-    pub even_commitments: Vec<Affine<P0>>,
-    pub odd_commitments: Vec<Affine<P1>>,
     pub selected_commitments: [Affine<P0>; M],
+    pub odd_commitments: Vec<Affine<P1>>,
+    pub even_commitments: Vec<Affine<P0>>,
 }
 
 impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> Valid
@@ -214,12 +219,17 @@ impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> CanonicalDeserialize
         validate: ark_serialize::Validate,
     ) -> Result<Self, SerializationError> {
         Ok(Self {
-            even_commitments: Vec::<Affine<P0>>::deserialize_with_mode(
+            selected_commitment: Affine::<P0>::deserialize_with_mode(
                 &mut reader,
                 compress,
                 validate,
             )?,
             odd_commitments: Vec::<Affine<P1>>::deserialize_with_mode(
+                &mut reader,
+                compress,
+                validate,
+            )?,
+            even_commitments: Vec::<Affine<P0>>::deserialize_with_mode(
                 &mut reader,
                 compress,
                 validate,

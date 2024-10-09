@@ -262,16 +262,25 @@ impl<
             odd_rerandomized_commitments.push((even.child_witness + blinding).into());
         }
 
-        for odd in &self.odd_nodes {
+        let mut rerandomization_scalar_of_selected = F0::default();
+        let mut rerandomization_of_selected = Affine::<P0>::default();
+        for (i, odd) in self.odd_nodes.iter().enumerate() {
             let rerandomization = F0::rand(rng);
-            even_rerandomization_scalars.push(rerandomization);
             let blinding = parameters
                 .even_parameters
                 .pc_gens
                 .B_blinding
                 .mul(rerandomization)
                 .into_affine();
-            even_rerandomized_commitments.push((odd.child_witness + blinding).into());
+            let rerandomized = (odd.child_witness + blinding).into();
+            if i < self.odd_nodes.len() - 1 {
+                even_rerandomization_scalars.push(rerandomization);
+                even_rerandomized_commitments.push(rerandomized);
+            } else {
+                even_rerandomization_scalars.push(rerandomization); // todo quick fix
+                rerandomization_scalar_of_selected = rerandomization;
+                rerandomization_of_selected = rerandomized;
+            }
         }
 
         let prove_even = |prover: &mut Prover<Transcript, Affine<P0>>| {
@@ -326,112 +335,12 @@ impl<
 
         (
             SelectAndRerandomizePath {
-                even_commitments: even_rerandomized_commitments,
+                selected_commitment: rerandomization_of_selected,
                 odd_commitments: odd_rerandomized_commitments,
+                even_commitments: even_rerandomized_commitments,
             },
-            *even_rerandomization_scalars.last().unwrap(), // This is the scalar applied to the selected leaf for rerandomization
+            rerandomization_scalar_of_selected, // This is the scalar applied to the selected leaf for rerandomization
         )
-    }
-}
-
-impl<
-        const L: usize,
-        F: PrimeField,
-        P0: SWCurveConfig<BaseField = F> + Copy,
-        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = F> + Copy,
-    > CurveTreeWitness<L, P0, P1>
-{
-    pub fn single_level_select_and_rerandomize_prover_gadget(
-        &self,
-        prover: &mut Prover<Transcript, Affine<P0>>,
-        even_parameters: &SingleLayerParameters<P0>,
-        odd_parameters: &SingleLayerParameters<P1>,
-        parent_rerandomization_scalar: P0::ScalarField,
-        child_rerandomization_scalar: P1::ScalarField,
-    ) {
-        let children_vars = if parent_rerandomization_scalar.is_zero() {
-            // In this case the parent is the root and the children are treated as public input to the circuit.
-            self.siblings.map(constant).to_vec()
-        } else {
-            // In this case the parent is a rerandomized commitment and the children (and the scalar used for rerandomizing) are part of the witness.
-            let (_, children_vars) = prover.commit_vec(
-                &self.siblings,
-                parent_rerandomization_scalar,
-                &even_parameters.bp_gens,
-            );
-            children_vars
-                .iter()
-                .map(|var| LinearCombination::<P0::ScalarField>::from(*var))
-                .collect()
-        };
-        let child_commitment = self.child_witness;
-        let blinding = odd_parameters.pc_gens.B_blinding * child_rerandomization_scalar;
-        let rerandomized_child = child_commitment + blinding.into_affine();
-
-        single_level_select_and_rerandomize(
-            prover,
-            odd_parameters,
-            &rerandomized_child.into(),
-            children_vars,
-            Some((child_commitment + odd_parameters.delta).into_affine()),
-            Some(child_rerandomization_scalar),
-        );
-    }
-
-    // Prove a single level of the batched select and rerandomize relation.
-    pub fn single_level_batched_select_and_rerandomize_prover_gadget<const M: usize>(
-        nodes: &[Self; M],
-        prover: &mut Prover<Transcript, Affine<P0>>,
-        even_parameters: &SingleLayerParameters<P0>,
-        odd_parameters: &SingleLayerParameters<P1>,
-        parent_rerandomization_scalar: P0::ScalarField,
-        child_rerandomization_scalar: P1::ScalarField,
-    ) {
-        let children_vars = if parent_rerandomization_scalar.is_zero() {
-            let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
-            for i in 0..M {
-                children_vars.append(&mut nodes[i].siblings.map(constant).to_vec());
-            }
-            children_vars
-        } else {
-            // todo quick fix, clean up
-            let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
-            for i in 0..M {
-                let (_, node_children_vars) = prover.commit_vec(
-                    &nodes[i].siblings,
-                    parent_rerandomization_scalar,
-                    &even_parameters.bp_gens,
-                );
-                let mut node_children_lin_combs = node_children_vars
-                    .iter()
-                    .map(|var| LinearCombination::<P0::ScalarField>::from(*var))
-                    .collect();
-                children_vars.append(&mut node_children_lin_combs);
-            }
-            children_vars
-        };
-
-        // Todo: The sum of selected was computed previously
-        let (selected_children, sum_of_selected) = {
-            let mut sum_of_selected = Projective::<P1>::zero();
-            let mut children: [Affine<P1>; M] = [Affine::<P1>::zero(); M];
-            for i in 0..M {
-                sum_of_selected = sum_of_selected + nodes[i].child_witness; // todo: delta?
-                children[i] = (nodes[i].child_witness + odd_parameters.delta).into_affine();
-            }
-            (children, sum_of_selected)
-        };
-        let blinding = odd_parameters.pc_gens.B_blinding * child_rerandomization_scalar;
-        let rerandomized_sum_of_selected = (sum_of_selected + blinding).into_affine();
-
-        single_level_batched_select_and_rerandomize(
-            prover,
-            odd_parameters,
-            &rerandomized_sum_of_selected,
-            children_vars,
-            Some(&selected_children),
-            Some(child_rerandomization_scalar),
-        );
     }
 }
 
@@ -618,5 +527,106 @@ impl<
             },
             rerandomization_scalars_of_selected,
         )
+    }
+}
+
+impl<
+        const L: usize,
+        F: PrimeField,
+        P0: SWCurveConfig<BaseField = F> + Copy,
+        P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = F> + Copy,
+    > CurveTreeWitness<L, P0, P1>
+{
+    pub fn single_level_select_and_rerandomize_prover_gadget(
+        &self,
+        prover: &mut Prover<Transcript, Affine<P0>>,
+        even_parameters: &SingleLayerParameters<P0>,
+        odd_parameters: &SingleLayerParameters<P1>,
+        parent_rerandomization_scalar: P0::ScalarField,
+        child_rerandomization_scalar: P1::ScalarField,
+    ) {
+        let children_vars = if parent_rerandomization_scalar.is_zero() {
+            // In this case the parent is the root and the children are treated as public input to the circuit.
+            self.siblings.map(constant).to_vec()
+        } else {
+            // In this case the parent is a rerandomized commitment and the children (and the scalar used for rerandomizing) are part of the witness.
+            let (_, children_vars) = prover.commit_vec(
+                &self.siblings,
+                parent_rerandomization_scalar,
+                &even_parameters.bp_gens,
+            );
+            children_vars
+                .iter()
+                .map(|var| LinearCombination::<P0::ScalarField>::from(*var))
+                .collect()
+        };
+        let child_commitment = self.child_witness;
+        let blinding = odd_parameters.pc_gens.B_blinding * child_rerandomization_scalar;
+        let rerandomized_child = child_commitment + blinding.into_affine();
+
+        single_level_select_and_rerandomize(
+            prover,
+            odd_parameters,
+            &rerandomized_child.into(),
+            children_vars,
+            Some((child_commitment + odd_parameters.delta).into_affine()),
+            Some(child_rerandomization_scalar),
+        );
+    }
+
+    // Prove a single level of the batched select and rerandomize relation.
+    pub fn single_level_batched_select_and_rerandomize_prover_gadget<const M: usize>(
+        nodes: &[Self; M],
+        prover: &mut Prover<Transcript, Affine<P0>>,
+        even_parameters: &SingleLayerParameters<P0>,
+        odd_parameters: &SingleLayerParameters<P1>,
+        parent_rerandomization_scalar: P0::ScalarField,
+        child_rerandomization_scalar: P1::ScalarField,
+    ) {
+        let children_vars = if parent_rerandomization_scalar.is_zero() {
+            let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
+            for i in 0..M {
+                children_vars.append(&mut nodes[i].siblings.map(constant).to_vec());
+            }
+            children_vars
+        } else {
+            // todo quick fix, clean up
+            let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
+            for i in 0..M {
+                let (_, node_children_vars) = prover.commit_vec(
+                    &nodes[i].siblings,
+                    parent_rerandomization_scalar,
+                    &even_parameters.bp_gens,
+                );
+                let mut node_children_lin_combs = node_children_vars
+                    .iter()
+                    .map(|var| LinearCombination::<P0::ScalarField>::from(*var))
+                    .collect();
+                children_vars.append(&mut node_children_lin_combs);
+            }
+            children_vars
+        };
+
+        // Todo: The sum of selected was computed previously
+        let (selected_children, sum_of_selected) = {
+            let mut sum_of_selected = Projective::<P1>::zero();
+            let mut children: [Affine<P1>; M] = [Affine::<P1>::zero(); M];
+            for i in 0..M {
+                sum_of_selected = sum_of_selected + nodes[i].child_witness; // todo: delta?
+                children[i] = (nodes[i].child_witness + odd_parameters.delta).into_affine();
+            }
+            (children, sum_of_selected)
+        };
+        let blinding = odd_parameters.pc_gens.B_blinding * child_rerandomization_scalar;
+        let rerandomized_sum_of_selected = (sum_of_selected + blinding).into_affine();
+
+        single_level_batched_select_and_rerandomize(
+            prover,
+            odd_parameters,
+            &rerandomized_sum_of_selected,
+            children_vars,
+            Some(&selected_children),
+            Some(child_rerandomization_scalar),
+        );
     }
 }

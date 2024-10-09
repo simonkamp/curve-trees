@@ -126,10 +126,7 @@ impl<
             self.blinding + rerandomization,
             &parameters.even_parameters.bp_gens,
         );
-        assert_eq!(
-            path.even_commitments[path.even_commitments.len() - 1],
-            rerandomized_point
-        );
+        assert_eq!(path.selected_commitment, rerandomized_point);
 
         even_prover.constrain(variables[1] - self.tag);
 

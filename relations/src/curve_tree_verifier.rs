@@ -28,7 +28,7 @@ impl<
             Self::Odd(ct) => {
                 assert_eq!(
                     randomized_path.even_commitments.len(),
-                    randomized_path.odd_commitments.len() + 1
+                    randomized_path.odd_commitments.len()
                 );
                 let mut odd_commitments_with_root = vec![ct.commitment(0)]; // todo index
                 odd_commitments_with_root.append(&mut randomized_path.odd_commitments);
@@ -36,7 +36,7 @@ impl<
             }
             Self::Even(ct) => {
                 assert_eq!(
-                    randomized_path.even_commitments.len(),
+                    randomized_path.even_commitments.len() + 1,
                     randomized_path.odd_commitments.len()
                 );
                 let mut even_commitments_with_root = vec![ct.commitment(0)]; // todo index
@@ -46,6 +46,7 @@ impl<
         };
 
         SelectAndRerandomizePath {
+            selected_commitment: randomized_path.selected_commitment,
             even_commitments,
             odd_commitments,
         }
@@ -86,7 +87,7 @@ impl<
 {
     /// Get the public rerandomization of the selected commitment
     pub fn get_rerandomized_leaf(&self) -> Affine<P0> {
-        *self.even_commitments.last().unwrap()
+        self.selected_commitment
     }
 
     pub fn even_verifier_gadget<T: BorrowMut<Transcript>>(
@@ -96,13 +97,12 @@ impl<
         ct: &CurveTree<L, 1, P0, P1>,
     ) {
         // Determine the parity of the root:
-        let root_is_odd = self.even_commitments.len() == self.odd_commitments.len();
+        let root_is_odd = self.even_commitments.len() + 1 == self.odd_commitments.len();
         if !root_is_odd {
-            assert!(self.even_commitments.len() == self.odd_commitments.len() + 1);
+            assert!(self.even_commitments.len() == self.odd_commitments.len());
         }
 
-        // The last even commitment is skipped as it is the leaf and as such not a parent in the select and rerandomize relation.
-        for parent_index in 0..self.even_commitments.len() - 1 {
+        for parent_index in 0..self.even_commitments.len() {
             let odd_index = if root_is_odd {
                 parent_index + 1
             } else {
@@ -151,15 +151,20 @@ impl<
         ct: &CurveTree<L, 1, P0, P1>,
     ) {
         // Determine the parity of the root:
-        let root_is_odd = self.even_commitments.len() == self.odd_commitments.len();
+        let root_is_odd = self.even_commitments.len() + 1 == self.odd_commitments.len();
         if !root_is_odd {
-            assert!(self.even_commitments.len() == self.odd_commitments.len() + 1);
+            assert!(self.even_commitments.len() == self.odd_commitments.len());
         }
         for parent_index in 0..self.odd_commitments.len() {
             let even_index = if root_is_odd {
                 parent_index
             } else {
                 parent_index + 1
+            };
+            let child = if parent_index < self.odd_commitments.len() - 1 {
+                self.even_commitments[even_index]
+            } else {
+                self.selected_commitment
             };
             let variables = if parent_index == 0 && root_is_odd {
                 let children = match &ct {
@@ -189,7 +194,7 @@ impl<
             single_level_select_and_rerandomize(
                 odd_verifier,
                 &parameters.even_parameters,
-                &self.even_commitments[even_index],
+                &child,
                 variables,
                 None,
                 None,
