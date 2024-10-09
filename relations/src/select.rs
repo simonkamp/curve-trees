@@ -9,9 +9,9 @@ pub fn select<F: Field, Cs: ConstraintSystem<F>>(
     mut xs: impl Iterator<Item = LinearCombination<F>>,
 ) {
     // (x_1 - x) * (x_2 - x) * ... * (x_n - x) = 0
-    let first_term: LinearCombination<F> =
-        xs.next().expect("Cannot select from empty list.") - x.clone();
-    let mut product: LinearCombination<F> = first_term;
+    let first_factor: LinearCombination<F> =
+        xs.next().expect("Cannot select from empty list.") - x.clone(); // todo check if it adds an extra constraint to start from constant 1 and then use iterator
+    let mut product: LinearCombination<F> = first_factor;
     for xi in xs {
         let (_, _, next_product) = cs.multiply(product, xi.clone() - x.clone());
         product = next_product.into();

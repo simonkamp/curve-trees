@@ -9,6 +9,25 @@ use ark_serialize::{
 use ark_std::Zero;
 use rand::Rng;
 
+// Parameters for multi level select and rerandomize over a 2-cycle of curves
+pub struct SelRerandParameters<P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> {
+    pub even_parameters: SingleLayerParameters<P0>,
+    pub odd_parameters: SingleLayerParameters<P1>,
+}
+
+impl<P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> SelRerandParameters<P0, P1> {
+    pub fn new<R: Rng>(
+        even_generators_length: usize,
+        odd_generators_length: usize,
+        rng: &mut R,
+    ) -> Self {
+        SelRerandParameters {
+            even_parameters: SingleLayerParameters::<P0>::new::<_, P1>(even_generators_length, rng),
+            odd_parameters: SingleLayerParameters::<P1>::new::<_, P0>(odd_generators_length, rng),
+        }
+    }
+}
+
 pub enum CurveTree<
     const L: usize, // L is te branching factor, i.e. the number of children per branch
     const M: usize, // M the maximal batch size for which efficient parallel membership proofs are supported.
@@ -331,20 +350,3 @@ impl<
     }
 }
 
-pub struct SelRerandParameters<P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> {
-    pub even_parameters: SingleLayerParameters<P0>,
-    pub odd_parameters: SingleLayerParameters<P1>,
-}
-
-impl<P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> SelRerandParameters<P0, P1> {
-    pub fn new<R: Rng>(
-        even_generators_length: usize,
-        odd_generators_length: usize,
-        rng: &mut R,
-    ) -> Self {
-        SelRerandParameters {
-            even_parameters: SingleLayerParameters::<P0>::new::<_, P1>(even_generators_length, rng),
-            odd_parameters: SingleLayerParameters::<P1>::new::<_, P0>(odd_generators_length, rng),
-        }
-    }
-}

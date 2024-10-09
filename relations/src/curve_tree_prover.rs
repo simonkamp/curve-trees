@@ -119,13 +119,29 @@ impl<
     pub fn select_and_rerandomize_prover_gadget<R: Rng>(
         &self,
         index: usize,
-        tree_index: usize, // todo give a vector of leafs instead?
+        tree_index: usize,
         even_prover: &mut Prover<Transcript, Affine<P0>>,
         odd_prover: &mut Prover<Transcript, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
         rng: &mut R,
     ) -> (SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField) {
         let witness = self.select_and_rerandomize_prover_witness(index, tree_index, parameters);
+        witness.select_and_rerandomize_prover_gadget(even_prover, odd_prover, parameters, rng)
+    }
+    
+    /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
+    /// and proves the Select and rerandomize relation for each level.
+    /// Returns the rerandomized commitments on the path to (and including) the selected leaf and the rerandomization scalar of the selected leaf.
+    pub fn batched_select_and_rerandomize_prover_gadget<R: Rng>(
+        &self,
+        indices: [usize; M],
+        even_prover: &mut Prover<Transcript, Affine<P0>>,
+        odd_prover: &mut Prover<Transcript, Affine<P1>>,
+        parameters: &SelRerandParameters<P0, P1>,
+        rng: &mut R,
+    ) -> (SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField) {
+        let witness = self.select_and_rerandomize_prover_multi_witness(indices, parameters);
+
         witness.select_and_rerandomize_prover_gadget(even_prover, odd_prover, parameters, rng)
     }
 
@@ -203,6 +219,7 @@ impl<
         }
         panic!("Invalid witness path");
     }
+
     /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
     /// and proves the Select and rerandomize relation for each level.
     /// Returns the rerandomized commitments on the path to (and including) the selected leaf
@@ -351,6 +368,7 @@ impl<
         );
     }
 
+    // Prove a single level of the batched select and rerandomize relation.
     pub fn single_level_batched_select_and_rerandomize_prover_gadget<const M: usize>(
         nodes: &[Self; M],
         prover: &mut Prover<Transcript, Affine<P0>>,
@@ -383,12 +401,12 @@ impl<
             children_vars
         };
 
-        // let child_commitment = self.child_witness;
+        // Todo: The sum of selected was computed previously
         let (selected_children, sum_of_selected) = {
             let mut sum_of_selected = Projective::<P1>::zero();
             let mut children: [Affine<P1>; M] = [Affine::<P1>::zero(); M];
             for i in 0..M {
-                sum_of_selected = sum_of_selected + nodes[i].child_witness;
+                sum_of_selected = sum_of_selected + nodes[i].child_witness; // todo: delta?
                 children[i] = (nodes[i].child_witness + odd_parameters.delta).into_affine();
             }
             (children, sum_of_selected)
@@ -432,5 +450,129 @@ impl<
         P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy,
     > CurveTreeWitnessMultiPath<L, M, P0, P1>
 {
-    // TODO
+    fn root_is_even(&self) -> bool {
+        if self.even_nodes.len() == self.odd_nodes.len() {
+            return true;
+        }
+        if self.even_nodes.len() + 1 == self.odd_nodes.len() {
+            return false;
+        }
+        panic!("Invalid witness path");
+    }
+    
+    /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
+    /// and proves the Select and rerandomize relation for each level.
+    /// Returns the rerandomized commitments on the path to (and including) the selected leaf
+    /// and the rerandomization scalar of the selected leaf.
+    pub fn select_and_rerandomize_prover_gadget<R: Rng>(
+        &self,
+        even_prover: &mut Prover<Transcript, Affine<P0>>,
+        odd_prover: &mut Prover<Transcript, Affine<P1>>,
+        parameters: &SelRerandParameters<P0, P1>,
+        rng: &mut R,
+    ) -> (SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField) {
+        // for each even internal node, there must be a rerandomization of a commitment in the odd curve
+        let even_length = self.even_nodes.len();
+        let mut odd_rerandomization_scalars: Vec<P1::ScalarField> = Vec::with_capacity(even_length);
+        let mut odd_rerandomized_commitments: Vec<Affine<P1>> = Vec::with_capacity(even_length);
+        // and vice versa
+        let odd_length = self.odd_nodes.len();
+        let mut even_rerandomization_scalars: Vec<P0::ScalarField> = Vec::with_capacity(odd_length);
+        let mut even_rerandomized_commitments: Vec<Affine<P0>> = Vec::with_capacity(odd_length);
+
+        for even in &self.even_nodes {
+            let mut sum_of_selected = Projective::<P1>::zero();
+            for i in 0..M {
+                sum_of_selected = sum_of_selected + even[i].child_witness; // todo: delta?
+            }
+
+            let rerandomization = F1::rand(rng);
+            odd_rerandomization_scalars.push(rerandomization);
+            let blinding = parameters
+                .odd_parameters
+                .pc_gens
+                .B_blinding
+                .mul(rerandomization)
+                .into_affine();
+            odd_rerandomized_commitments.push((sum_of_selected + blinding).into());
+        }
+
+        for odd in &self.odd_nodes {
+            let mut sum_of_selected = Projective::<P0>::zero();
+            for i in 0..M {
+                sum_of_selected = sum_of_selected + odd[i].child_witness; // todo: delta?
+            }
+
+            let rerandomization = F0::rand(rng);
+            even_rerandomization_scalars.push(rerandomization);
+            let blinding = parameters
+                .even_parameters
+                .pc_gens
+                .B_blinding
+                .mul(rerandomization)
+                .into_affine();
+            even_rerandomized_commitments.push((sum_of_selected + blinding).into());
+        }
+
+        let prove_even = |prover: &mut Prover<Transcript, Affine<P0>>| {
+            for i in 0..even_length {
+                let parent_rerandomization = if self.root_is_even() {
+                    if i == 0 {
+                        // the parent is the the root and thus not rerandomized
+                        F0::zero()
+                    } else {
+                        even_rerandomization_scalars[i - 1]
+                    }
+                } else {
+                    even_rerandomization_scalars[i]
+                };
+                CurveTreeWitness::single_level_batched_select_and_rerandomize_prover_gadget(
+                    &self.even_nodes[i],
+                    prover,
+                    &parameters.even_parameters,
+                    &parameters.odd_parameters,
+                    parent_rerandomization,
+                    odd_rerandomization_scalars[i],
+                );
+            }
+        };
+        #[cfg(not(feature = "parallel"))]
+        prove_even(even_prover);
+        let prove_odd = |prover: &mut Prover<Transcript, Affine<P1>>| {
+            for i in 0..odd_length {
+                let parent_rerandomization = if !self.root_is_even() {
+                    if i == 0 {
+                        // the parent is the the root and thus not rerandomized
+                        F1::zero()
+                    } else {
+                        odd_rerandomization_scalars[i - 1]
+                    }
+                } else {
+                    odd_rerandomization_scalars[i]
+                };
+                CurveTreeWitness::single_level_batched_select_and_rerandomize_prover_gadget(
+                    &self.odd_nodes[i],
+                    prover,
+                    &parameters.odd_parameters,
+                    &parameters.even_parameters,
+                    parent_rerandomization,
+                    even_rerandomization_scalars[i],
+                );
+            }
+        };
+        #[cfg(not(feature = "parallel"))]
+        prove_odd(odd_prover);
+
+        #[cfg(feature = "parallel")]
+        rayon::join(|| prove_even(even_prover), || prove_odd(odd_prover));
+
+        (
+            SelectAndRerandomizePath {
+                even_commitments: even_rerandomized_commitments,
+                odd_commitments: odd_rerandomized_commitments,
+            },
+            *even_rerandomization_scalars.last().unwrap(),
+        )
+
+    }
 }
