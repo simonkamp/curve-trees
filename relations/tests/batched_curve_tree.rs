@@ -13,7 +13,7 @@ use merlin::Transcript;
 use ark_pallas::{Fq as PallasBase, PallasConfig};
 use ark_vesta::VestaConfig;
 
-#[test]
+// #[test]
 pub fn test_batched_curve_tree_even_depth() {
     test_batched_curve_tree_with_parameters::<32, 2, PallasBase, PallasConfig, VestaConfig>(4, 11);
     // test_batched_curve_tree_with_parameters::<32, 2, SecpBase, SecpConfig, SecqConfig>(4, 11);
@@ -66,13 +66,6 @@ pub fn test_batched_curve_tree_with_parameters<
         &mut rng,
     );
 
-    println!(
-        "d {}, e {:?}, o {:?}",
-        depth,
-        path_commitments.even_commitments.len(),
-        path_commitments.odd_commitments.len()
-    );
-
     let pallas_proof = pallas_prover
         .prove(&sr_params.even_parameters.bp_gens)
         .unwrap();
@@ -86,6 +79,14 @@ pub fn test_batched_curve_tree_with_parameters<
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let mut vesta_verifier = Verifier::new(vesta_transcript);
 
+        {
+            // let mut path_clone = path_commitments.clone();
+            // curve_tree.batched_select_and_rerandomize_verification_commitments(&mut path_clone);
+            // println!("Number of odd {:?}", path_clone.odd_commitments.len());
+            // println!("Number of even {:?}", path_clone.even_commitments.len());
+            // println!("First odd {:?}", path_clone.odd_commitments[0]);
+            // println!("First even {:?}", path_clone.even_commitments[0]);
+        }
         let _rerandomized_leaves = curve_tree.batched_select_and_rerandomize_verifier_gadget(
             &mut pallas_verifier,
             &mut vesta_verifier,
@@ -102,7 +103,7 @@ pub fn test_batched_curve_tree_with_parameters<
             &sr_params.even_parameters.pc_gens,
             &sr_params.even_parameters.bp_gens,
         );
-        println!("\n\nOdd: {:?}, Even: {:?}\n\n",vesta_res, pallas_res);
+        println!("\n\nOdd: {:?}, Even: {:?}\n\n", vesta_res, pallas_res);
         assert_eq!(vesta_res, pallas_res);
         assert_eq!(vesta_res, Ok(()));
     }

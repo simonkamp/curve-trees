@@ -81,7 +81,7 @@ impl<
         );
 
         randomized_path.even_verifier_gadget(even_verifier, parameters, self);
-        // randomized_path.odd_verifier_gadget(odd_verifier, parameters, self);
+        randomized_path.odd_verifier_gadget(odd_verifier, parameters, self);
 
         randomized_path.get_rerandomized_leaves()
     }
@@ -118,35 +118,47 @@ impl<
             } else {
                 parent_index
             };
-            let variables: Vec<LinearCombination<P0::ScalarField>> = if parent_index == 0 && !root_is_odd {
-                let children = match &ct {
-                    CurveTree::Even(root) => { // todo why not branch on this to determine if the root is even and if so extract the children, otherwise commit to get first set of vars
-                        if let CurveTreeNode::Branch {
-                            parent_commitment: _,
-                            children,
-                            height: _,
-                            elements: _,
-                        } = root
-                        {
-                            let mut children_xs = Vec::new();
-                            for i in 0..M {
-                                children_xs.append(&mut x_coordinates(children, &parameters.odd_parameters.delta, i).to_vec() )
+            let variables: Vec<LinearCombination<P0::ScalarField>> =
+                if parent_index == 0 && !root_is_odd {
+                    let children = match &ct {
+                        CurveTree::Even(root) => {
+                            // todo why not branch on this to determine if the root is even and if so extract the children, otherwise commit to get first set of vars
+                            if let CurveTreeNode::Branch {
+                                parent_commitment: _,
+                                children,
+                                height: _,
+                                elements: _,
+                            } = root
+                            {
+                                let mut children_xs = Vec::new();
+                                for i in 0..M {
+                                    children_xs.append(
+                                        &mut x_coordinates(
+                                            children,
+                                            &parameters.odd_parameters.delta,
+                                            i,
+                                        )
+                                        .to_vec(),
+                                    )
+                                }
+                                println!("verifier used even root without committing");
+                                children_xs
+                            } else {
+                                panic!()
                             }
-                            children_xs
-                        } else {
-                            panic!()
                         }
-                    }
-                    _ => panic!(),
+                        _ => panic!(),
+                    };
+                    children.into_iter().map(constant).collect()
+                } else {
+                    println!("commit verifier even");
+                    let variables =
+                        even_verifier.commit_vec(L * M, self.even_commitments[parent_index]);
+                    variables
+                        .iter()
+                        .map(|v| LinearCombination::<P0::ScalarField>::from(*v))
+                        .collect()
                 };
-                children.into_iter().map(constant).collect()
-            } else {
-                let variables = even_verifier.commit_vec(L * M, self.even_commitments[parent_index]);
-                variables
-                    .iter()
-                    .map(|v| LinearCombination::<P0::ScalarField>::from(*v))
-                    .collect()
-            };
             assert_eq!(variables.len(), M * L);
             single_level_batched_select_and_rerandomize(
                 even_verifier,
@@ -159,83 +171,104 @@ impl<
         }
     }
 
-    // pub fn odd_verifier_gadget<T: BorrowMut<Transcript>>(
-    //     &self,
-    //     odd_verifier: &mut Verifier<T, Affine<P1>>,
-    //     parameters: &SelRerandParameters<P0, P1>,
-    //     ct: &CurveTree<L, M, P0, P1>,
-    // ) {
-    //     // Determine the parity of the root:
-    //     let root_is_odd = self.even_commitments.len() + 1 == self.odd_commitments.len();
-    //     if !root_is_odd {
-    //         println!("Even root");
-    //         assert!(self.even_commitments.len() == self.odd_commitments.len());
-    //     } else {
-    //         println!("Odd root");
-    //     }
-    //     for parent_index in 0..self.odd_commitments.len() {
-    //         let even_index = if root_is_odd {
-    //             parent_index
-    //         } else {
-    //             parent_index + 1
-    //         };
+    pub fn odd_verifier_gadget<T: BorrowMut<Transcript>>(
+        &self,
+        odd_verifier: &mut Verifier<T, Affine<P1>>,
+        parameters: &SelRerandParameters<P0, P1>,
+        ct: &CurveTree<L, M, P0, P1>,
+    ) {
+        // Determine the parity of the root:
+        let root_is_odd = self.even_commitments.len() + 1 == self.odd_commitments.len();
+        if !root_is_odd {
+            assert!(self.even_commitments.len() == self.odd_commitments.len());
+        }
+        for parent_index in 0..self.odd_commitments.len() {
+            let even_index = if root_is_odd {
+                parent_index
+            } else {
+                parent_index + 1
+            };
 
-    //         let variables = if parent_index == 0 && root_is_odd {
-    //             let children = match &ct {
-    //                 CurveTree::Odd(root) => {
-    //                     if let CurveTreeNode::Branch {
-    //                         parent_commitment: _,
-    //                         children,
-    //                         height: _,
-    //                         elements: _,
-    //                     } = root
-    //                     {
-    //                         x_coordinates(children, &parameters.even_parameters.delta, 0)
-    //                     } else {
-    //                         panic!()
-    //                     }
-    //                 }
-    //                 _ => panic!(),
-    //             };
-    //             children.map(|c| constant(c)).to_vec()
-    //         } else {
-    //             let variables = odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index]);
-    //             variables
-    //                 .iter()
-    //                 .map(|v| LinearCombination::<P1::ScalarField>::from(*v))
-    //                 .collect()
-    //         };
-    //         if parent_index < self.odd_commitments.len() - 1 {
-    //             single_level_batched_select_and_rerandomize(
-    //                 // todo batched
-    //                 odd_verifier,
-    //                 &parameters.even_parameters,
-    //                 &self.even_commitments[even_index],
-    //                 variables,
-    //                 None::<&[Affine<P0>; M]>,
-    //                 None,
-    //             );
-    //         } else {
-    //             // todo for now do only the first inclusion
-    //             single_level_select_and_rerandomize(
-    //                 odd_verifier,
-    //                 &parameters.even_parameters,
-    //                 &self.selected_commitments[0],
-    //                 variables.clone(), // todo these are all the variables, should we not split them into chunks?
-    //                 None,
-    //                 None,
-    //             );
-    //             for i in 0..M {
-    //                 // single_level_select_and_rerandomize(
-    //                 //     odd_verifier,
-    //                 //     &parameters.even_parameters,
-    //                 //     &self.selected_commitments[i],
-    //                 //     variables.clone(), // todo these are all the variables, should we not split them into chunks?
-    //                 //     None,
-    //                 //     None,
-    //                 // );
-    //             }
-    //         };
-    //     }
-    // }
+            let variables: Vec<LinearCombination<P1::ScalarField>> = if parent_index == 0
+                && root_is_odd
+            {
+                let children = match &ct {
+                    CurveTree::Odd(root) => {
+                        if let CurveTreeNode::Branch {
+                            parent_commitment: _,
+                            children,
+                            height: _,
+                            elements: _,
+                        } = root
+                        {
+                            let mut children_xs = Vec::new();
+                            for i in 0..M {
+                                children_xs.append(
+                                    &mut x_coordinates(
+                                        children,
+                                        &parameters.even_parameters.delta,
+                                        i,
+                                    )
+                                    .to_vec(),
+                                )
+                            }
+                            children_xs
+                        } else {
+                            panic!()
+                        }
+                    }
+                    _ => panic!(),
+                };
+                // children.map(|c| constant(c)).to_vec()
+                println!("verifier used odd root without committing");
+                children.into_iter().map(constant).collect()
+            } else {
+                println!("commit verifier odd");
+                // let variables = odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index]);
+                let variables = if parent_index < self.odd_commitments.len() - 1 {
+                    odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index])
+                } else {
+                    Vec::new()
+                };
+                variables
+                    .iter()
+                    .map(|v| LinearCombination::<P1::ScalarField>::from(*v))
+                    .collect()
+            };
+            // assert_eq!(variables.len(), M * L);
+
+            if parent_index < self.odd_commitments.len() - 1 {
+                println!("Odd verifier iteration {}", parent_index);
+                single_level_batched_select_and_rerandomize(
+                    // todo batched
+                    odd_verifier,
+                    &parameters.even_parameters,
+                    &self.even_commitments[even_index],
+                    variables,
+                    None::<&[Affine<P0>; M]>,
+                    None,
+                );
+            } else {
+                // todo for now do only the first inclusion
+                // single_level_select_and_rerandomize(
+                //     odd_verifier,
+                //     &parameters.even_parameters,
+                //     &self.selected_commitments[0],
+                //     variables.clone(), // todo these are all the variables, should we not split them into chunks?
+                //     None,
+                //     None,
+                // );
+                for i in 0..M {
+                    // single_level_select_and_rerandomize(
+                    //     odd_verifier,
+                    //     &parameters.even_parameters,
+                    //     &self.selected_commitments[i],
+                    //     variables.clone(), // todo these are all the variables, should we not split them into chunks?
+                    //     None,
+                    //     None,
+                    // );
+                }
+            };
+        }
+    }
 }

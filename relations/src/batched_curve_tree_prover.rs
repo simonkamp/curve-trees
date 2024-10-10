@@ -201,6 +201,7 @@ impl<
         let prove_even = |prover: &mut Prover<Transcript, Affine<P0>>| {
             for i in 0..even_length {
                 let parent_rerandomization = if self.root_is_even() {
+                    println!("Prover root is even");
                     if i == 0 {
                         // the parent is the the root and thus not rerandomized
                         F0::zero()
@@ -208,6 +209,7 @@ impl<
                         even_rerandomization_scalars[i - 1]
                     }
                 } else {
+                    println!("Prover root is odd");
                     even_rerandomization_scalars[i]
                 };
                 CurveTreeWitness::single_level_batched_select_and_rerandomize_prover_gadget(
@@ -223,7 +225,6 @@ impl<
         #[cfg(not(feature = "parallel"))]
         prove_even(even_prover);
         let prove_odd = |prover: &mut Prover<Transcript, Affine<P1>>| {
-            return;
             for i in 0..odd_length {
                 let parent_rerandomization = if !self.root_is_even() {
                     if i == 0 {
@@ -236,6 +237,7 @@ impl<
                     odd_rerandomization_scalars[i]
                 };
                 if i < odd_length - 1 {
+                    println!("Odd prover iteration {}", i);
                     CurveTreeWitness::single_level_batched_select_and_rerandomize_prover_gadget(
                         &self.odd_internal_nodes[i],
                         prover,
@@ -304,6 +306,7 @@ impl<
         child_rerandomization_scalar: P1::ScalarField,
     ) {
         let children_vars = if parent_rerandomization_scalar.is_zero() {
+            println!("parent rr zero");
             let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
             for i in 0..M {
                 children_vars.append(&mut nodes[i].siblings.map(constant).to_vec());

@@ -339,6 +339,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
         v_blinding: C::ScalarField,
         bp_gens: &BulletproofGens<C>, // same as used during proving, uses the "G" generators to commit like for a_O
     ) -> (C, Vec<Variable<C::ScalarField>>) {
+        
         use std::iter;
 
         // compute the commitment:
@@ -370,6 +371,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
         // add the commitment to the transcript.
         let comm = comm.into();
         self.transcript.borrow_mut().append_point(b"V", &comm);
+        println!("comm vec prover {:?}", comm);
 
         (comm, vars)
     }

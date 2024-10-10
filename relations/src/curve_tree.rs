@@ -266,7 +266,7 @@ pub fn x_coordinates<
 #[derive(Clone)]
 pub enum CurveTreeNode<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> {
     Branch {
-        parent_commitment: [Affine<P0>; M],
+        parent_commitment: [Affine<P0>; M], // the ith parent_commitment is the merkle root of the set when using the ith set of generators.
         children: Box<Children<L, M, P0, P1>>,
         height: usize,
         elements: usize,
