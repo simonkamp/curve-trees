@@ -302,7 +302,6 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
     }
 
     pub fn commit_vec(&mut self, dimension: usize, comm: C) -> Vec<Variable<C::ScalarField>> {
-        println!("comm vec verifier {:?}", comm);
         // allocate next index for vector commitment
         let comm_idx = self.vec_comms.len();
 

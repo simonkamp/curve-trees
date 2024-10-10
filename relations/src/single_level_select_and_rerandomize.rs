@@ -143,26 +143,7 @@ pub fn single_level_batched_select_and_rerandomize<
     children_plus_delta: Option<&[Affine<C2>; M]>, // Witnesses of the commitments being selected and rerandomized
     randomness_offset: Option<Fb>, // The scalar used for randomizing, i.e. \sum selected_witnesses + randomness_offset * H = sum_of_rerandomized + M * Delta
 ) {
-    // println!(
-    //     "sum of rr {:?}, delta {:?}",
-    //     sum_of_rerandomized, parameters.delta
-    // );
-    // println!(" {:?}", children.len());
-
-    if let (Some(children_plus_delta), Some(offset)) = (children_plus_delta, randomness_offset) {
-        let mut sum = children_plus_delta[0];
-        for i in 1..M {
-            sum = (sum + children_plus_delta[i]).into_affine();
-        }
-        let shifted_rerandomized = (*sum_of_rerandomized
-            + (parameters.delta * C2::ScalarField::from(M as u32)))
-        .into_affine();
-        assert_eq!(
-            shifted_rerandomized,
-            sum + parameters.pc_gens.B_blinding.mul(offset)
-        );
-    }; // todo remove debugging assertions
-       // Initialize the accumulated sum of the selected children to dummy values.
+    // Initialize the accumulated sum of the selected children to dummy values.
     let mut sum_of_selected = PointRepresentation {
         x: Variable::One(PhantomData).into(),
         y: Variable::One(PhantomData).into(),

@@ -13,16 +13,19 @@ use merlin::Transcript;
 use ark_pallas::{Fq as PallasBase, PallasConfig};
 use ark_vesta::VestaConfig;
 
-// #[test]
+use ark_secp256k1::{Config as SecpConfig, Fq as SecpBase};
+use ark_secq256k1::Config as SecqConfig;
+
+#[test]
 pub fn test_batched_curve_tree_even_depth() {
     test_batched_curve_tree_with_parameters::<32, 2, PallasBase, PallasConfig, VestaConfig>(4, 11);
-    // test_batched_curve_tree_with_parameters::<32, 2, SecpBase, SecpConfig, SecqConfig>(4, 11);
+    test_batched_curve_tree_with_parameters::<32, 2, SecpBase, SecpConfig, SecqConfig>(4, 11);
 }
 
 #[test]
 pub fn test_batched_curve_tree_odd_depth() {
     test_batched_curve_tree_with_parameters::<32, 2, PallasBase, PallasConfig, VestaConfig>(3, 11);
-    // test_batched_curve_tree_with_parameters::<32, 2, SecpBase, SecpConfig, SecqConfig>(3, 11);
+    test_batched_curve_tree_with_parameters::<32, 2, SecpBase, SecpConfig, SecqConfig>(3, 11);
 }
 
 pub fn test_batched_curve_tree_with_parameters<
@@ -79,14 +82,6 @@ pub fn test_batched_curve_tree_with_parameters<
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-        {
-            // let mut path_clone = path_commitments.clone();
-            // curve_tree.batched_select_and_rerandomize_verification_commitments(&mut path_clone);
-            // println!("Number of odd {:?}", path_clone.odd_commitments.len());
-            // println!("Number of even {:?}", path_clone.even_commitments.len());
-            // println!("First odd {:?}", path_clone.odd_commitments[0]);
-            // println!("First even {:?}", path_clone.even_commitments[0]);
-        }
         let _rerandomized_leaves = curve_tree.batched_select_and_rerandomize_verifier_gadget(
             &mut pallas_verifier,
             &mut vesta_verifier,

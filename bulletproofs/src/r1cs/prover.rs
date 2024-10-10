@@ -371,7 +371,6 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
         // add the commitment to the transcript.
         let comm = comm.into();
         self.transcript.borrow_mut().append_point(b"V", &comm);
-        println!("comm vec prover {:?}", comm);
 
         (comm, vars)
     }

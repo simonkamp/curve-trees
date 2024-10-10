@@ -189,52 +189,51 @@ impl<
                 parent_index + 1
             };
 
-            let variables: Vec<LinearCombination<P1::ScalarField>> = if parent_index == 0
-                && root_is_odd
-            {
-                let children = match &ct {
-                    CurveTree::Odd(root) => {
-                        if let CurveTreeNode::Branch {
-                            parent_commitment: _,
-                            children,
-                            height: _,
-                            elements: _,
-                        } = root
-                        {
-                            let mut children_xs = Vec::new();
-                            for i in 0..M {
-                                children_xs.append(
-                                    &mut x_coordinates(
-                                        children,
-                                        &parameters.even_parameters.delta,
-                                        i,
+            let variables: Vec<LinearCombination<P1::ScalarField>> =
+                if parent_index == 0 && root_is_odd {
+                    let children = match &ct {
+                        CurveTree::Odd(root) => {
+                            if let CurveTreeNode::Branch {
+                                parent_commitment: _,
+                                children,
+                                height: _,
+                                elements: _,
+                            } = root
+                            {
+                                let mut children_xs = Vec::new();
+                                for i in 0..M {
+                                    children_xs.append(
+                                        &mut x_coordinates(
+                                            children,
+                                            &parameters.even_parameters.delta,
+                                            i,
+                                        )
+                                        .to_vec(),
                                     )
-                                    .to_vec(),
-                                )
+                                }
+                                children_xs
+                            } else {
+                                panic!()
                             }
-                            children_xs
-                        } else {
-                            panic!()
                         }
-                    }
-                    _ => panic!(),
-                };
-                // children.map(|c| constant(c)).to_vec()
-                println!("verifier used odd root without committing");
-                children.into_iter().map(constant).collect()
-            } else {
-                println!("commit verifier odd");
-                // let variables = odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index]);
-                let variables = if parent_index < self.odd_commitments.len() - 1 {
-                    odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index])
+                        _ => panic!(),
+                    };
+                    // children.map(|c| constant(c)).to_vec()
+                    println!("verifier used odd root without committing");
+                    children.into_iter().map(constant).collect()
                 } else {
-                    Vec::new()
+                    println!("commit verifier odd");
+                    // let variables = odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index]);
+                    let variables = if parent_index < self.odd_commitments.len() - 1 {
+                        odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index])
+                    } else {
+                        Vec::new()
+                    };
+                    variables
+                        .iter()
+                        .map(|v| LinearCombination::<P1::ScalarField>::from(*v))
+                        .collect()
                 };
-                variables
-                    .iter()
-                    .map(|v| LinearCombination::<P1::ScalarField>::from(*v))
-                    .collect()
-            };
             // assert_eq!(variables.len(), M * L);
 
             if parent_index < self.odd_commitments.len() - 1 {

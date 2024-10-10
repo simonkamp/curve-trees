@@ -247,15 +247,13 @@ impl<
                         even_rerandomization_scalars[i],
                     );
                 } else {
-                    // self.odd_internal_nodes[i][0]
-                    // .single_level_select_and_rerandomize_prover_gadget(
-                    //     prover,
-                    //     &parameters.odd_parameters,
-                    //     &parameters.even_parameters,
-                    //     parent_rerandomization,
-                    //     rerandomization_scalars_of_selected[0],
+                    // Commit to the last internal node to obtain variables for its children.
+
+                    // let (_, children_vars) = prover.commit_vec(
+                    //     &self.siblings,
+                    //     parent_rerandomization_scalar,
+                    //     &even_parameters.bp_gens,
                     // );
-                    // todo, for now just show inclusion of the first leaf
 
                     // The selected leaves are rerandomized individually, as we allow these commitments to use the same generators.
                     for inclusion_index in 0..M {
@@ -305,28 +303,7 @@ impl<
         parent_rerandomization_scalar: P0::ScalarField,
         child_rerandomization_scalar: P1::ScalarField,
     ) {
-        let children_vars = if parent_rerandomization_scalar.is_zero() {
-            println!("parent rr zero");
-            let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
-            for i in 0..M {
-                children_vars.append(&mut nodes[i].siblings.map(constant).to_vec());
-            }
-            children_vars
-        } else {
-            let mut children: Vec<P0::ScalarField> = Vec::new();
-            for i in 0..M {
-                children.append(&mut nodes[i].siblings.to_vec());
-            }
-            let (_, children_vars) = prover.commit_vec(
-                &children,
-                parent_rerandomization_scalar,
-                &even_parameters.bp_gens,
-            );
-            children_vars
-                .iter()
-                .map(|var| LinearCombination::<P0::ScalarField>::from(*var))
-                .collect()
-        };
+        let children_vars = Self::allocate_multi_node_variables(nodes, prover, even_parameters, parent_rerandomization_scalar);
 
         // Todo: The sum of selected was computed previously
         let (selected_children, sum_of_selected) = {
@@ -349,5 +326,36 @@ impl<
             Some(&selected_children),
             Some(child_rerandomization_scalar),
         );
+    }
+
+    // Allocate variable for the children of a node in a multi path by committing to an internal node or using the children of the root as public input.
+    pub fn allocate_multi_node_variables<const M: usize>(
+        nodes: &[Self; M],
+        prover: &mut Prover<Transcript, Affine<P0>>,
+        even_parameters: &SingleLayerParameters<P0>,
+        parent_rerandomization_scalar: P0::ScalarField,
+    ) -> Vec<LinearCombination<<P0>::ScalarField>> {
+        let children_vars = if parent_rerandomization_scalar.is_zero() {
+            let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
+            for i in 0..M {
+                children_vars.append(&mut nodes[i].siblings.map(constant).to_vec());
+            }
+            children_vars
+        } else {
+            let mut children: Vec<P0::ScalarField> = Vec::new();
+            for i in 0..M {
+                children.append(&mut nodes[i].siblings.to_vec());
+            }
+            let (_, children_vars) = prover.commit_vec(
+                &children,
+                parent_rerandomization_scalar,
+                &even_parameters.bp_gens,
+            );
+            children_vars
+                .iter()
+                .map(|var| LinearCombination::<P0::ScalarField>::from(*var))
+                .collect()
+        };
+        children_vars
     }
 }

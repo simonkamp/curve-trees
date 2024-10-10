@@ -316,6 +316,8 @@ impl<
         P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = F> + Copy,
     > CurveTreeWitness<L, P0, P1>
 {
+    /// Allocates variables for the children and proves select and rerandomize for one.
+    /// If the parent is the root, the variables are allocated directly, otherwise by committing to the parent.
     pub fn single_level_select_and_rerandomize_prover_gadget(
         &self,
         prover: &mut Prover<Transcript, Affine<P0>>,
@@ -339,6 +341,22 @@ impl<
                 .map(|var| LinearCombination::<P0::ScalarField>::from(*var))
                 .collect()
         };
+        self.single_level_select_and_rerandomize_prover_gadget_helper(
+            prover,
+            odd_parameters,
+            child_rerandomization_scalar,
+            children_vars,
+        );
+    }
+
+    /// Proves the select and rerandomize for one of the children represented by the variables.
+    pub fn single_level_select_and_rerandomize_prover_gadget_helper(
+        &self,
+        prover: &mut Prover<Transcript, Affine<P0>>,
+        odd_parameters: &SingleLayerParameters<P1>,
+        child_rerandomization_scalar: P1::ScalarField,
+        children_vars: Vec<LinearCombination<<P0>::ScalarField>>,
+    ) {
         let child_commitment = self.child_witness;
         let blinding = odd_parameters.pc_gens.B_blinding * child_rerandomization_scalar;
         let rerandomized_child = child_commitment + blinding.into_affine();
