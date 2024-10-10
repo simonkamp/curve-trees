@@ -109,7 +109,7 @@ impl<
         }
 
         CurveTreeWitnessPath {
-            even_nodes,
+            even_internal_nodes: even_nodes,
             odd_nodes,
         }
     }
@@ -166,8 +166,11 @@ impl<
                 .push(self.select_and_rerandomize_prover_witness(indices[i], i, params));
         }
         let mut even_nodes: Vec<[CurveTreeWitness<L, P0, P1>; M]> = Vec::new();
-        for i in 0..single_witnesses[0].even_nodes.len() - 1 {
-            let witnesses: Vec<_> = single_witnesses.iter().map(|w| w.even_nodes[i]).collect();
+        for i in 0..single_witnesses[0].even_internal_nodes.len() - 1 {
+            let witnesses: Vec<_> = single_witnesses
+                .iter()
+                .map(|w| w.even_internal_nodes[i])
+                .collect();
             even_nodes.push(witnesses.try_into().unwrap());
         }
 
@@ -183,7 +186,7 @@ impl<
     }
 }
 
-/// A witness of a Curve Tree path including siblings.
+/// A witness of a node on a Curve Tree path including siblings.
 /// Contains the information needed to prove the single level select and rerandomize relation.
 #[derive(Copy, Clone)]
 pub struct CurveTreeWitness<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> {
@@ -205,10 +208,11 @@ impl<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> Debug
 #[derive(Clone, Default)]
 pub struct CurveTreeWitnessPath<const L: usize, P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy>
 {
-    // list of internal even nodes
-    pub even_nodes: Vec<CurveTreeWitness<L, P0, P1>>, // todo: this also contains the leaf, right?
+    // list of internal even nodes including the selected leaf.
+    pub even_internal_nodes: Vec<CurveTreeWitness<L, P0, P1>>,
     // list of internal odd nodes
     pub odd_nodes: Vec<CurveTreeWitness<L, P1, P0>>,
+    // the root is not explicitly represented
 }
 
 // Prove a single inclusion using a CurveTreeWitnessPath
@@ -221,13 +225,15 @@ impl<
     > CurveTreeWitnessPath<L, P0, P1>
 {
     fn root_is_even(&self) -> bool {
-        if self.even_nodes.len() == self.odd_nodes.len() {
-            return true;
-        }
-        if self.even_nodes.len() + 1 == self.odd_nodes.len() {
-            return false;
-        }
-        panic!("Invalid witness path");
+        // The leaf is even and included in the internal even nodes.
+        // If the number of internal even and odd nodes is equal,
+        // then the first odd node is the parent of the first even node and a child of the even root.
+        let even = self.even_internal_nodes.len() == self.odd_nodes.len();
+        // Otherwise there must be an additional even node which has the odd root as parent.
+        if !even {
+            assert!(self.even_internal_nodes.len() + 1 == self.odd_nodes.len())
+        };
+        return even;
     }
 
     /// Commits to the root and rerandomizations of the path to the leaf specified by `index`
@@ -242,7 +248,7 @@ impl<
         rng: &mut R,
     ) -> (SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField) {
         // for each even internal node, there must be a rerandomization of a commitment in the odd curve
-        let even_length = self.even_nodes.len();
+        let even_length = self.even_internal_nodes.len();
         let mut odd_rerandomization_scalars: Vec<P1::ScalarField> = Vec::with_capacity(even_length);
         let mut odd_rerandomized_commitments: Vec<Affine<P1>> = Vec::with_capacity(even_length);
         // and vice versa
@@ -250,7 +256,7 @@ impl<
         let mut even_rerandomization_scalars: Vec<P0::ScalarField> = Vec::with_capacity(odd_length);
         let mut even_rerandomized_commitments: Vec<Affine<P0>> = Vec::with_capacity(odd_length);
 
-        for even in &self.even_nodes {
+        for even in &self.even_internal_nodes {
             let rerandomization = F1::rand(rng);
             odd_rerandomization_scalars.push(rerandomization);
             let blinding = parameters
@@ -295,7 +301,7 @@ impl<
                 } else {
                     even_rerandomization_scalars[i]
                 };
-                self.even_nodes[i].single_level_select_and_rerandomize_prover_gadget(
+                self.even_internal_nodes[i].single_level_select_and_rerandomize_prover_gadget(
                     prover,
                     &parameters.even_parameters,
                     &parameters.odd_parameters,
@@ -501,14 +507,15 @@ impl<
                 } else {
                     // The selected leaves are rerandomized individually, as we allow these commitments to use the same generators.
                     for inclusion_index in 0..M {
-                        self.odd_nodes[i][inclusion_index]
-                            .single_level_select_and_rerandomize_prover_gadget(
-                                prover,
-                                &parameters.odd_parameters,
-                                &parameters.even_parameters,
-                                parent_rerandomization,
-                                rerandomization_scalars_of_selected[inclusion_index],
-                            )
+                        // todo how do variables work here?
+                        // self.odd_nodes[i][inclusion_index]
+                        //     .single_level_select_and_rerandomize_prover_gadget(
+                        //         prover,
+                        //         &parameters.odd_parameters,
+                        //         &parameters.even_parameters,
+                        //         parent_rerandomization,
+                        //         rerandomization_scalars_of_selected[inclusion_index],
+                        //     )
                     }
                 }
             }

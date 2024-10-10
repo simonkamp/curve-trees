@@ -339,7 +339,9 @@ fn bench_select_and_rerandomize_with_parameters<
                     #[cfg(feature = "parallel")]
                     {
                         let srvs = proofs.par_iter().map(|path| {
-                            curve_tree.select_and_rerandomize_verification_commitments(path.clone())
+                            let mut path = path.clone();
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                            path
                         });
                         let srvs_clone = srvs.clone();
                         rayon::join(

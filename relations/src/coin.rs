@@ -497,14 +497,14 @@ impl<
             // todo this might not be worth the overhead
             rayon::join(
                 || {
-                    curve_tree.select_and_rerandomize_verification_commitments(
-                        self.randomized_path_0.clone(),
-                    )
+                    let mut path = self.randomized_path_0.clone();
+                    curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                    path
                 },
                 || {
-                    curve_tree.select_and_rerandomize_verification_commitments(
-                        self.randomized_path_1.clone(),
-                    )
+                    let mut path = self.randomized_path_1.clone();
+                    curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                    path
                 },
             )
         };
@@ -828,7 +828,7 @@ mod tests {
             Some(4),
         );
 
-        let (path, _) = coin_aux.prove_spend(
+        let (mut path, _) = coin_aux.prove_spend(
             0,
             &mut pallas_prover,
             &mut vesta_prover,
@@ -849,7 +849,8 @@ mod tests {
             let vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            let commitments = curve_tree.select_and_rerandomize_verification_commitments(path);
+            curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+            let commitments = path;
             verify_spend_odd(&mut vesta_verifier, &commitments, &sr_params, &curve_tree);
             verify_spend_even::<256, _, _, _, _, PallasP>(
                 &mut pallas_verifier,

@@ -69,8 +69,6 @@ pub fn test_batched_curve_tree_with_parameters<
     let curve_tree = CurveTree::<L, M, P0, P1>::from_set(&set, &sr_params, Some(depth));
     assert_eq!(curve_tree.height(), depth);
 
-    // todo use new gadget with multi path
-
     let (path_commitments, _) = curve_tree.batched_select_and_rerandomize_prover_gadget(
         indices,
         &mut pallas_prover,
@@ -87,28 +85,28 @@ pub fn test_batched_curve_tree_with_parameters<
         .unwrap();
 
     {
-        // let pallas_transcript = Transcript::new(b"select_and_rerandomize");
-        // let mut pallas_verifier = Verifier::new(pallas_transcript);
-        // let vesta_transcript = Transcript::new(b"select_and_rerandomize");
-        // let mut vesta_verifier = Verifier::new(vesta_transcript);
+        let pallas_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut pallas_verifier = Verifier::new(pallas_transcript);
+        let vesta_transcript = Transcript::new(b"select_and_rerandomize");
+        let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-        // let _rerandomized_leaf = curve_tree.select_and_rerandomize_verifier_gadget(
-        //     &mut pallas_verifier,
-        //     &mut vesta_verifier,
-        //     path_commitments,
-        //     &sr_params,
-        // );
-        // let vesta_res = vesta_verifier.verify(
-        //     &vesta_proof,
-        //     &sr_params.odd_parameters.pc_gens,
-        //     &sr_params.odd_parameters.bp_gens,
-        // );
-        // let pallas_res = pallas_verifier.verify(
-        //     &pallas_proof,
-        //     &sr_params.even_parameters.pc_gens,
-        //     &sr_params.even_parameters.bp_gens,
-        // );
-        // assert_eq!(vesta_res, pallas_res);
-        // assert_eq!(vesta_res, Ok(()));
+        let _rerandomized_leaf = curve_tree.batched_select_and_rerandomize_verifier_gadget(
+            &mut pallas_verifier,
+            &mut vesta_verifier,
+            path_commitments,
+            &sr_params,
+        );
+        let vesta_res = vesta_verifier.verify(
+            &vesta_proof,
+            &sr_params.odd_parameters.pc_gens,
+            &sr_params.odd_parameters.bp_gens,
+        );
+        let pallas_res = pallas_verifier.verify(
+            &pallas_proof,
+            &sr_params.even_parameters.pc_gens,
+            &sr_params.even_parameters.bp_gens,
+        );
+        assert_eq!(vesta_res, pallas_res);
+        assert_eq!(vesta_res, Ok(()));
     }
 }
