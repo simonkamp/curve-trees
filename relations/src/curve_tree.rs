@@ -144,6 +144,7 @@ impl<
 
     //todo add a function to add a single/several commitments
 
+    /// The height of a node is the number of edges to reach a leaf.
     pub fn height(&self) -> usize {
         match self {
             Self::Even(ct) => ct.height(),

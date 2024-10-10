@@ -1,12 +1,14 @@
+use ark_ec::short_weierstrass::Projective;
+use ark_ec::CurveGroup;
 use bulletproofs::r1cs::*;
 
 use crate::single_level_select_and_rerandomize::*;
 
 use crate::curve_tree::{
-    x_coordinates, CurveTree, CurveTreeNode, SelRerandParameters, SelectAndRerandomizePath,
+    x_coordinates, CurveTree, CurveTreeNode, SelRerandParameters, SelectAndRerandomizeMultiPath,
 };
 use ark_ec::{models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine};
-use ark_ff::PrimeField;
+use ark_ff::{PrimeField, Zero};
 use merlin::Transcript;
 use std::borrow::BorrowMut;
 
@@ -19,10 +21,10 @@ impl<
         P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy + Send,
     > CurveTree<L, M, P0, P1>
 {
-    // Adds the root to a randomized path provided by the prover
-    pub fn select_and_rerandomize_verification_commitments(
+    // Adds the root to a randomized multi path provided by the prover
+    pub fn batched_select_and_rerandomize_verification_commitments(
         &self,
-        randomized_path: &mut SelectAndRerandomizePath<L, P0, P1>,
+        randomized_path: &mut SelectAndRerandomizeMultiPath<L, M, P0, P1>,
     ) {
         match self {
             Self::Odd(ct) => {
@@ -30,7 +32,11 @@ impl<
                     randomized_path.even_commitments.len(),
                     randomized_path.odd_commitments.len()
                 );
-                let mut odd_commitments_with_root = vec![ct.commitment(0)]; // todo index or always use tree 0?
+                let mut sum_of_roots = Projective::<P1>::zero();
+                for i in 0..M {
+                    sum_of_roots = sum_of_roots + ct.commitment(i)
+                }
+                let mut odd_commitments_with_root = vec![sum_of_roots.into_affine()];
                 odd_commitments_with_root.append(&mut randomized_path.odd_commitments);
                 randomized_path.odd_commitments = odd_commitments_with_root;
             }
@@ -39,7 +45,11 @@ impl<
                     randomized_path.even_commitments.len() + 1,
                     randomized_path.odd_commitments.len()
                 );
-                let mut even_commitments_with_root = vec![ct.commitment(0)]; // todo index or always use tree 0?
+                let mut sum_of_roots = Projective::<P0>::zero();
+                for i in 0..M {
+                    sum_of_roots = sum_of_roots + ct.commitment(i)
+                }
+                let mut even_commitments_with_root = vec![sum_of_roots.into_affine()];
                 even_commitments_with_root.append(&mut randomized_path.even_commitments);
                 randomized_path.even_commitments = even_commitments_with_root;
             }
@@ -56,15 +66,15 @@ impl<
         P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy + Send,
     > CurveTree<L, M, P0, P1>
 {
-    pub fn select_and_rerandomize_verifier_gadget<T: BorrowMut<Transcript>>(
+    pub fn batched_select_and_rerandomize_verifier_gadget<T: BorrowMut<Transcript>>(
         &self,
         even_verifier: &mut Verifier<T, Affine<P0>>,
         odd_verifier: &mut Verifier<T, Affine<P1>>,
-        mut randomized_path: SelectAndRerandomizePath<L, P0, P1>,
+        mut randomized_path: SelectAndRerandomizeMultiPath<L, M, P0, P1>,
         parameters: &SelRerandParameters<P0, P1>,
-    ) -> Affine<P0> {
-        self.select_and_rerandomize_verification_commitments(&mut randomized_path);
-        // The even and odd commitments do not include the selected leaf, their sum should equal the height of the tree.
+    ) -> [Affine<P0>; M] {
+        self.batched_select_and_rerandomize_verification_commitments(&mut randomized_path);
+        // The even and odd commitments do not include the selected leaves, their sum should equal the height of the tree.
         debug_assert_eq!(
             self.height(),
             randomized_path.even_commitments.len() + randomized_path.odd_commitments.len()
@@ -73,23 +83,24 @@ impl<
         randomized_path.even_verifier_gadget(even_verifier, parameters, self);
         randomized_path.odd_verifier_gadget(odd_verifier, parameters, self);
 
-        randomized_path.get_rerandomized_leaf()
+        randomized_path.get_rerandomized_leaves()
     }
 }
 
 impl<
         const L: usize,
+        const M: usize,
         F: PrimeField,
         P0: SWCurveConfig<BaseField = F> + Copy + Send,
         P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = F> + Copy + Send,
-    > SelectAndRerandomizePath<L, P0, P1>
+    > SelectAndRerandomizeMultiPath<L, M, P0, P1>
 {
-    /// Get the public rerandomization of the selected commitment
-    pub fn get_rerandomized_leaf(&self) -> Affine<P0> {
-        self.selected_commitment
+    /// Get the public rerandomization of the selected commitments
+    pub fn get_rerandomized_leaves(&self) -> [Affine<P0>; M] {
+        self.selected_commitments
     }
 
-    pub fn even_verifier_gadget<const M: usize, T: BorrowMut<Transcript>>(
+    pub fn even_verifier_gadget<T: BorrowMut<Transcript>>(
         &self,
         even_verifier: &mut Verifier<T, Affine<P0>>,
         parameters: &SelRerandParameters<P0, P1>,
@@ -143,7 +154,7 @@ impl<
         }
     }
 
-    pub fn odd_verifier_gadget<const M: usize, T: BorrowMut<Transcript>>(
+    pub fn odd_verifier_gadget<T: BorrowMut<Transcript>>(
         &self,
         odd_verifier: &mut Verifier<T, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
@@ -152,7 +163,10 @@ impl<
         // Determine the parity of the root:
         let root_is_odd = self.even_commitments.len() + 1 == self.odd_commitments.len();
         if !root_is_odd {
+            println!("Even root");
             assert!(self.even_commitments.len() == self.odd_commitments.len());
+        } else {
+            println!("Odd root");
         }
         for parent_index in 0..self.odd_commitments.len() {
             let even_index = if root_is_odd {
@@ -160,11 +174,7 @@ impl<
             } else {
                 parent_index + 1
             };
-            let child = if parent_index < self.odd_commitments.len() - 1 {
-                self.even_commitments[even_index]
-            } else {
-                self.selected_commitment
-            };
+
             let variables = if parent_index == 0 && root_is_odd {
                 let children = match &ct {
                     CurveTree::Odd(root) => {
@@ -184,20 +194,43 @@ impl<
                 };
                 children.map(|c| constant(c)).to_vec()
             } else {
-                let variables = odd_verifier.commit_vec(L, self.odd_commitments[parent_index]);
+                let variables = odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index]);
                 variables
                     .iter()
                     .map(|v| LinearCombination::<P1::ScalarField>::from(*v))
                     .collect()
             };
-            single_level_select_and_rerandomize(
-                odd_verifier,
-                &parameters.even_parameters,
-                &child,
-                variables,
-                None,
-                None,
-            );
+            if parent_index < self.odd_commitments.len() - 1 {
+                single_level_batched_select_and_rerandomize(
+                    // todo batched
+                    odd_verifier,
+                    &parameters.even_parameters,
+                    &self.even_commitments[even_index],
+                    variables,
+                    None::<&[Affine<P0>; M]>,
+                    None,
+                );
+            } else {
+                // todo for now do only the first inclusion
+                single_level_select_and_rerandomize(
+                    odd_verifier,
+                    &parameters.even_parameters,
+                    &self.selected_commitments[0],
+                    variables.clone(), // todo these are all the variables, should we not split them into chunks?
+                    None,
+                    None,
+                );
+                for i in 0..M {
+                    // single_level_select_and_rerandomize(
+                    //     odd_verifier,
+                    //     &parameters.even_parameters,
+                    //     &self.selected_commitments[i],
+                    //     variables.clone(), // todo these are all the variables, should we not split them into chunks?
+                    //     None,
+                    //     None,
+                    // );
+                }
+            };
         }
     }
 }

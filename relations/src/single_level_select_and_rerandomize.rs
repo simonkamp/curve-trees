@@ -150,7 +150,9 @@ pub fn single_level_batched_select_and_rerandomize<
     };
     // Split the variables of the vector commitments into chunks corresponding to the M parents.
     let chunks = children.chunks_exact(children.len() / M);
+    println!("{}", chunks.len());
     for (i, chunk) in chunks.enumerate() {
+        println!("chunk size {}", chunk.len());
         let ith_selected_witness = children_plus_delta.map(|xy| xy[i]);
         let x_var = cs.allocate(ith_selected_witness.map(|xy| xy.x)).unwrap();
         let y_var = cs.allocate(ith_selected_witness.map(|xy| xy.y)).unwrap();

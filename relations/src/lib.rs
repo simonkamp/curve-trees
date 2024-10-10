@@ -20,9 +20,11 @@ pub mod single_level_select_and_rerandomize;
 pub mod curve_tree;
 
 // Prover logic for membership proofs
+pub mod batched_curve_tree_prover;
 pub mod curve_tree_prover;
 
 // Verifier logic for membership proofs
+pub mod batched_curve_tree_verifier;
 pub mod curve_tree_verifier;
 
 // Prove that a committed variable is in the range [0, 2^k)
