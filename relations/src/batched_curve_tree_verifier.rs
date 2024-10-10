@@ -131,7 +131,6 @@ impl<
                             let mut children_xs = Vec::new();
                             for i in 0..M {
                                 children_xs.append(&mut x_coordinates(children, &parameters.odd_parameters.delta, i).to_vec() )
-                                // todo should be all vars
                             }
                             children_xs
                         } else {
@@ -149,12 +148,12 @@ impl<
                     .collect()
             };
             assert_eq!(variables.len(), M * L);
-            single_level_select_and_rerandomize(
+            single_level_batched_select_and_rerandomize(
                 even_verifier,
                 &parameters.odd_parameters,
                 &self.odd_commitments[odd_index],
                 variables,
-                None,
+                None::<&[Affine<P1>; M]>,
                 None,
             );
         }
