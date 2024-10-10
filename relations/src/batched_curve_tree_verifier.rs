@@ -244,24 +244,19 @@ impl<
                     None,
                 );
             } else {
-                // todo for now do only the first inclusion
-                // single_level_select_and_rerandomize(
-                //     odd_verifier,
-                //     &parameters.even_parameters,
-                //     &self.selected_commitments[0],
-                //     variables.clone(), // todo these are all the variables, should we not split them into chunks?
-                //     None,
-                //     None,
-                // );
-                for i in 0..M {
-                    // single_level_select_and_rerandomize(
-                    //     odd_verifier,
-                    //     &parameters.even_parameters,
-                    //     &self.selected_commitments[i],
-                    //     variables.clone(), // todo these are all the variables, should we not split them into chunks?
-                    //     None,
-                    //     None,
-                    // );
+                // Split the variables of the vector commitments into chunks corresponding to the M parents.
+                let chunks = variables.chunks_exact(variables.len() / M);
+                for (i, chunk) in chunks.enumerate() {
+                    // for i in 0..M {
+                    single_level_select_and_rerandomize(
+                        odd_verifier,
+                        &parameters.even_parameters,
+                        &self.selected_commitments[i],
+                        chunk.to_vec(), // todo these are all the variables, should we not split them into chunks?
+                        None,
+                        None,
+                    );
+                    break;
                 }
             };
         }

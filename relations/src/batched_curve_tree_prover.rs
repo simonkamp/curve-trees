@@ -256,16 +256,22 @@ impl<
                     );
 
                     // The selected leaves are rerandomized individually, as we allow these commitments to use the same generators.
-                    for inclusion_index in 0..M {
-                        // todo how do variables work here?
-                        // self.odd_nodes[i][inclusion_index]
-                        //     .single_level_select_and_rerandomize_prover_gadget(
-                        //         prover,
-                        //         &parameters.odd_parameters,
-                        //         &parameters.even_parameters,
-                        //         parent_rerandomization,
-                        //         rerandomization_scalars_of_selected[inclusion_index],
-                        //     )
+                    // Split the variables of the vector commitments into chunks corresponding to the M parents.
+                    let chunks = children_vars.chunks_exact(children_vars.len() / M);
+                    for (inclusion_index, chunk) in chunks.enumerate() {
+                        single_level_select_and_rerandomize(
+                            prover,
+                            &parameters.even_parameters,
+                            &rerandomizations_of_selected[inclusion_index],
+                            chunk.to_vec(),
+                            Some(
+                                (self.odd_internal_nodes[i][inclusion_index].child_witness
+                                    + parameters.even_parameters.delta)
+                                    .into_affine(),
+                            ),
+                            Some(rerandomization_scalars_of_selected[inclusion_index]),
+                        );
+                        break;
                     }
                 }
             }
