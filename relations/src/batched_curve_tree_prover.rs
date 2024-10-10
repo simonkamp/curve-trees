@@ -248,12 +248,12 @@ impl<
                     );
                 } else {
                     // Commit to the last internal node to obtain variables for its children.
-
-                    // let (_, children_vars) = prover.commit_vec(
-                    //     &self.siblings,
-                    //     parent_rerandomization_scalar,
-                    //     &even_parameters.bp_gens,
-                    // );
+                    let children_vars = CurveTreeWitness::allocate_multi_node_variables(
+                        &self.odd_internal_nodes[i],
+                        prover,
+                        &parameters.odd_parameters,
+                        parent_rerandomization,
+                    );
 
                     // The selected leaves are rerandomized individually, as we allow these commitments to use the same generators.
                     for inclusion_index in 0..M {
@@ -294,7 +294,7 @@ impl<
         P1: SWCurveConfig<BaseField = P0::ScalarField, ScalarField = F> + Copy,
     > CurveTreeWitness<L, P0, P1>
 {
-    // Prove a single level of the batched select and rerandomize relation.
+    /// Prove a single level of the batched select and rerandomize relation.
     pub fn single_level_batched_select_and_rerandomize_prover_gadget<const M: usize>(
         nodes: &[Self; M],
         prover: &mut Prover<Transcript, Affine<P0>>,
@@ -303,7 +303,12 @@ impl<
         parent_rerandomization_scalar: P0::ScalarField,
         child_rerandomization_scalar: P1::ScalarField,
     ) {
-        let children_vars = Self::allocate_multi_node_variables(nodes, prover, even_parameters, parent_rerandomization_scalar);
+        let children_vars = Self::allocate_multi_node_variables(
+            nodes,
+            prover,
+            even_parameters,
+            parent_rerandomization_scalar,
+        );
 
         // Todo: The sum of selected was computed previously
         let (selected_children, sum_of_selected) = {
@@ -328,7 +333,7 @@ impl<
         );
     }
 
-    // Allocate variable for the children of a node in a multi path by committing to an internal node or using the children of the root as public input.
+    /// Allocate variable for the children of a node in a multi path by committing to an internal node or using the children of the root as public input.
     pub fn allocate_multi_node_variables<const M: usize>(
         nodes: &[Self; M],
         prover: &mut Prover<Transcript, Affine<P0>>,
