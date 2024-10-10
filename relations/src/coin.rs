@@ -511,12 +511,16 @@ impl<
         #[cfg(not(feature = "parallel"))]
         let (spend_commitments_0, spend_commitments_1) = {
             (
-                curve_tree.select_and_rerandomize_verification_commitments(
-                    self.randomized_path_0.clone(),
-                ),
-                curve_tree.select_and_rerandomize_verification_commitments(
-                    self.randomized_path_1.clone(),
-                ),
+                {
+                    let mut path = self.randomized_path_0.clone();
+                    curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                    path
+                },
+                {
+                    let mut path = self.randomized_path_1.clone();
+                    curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                    path
+                },
             )
         };
 

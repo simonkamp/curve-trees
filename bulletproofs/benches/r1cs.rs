@@ -4,15 +4,6 @@
 extern crate criterion;
 use criterion::Criterion;
 
-// Code below copied from ../tests/r1cs.rs
-//
-// Ideally we wouldn't duplicate it, but AFAIK criterion requires a
-// seperate benchmark harness, while the test code uses a different
-// test harness, so I (hdevalence) just copied the code over.  It
-// should not be edited here.  In the future it would be good if
-// someone wants to figure a way to use #[path] attributes or
-// something to avoid the duplication.
-
 extern crate bulletproofs;
 extern crate merlin;
 extern crate rand;

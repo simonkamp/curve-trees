@@ -15,7 +15,6 @@ use ark_ff::{Field, PrimeField, UniformRand};
 use rand::Rng;
 use std::iter;
 use std::marker::PhantomData;
-use std::ops::Mul;
 
 pub struct SingleLayerParameters<P: SWCurveConfig + Copy> {
     pub bp_gens: BulletproofGens<Affine<P>>,

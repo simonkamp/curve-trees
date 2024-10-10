@@ -403,8 +403,8 @@ fn bench_select_and_rerandomize_with_parameters<
                         let mut vesta_verification_scalars_and_points =
                             Vec::with_capacity(proofs.len());
                         for path in proofs {
-                            let srv = curve_tree
-                                .select_and_rerandomize_verification_commitments(path.clone());
+                            let mut srv = path.clone();
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut srv);
                             {
                                 let pallas_transcript = Transcript::new(b"select_and_rerandomize");
                                 let mut pallas_verifier = Verifier::new(pallas_transcript);

@@ -243,7 +243,9 @@ fn bench_accumulator_with_parameters<
                     #[cfg(not(feature = "parallel"))]
                     {
                         let srvs = proofs.iter().map(|path| {
-                            curve_tree.select_and_rerandomize_verification_commitments(path.clone())
+                            let mut path = path.clone();
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                            path
                         });
                         let srvs_clone = srvs.clone();
                         {
@@ -261,10 +263,7 @@ fn bench_accumulator_with_parameters<
                                     select(
                                         &mut pallas_verifier,
                                         LinearCombination::from(element),
-                                        leaf_vars
-                                            .iter()
-                                            .map(|var| LinearCombination::from(*var))
-                                            .collect(),
+                                        leaf_vars.iter().map(|var| LinearCombination::from(*var)),
                                     );
                                     let pallas_vt = pallas_verifier
                                         .verification_scalars_and_points(&pallas_proof)
