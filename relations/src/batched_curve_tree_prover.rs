@@ -223,6 +223,7 @@ impl<
         #[cfg(not(feature = "parallel"))]
         prove_even(even_prover);
         let prove_odd = |prover: &mut Prover<Transcript, Affine<P1>>| {
+            return;
             for i in 0..odd_length {
                 let parent_rerandomization = if !self.root_is_even() {
                     if i == 0 {

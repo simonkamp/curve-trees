@@ -72,12 +72,6 @@ pub fn test_curve_tree_with_parameters<
         &sr_params,
         &mut rng,
     );
-    println!(
-        "d {}, e {:?}, o {:?}",
-        depth,
-        path_commitments.even_commitments.len(),
-        path_commitments.odd_commitments.len()
-    );
 
     let pallas_proof = pallas_prover
         .prove(&sr_params.even_parameters.bp_gens)

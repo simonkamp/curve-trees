@@ -4,25 +4,14 @@ extern crate relations;
 use ark_ff::PrimeField;
 use bulletproofs::r1cs::*;
 
-use rand::thread_rng;
 use relations::curve_tree::*;
 
-use ark_ec::{
-    short_weierstrass::{Affine, SWCurveConfig},
-    CurveGroup,
-};
+use ark_ec::short_weierstrass::{Affine, SWCurveConfig};
 use ark_std::UniformRand;
 use merlin::Transcript;
 
-type PallasParameters = ark_pallas::PallasConfig;
-type VestaParameters = ark_vesta::VestaConfig;
-type PallasP = ark_pallas::Projective;
-
 use ark_pallas::{Fq as PallasBase, PallasConfig};
 use ark_vesta::VestaConfig;
-
-use ark_secp256k1::{Config as SecpConfig, Fq as SecpBase};
-use ark_secq256k1::Config as SecqConfig;
 
 #[test]
 pub fn test_batched_curve_tree_even_depth() {
@@ -97,7 +86,7 @@ pub fn test_batched_curve_tree_with_parameters<
         let vesta_transcript = Transcript::new(b"select_and_rerandomize");
         let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-        let _rerandomized_leaf = curve_tree.batched_select_and_rerandomize_verifier_gadget(
+        let _rerandomized_leaves = curve_tree.batched_select_and_rerandomize_verifier_gadget(
             &mut pallas_verifier,
             &mut vesta_verifier,
             path_commitments,
@@ -113,7 +102,8 @@ pub fn test_batched_curve_tree_with_parameters<
             &sr_params.even_parameters.pc_gens,
             &sr_params.even_parameters.bp_gens,
         );
+        println!("\n\nOdd: {:?}, Even: {:?}\n\n",vesta_res, pallas_res);
         assert_eq!(vesta_res, pallas_res);
-        // assert_eq!(vesta_res, Ok(()));
+        assert_eq!(vesta_res, Ok(()));
     }
 }
