@@ -235,7 +235,6 @@ impl<
             if parent_index < self.odd_commitments.len() - 1 {
                 println!("Odd verifier iteration {}", parent_index);
                 single_level_batched_select_and_rerandomize(
-                    // todo batched
                     odd_verifier,
                     &parameters.even_parameters,
                     &self.even_commitments[even_index],
@@ -247,7 +246,6 @@ impl<
                 // Split the variables of the vector commitments into chunks corresponding to the M parents.
                 let chunks = variables.chunks_exact(variables.len() / M);
                 for (i, chunk) in chunks.enumerate() {
-                    // for i in 0..M {
                     single_level_select_and_rerandomize(
                         odd_verifier,
                         &parameters.even_parameters,
@@ -256,7 +254,6 @@ impl<
                         None,
                         None,
                     );
-                    break;
                 }
             };
         }

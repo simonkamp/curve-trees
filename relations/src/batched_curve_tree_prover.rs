@@ -271,7 +271,6 @@ impl<
                             ),
                             Some(rerandomization_scalars_of_selected[inclusion_index]),
                         );
-                        break;
                     }
                 }
             }
