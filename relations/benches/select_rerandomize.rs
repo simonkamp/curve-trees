@@ -116,8 +116,7 @@ fn bench_select_and_rerandomize_with_parameters<
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
-    let sr_params =
-        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<P0, P1>::new(generators_length, generators_length);
 
     let some_point = Affine::<P0>::rand(&mut rng);
     let set = vec![some_point];

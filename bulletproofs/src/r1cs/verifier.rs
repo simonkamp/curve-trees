@@ -659,13 +659,13 @@ impl<T: BorrowMut<Transcript>, C: AffineRepr> Verifier<T, C> {
         // homomorphically evaluate t polynomial at x
         let mut T_points = vec![];
         let mut T_scalars = vec![];
-        for d in 0..t_poly_deg + 1 {
+        for (d, rx) in rxs.iter().enumerate().take(t_poly_deg + 1) {
             if d == op_degree {
                 continue;
             }
             #[cfg(debug_assertions)]
             {
-                println!("T[{}]: {} {}", d, proof.T[d].clone(), rxs[d]);
+                println!("T[{}]: {} {}", d, proof.T[d].clone(), rx);
             }
             T_points.push(proof.T[d]);
             T_scalars.push(rxs[d]);

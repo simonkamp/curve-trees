@@ -799,7 +799,6 @@ mod tests {
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
             generators_length,
-            &mut rng,
         );
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -890,7 +889,6 @@ mod tests {
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
             generators_length,
-            &mut rng,
         );
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");

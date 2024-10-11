@@ -117,8 +117,7 @@ fn bench_pour_with_parameters<
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2; // minimum sufficient power of 2
 
-    let sr_params =
-        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<P0, P1>::new(generators_length, generators_length);
 
     let schnorr_parameters = Schnorr::<Projective<P0>, Blake2s>::setup(&mut rng).unwrap();
     let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();

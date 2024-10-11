@@ -70,7 +70,7 @@ fn bench_accumulator_with_parameters<
     let odd_generators_length = 1 << odd_generators_length_log_2;
 
     let sr_params =
-        SelRerandParameters::<P0, P1>::new(even_generators_length, odd_generators_length, &mut rng);
+        SelRerandParameters::<P0, P1>::new(even_generators_length, odd_generators_length);
 
     let leaf_elements: Vec<_> = (0..leaf_width)
         .map(|_| P0::ScalarField::rand(&mut rng))

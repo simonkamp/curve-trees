@@ -157,8 +157,7 @@ fn bench_naive_batch_select_and_rerandomize_with_parameters<
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
-    let sr_params =
-        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<P0, P1>::new(generators_length, generators_length);
 
     let commitments_to_select: Vec<_> = (0..M).map(|_| Affine::<P0>::rand(&mut rng)).collect();
     let indices: [usize; M] = (0..M).collect::<Vec<usize>>().try_into().unwrap();
@@ -178,7 +177,7 @@ fn bench_naive_batch_select_and_rerandomize_with_parameters<
         let mut paths = Vec::new();
         for i in indices {
             let (path, _) = curve_tree.select_and_rerandomize_prover_gadget(
-                0,
+                indices[i],
                 0,
                 &mut even_prover,
                 &mut odd_prover,
@@ -528,7 +527,7 @@ fn bench_grafted_batch_select_and_rerandomize_with_parameters<
     let odd_generators_length = 1 << odd_generators_length_log_2;
 
     let sr_params =
-        SelRerandParameters::<P0, P1>::new(even_generators_length, odd_generators_length, &mut rng);
+        SelRerandParameters::<P0, P1>::new(even_generators_length, odd_generators_length);
 
     let commitments_to_select: Vec<_> = (0..M).map(|_| Affine::<P0>::rand(&mut rng)).collect();
     let indices: [usize; M] = (0..M).collect::<Vec<usize>>().try_into().unwrap();
@@ -743,7 +742,9 @@ fn bench_grafted_batch_select_and_rerandomize_with_parameters<
     for n in [1, 100] {
         group.bench_with_input(
             BenchmarkId::from_parameter(n),
-            &iter::repeat(multi_path.clone()).take(n).collect::<Vec<_>>(),
+            &iter::repeat(multi_path.clone())
+                .take(n)
+                .collect::<Vec<SelectAndRerandomizeMultiPath<L, M, P0, P1>>>(),
             |b, proofs| {
                 b.iter(|| {
                     #[cfg(feature = "parallel")]

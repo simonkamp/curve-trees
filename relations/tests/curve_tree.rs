@@ -48,8 +48,7 @@ pub fn test_curve_tree_with_parameters<
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
-    let sr_params =
-        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<P0, P1>::new(generators_length, generators_length);
 
     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
     let mut pallas_prover: Prover<_, Affine<P0>> =
@@ -115,7 +114,6 @@ pub fn test_curve_tree_batch_verification() {
     let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
         generators_length,
         generators_length,
-        &mut rng,
     );
 
     let some_point = PallasP::rand(&mut rng).into_affine();

@@ -7,7 +7,6 @@ use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Valid, Write,
 };
 use ark_std::Zero;
-use rand::Rng;
 
 // Parameters for multi level select and rerandomize over a 2-cycle of curves
 pub struct SelRerandParameters<P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> {
@@ -16,14 +15,10 @@ pub struct SelRerandParameters<P0: SWCurveConfig + Copy, P1: SWCurveConfig + Cop
 }
 
 impl<P0: SWCurveConfig + Copy, P1: SWCurveConfig + Copy> SelRerandParameters<P0, P1> {
-    pub fn new<R: Rng>(
-        even_generators_length: usize,
-        odd_generators_length: usize,
-        rng: &mut R,
-    ) -> Self {
+    pub fn new(even_generators_length: usize, odd_generators_length: usize) -> Self {
         SelRerandParameters {
-            even_parameters: SingleLayerParameters::<P0>::new::<_, P1>(even_generators_length, rng),
-            odd_parameters: SingleLayerParameters::<P1>::new::<_, P0>(odd_generators_length, rng),
+            even_parameters: SingleLayerParameters::<P0>::new::<P1>(even_generators_length),
+            odd_parameters: SingleLayerParameters::<P1>::new::<P0>(odd_generators_length),
         }
     }
 }

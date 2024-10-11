@@ -12,7 +12,6 @@ use ark_ec::{
     VariableBaseMSM,
 };
 use ark_ff::{Field, PrimeField};
-use rand::Rng;
 use std::iter;
 use std::marker::PhantomData;
 
@@ -26,7 +25,7 @@ pub struct SingleLayerParameters<P: SWCurveConfig + Copy> {
 }
 
 impl<P: SWCurveConfig + Copy> SingleLayerParameters<P> {
-    pub fn new<R: Rng, P1: SWCurveConfig>(generators_length: usize, rng: &mut R) -> Self {
+    pub fn new<P1: SWCurveConfig>(generators_length: usize) -> Self {
         let pc_gens = PedersenGens::<Affine<P>>::default();
         let tables = build_tables(pc_gens.B_blinding);
 
@@ -219,7 +218,6 @@ mod tests {
             SelRerandParameters::<ark_pallas::PallasConfig, ark_vesta::VestaConfig>::new(
                 generators_length,
                 generators_length,
-                &mut rng,
             );
 
         // Test of selecting and rerandomizing a dummy commitment `child'
@@ -288,7 +286,6 @@ mod tests {
             SelRerandParameters::<ark_pallas::PallasConfig, ark_vesta::VestaConfig>::new(
                 generators_length,
                 generators_length,
-                &mut rng,
             );
 
         const M: usize = 2;
