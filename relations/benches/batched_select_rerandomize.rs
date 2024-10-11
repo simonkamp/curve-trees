@@ -452,32 +452,40 @@ fn bench_naive_batch_select_and_rerandomize_with_parameters<
                             Vec::with_capacity(proofs.len());
                         let mut odd_verification_scalars_and_points =
                             Vec::with_capacity(proofs.len());
-                        for path in proofs {
-                            let mut srv = path.clone();
-                            curve_tree.select_and_rerandomize_verification_commitments(&mut srv);
-                            {
-                                let even_transcript = Transcript::new(b"select_and_rerandomize");
-                                let mut even_verifier = Verifier::new(even_transcript);
-                                srv.even_verifier_gadget(
-                                    &mut even_verifier,
-                                    &sr_params,
-                                    &curve_tree,
-                                );
-                                let even_vt = even_verifier
-                                    .verification_scalars_and_points(&even_proof)
-                                    .unwrap();
-                                even_verification_scalars_and_points.push(even_vt);
-                            }
+                        for paths in proofs {
+                            for path in paths {
+                                let mut srv = path.clone();
+                                curve_tree
+                                    .select_and_rerandomize_verification_commitments(&mut srv);
+                                {
+                                    let even_transcript =
+                                        Transcript::new(b"select_and_rerandomize");
+                                    let mut even_verifier = Verifier::new(even_transcript);
+                                    srv.even_verifier_gadget(
+                                        &mut even_verifier,
+                                        &sr_params,
+                                        &curve_tree,
+                                    );
+                                    let even_vt = even_verifier
+                                        .verification_scalars_and_points(&even_proof)
+                                        .unwrap();
+                                    even_verification_scalars_and_points.push(even_vt);
+                                }
 
-                            {
-                                let odd_transcript = Transcript::new(b"select_and_rerandomize");
-                                let mut odd_verifier = Verifier::new(odd_transcript);
-                                srv.odd_verifier_gadget(&mut odd_verifier, &sr_params, &curve_tree);
+                                {
+                                    let odd_transcript = Transcript::new(b"select_and_rerandomize");
+                                    let mut odd_verifier = Verifier::new(odd_transcript);
+                                    srv.odd_verifier_gadget(
+                                        &mut odd_verifier,
+                                        &sr_params,
+                                        &curve_tree,
+                                    );
 
-                                let odd_vt = odd_verifier
-                                    .verification_scalars_and_points(&odd_proof)
-                                    .unwrap();
-                                odd_verification_scalars_and_points.push(odd_vt);
+                                    let odd_vt = odd_verifier
+                                        .verification_scalars_and_points(&odd_proof)
+                                        .unwrap();
+                                    odd_verification_scalars_and_points.push(odd_vt);
+                                }
                             }
                         }
                         batch_verify(
@@ -811,7 +819,8 @@ fn bench_grafted_batch_select_and_rerandomize_with_parameters<
                             Vec::with_capacity(proofs.len());
                         for path in proofs {
                             let mut srv = path.clone();
-                            curve_tree.select_and_rerandomize_verification_commitments(&mut srv);
+                            curve_tree
+                                .batched_select_and_rerandomize_verification_commitments(&mut srv);
                             {
                                 let even_transcript = Transcript::new(b"select_and_rerandomize");
                                 let mut even_verifier = Verifier::new(even_transcript);
