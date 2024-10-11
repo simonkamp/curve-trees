@@ -244,7 +244,7 @@ impl<
                         odd_verifier,
                         &parameters.even_parameters,
                         &self.selected_commitments[i],
-                        chunk.to_vec(), // todo these are all the variables, should we not split them into chunks?
+                        chunk.to_vec(),
                         None,
                         None,
                     );

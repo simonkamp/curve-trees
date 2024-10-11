@@ -19,7 +19,7 @@ impl<
         P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy + Send,
     > CurveTree<L, M, P0, P1>
 {
-    // Adds the root to a randomized path provided by the prover
+    // Adds the root to a randomized path provided by the prover.
     pub fn select_and_rerandomize_verification_commitments(
         &self,
         randomized_path: &mut SelectAndRerandomizePath<L, P0, P1>,
@@ -30,7 +30,7 @@ impl<
                     randomized_path.even_commitments.len(),
                     randomized_path.odd_commitments.len()
                 );
-                let mut odd_commitments_with_root = vec![ct.commitment(0)]; // todo index or always use tree 0?
+                let mut odd_commitments_with_root = vec![ct.commitment(0)];
                 odd_commitments_with_root.append(&mut randomized_path.odd_commitments);
                 randomized_path.odd_commitments = odd_commitments_with_root;
             }
@@ -39,7 +39,7 @@ impl<
                     randomized_path.even_commitments.len() + 1,
                     randomized_path.odd_commitments.len()
                 );
-                let mut even_commitments_with_root = vec![ct.commitment(0)]; // todo index or always use tree 0?
+                let mut even_commitments_with_root = vec![ct.commitment(0)];
                 even_commitments_with_root.append(&mut randomized_path.even_commitments);
                 randomized_path.even_commitments = even_commitments_with_root;
             }

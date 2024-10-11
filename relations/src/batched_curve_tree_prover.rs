@@ -153,7 +153,7 @@ impl<
         for even_multi_node in &self.even_internal_nodes {
             let mut sum_of_selected = Projective::<P1>::zero();
             for even_node in even_multi_node {
-                sum_of_selected += even_node.child_witness; // todo: delta?
+                sum_of_selected += even_node.child_witness;
             }
 
             let rerandomization = F1::rand(rng);
@@ -173,7 +173,7 @@ impl<
             if index < self.odd_internal_nodes.len() - 1 {
                 let mut sum_of_selected = Projective::<P0>::zero();
                 for odd_node in odd_multi_node {
-                    sum_of_selected += odd_node.child_witness; // todo: I believe delta is accounted for?
+                    sum_of_selected += odd_node.child_witness;
                 }
 
                 let rerandomization: F0 = F0::rand(rng);
@@ -201,7 +201,6 @@ impl<
             }
         }
 
-        // Todo: The leaf level needs separate select and rerandomize relations for soundness. Fix after implementing for the verifier and testing.
         let prove_even = |prover: &mut Prover<Transcript, Affine<P0>>| {
             for i in 0..even_length {
                 let parent_rerandomization = if self.root_is_even() {
@@ -321,7 +320,7 @@ impl<
             let mut sum_of_selected = Projective::<P1>::zero();
             let mut children: [Affine<P1>; M] = [Affine::<P1>::zero(); M];
             for i in 0..M {
-                sum_of_selected += nodes[i].child_witness; // todo: delta?
+                sum_of_selected += nodes[i].child_witness;
                 children[i] = (nodes[i].child_witness + odd_parameters.delta).into_affine();
             }
             (children, sum_of_selected)

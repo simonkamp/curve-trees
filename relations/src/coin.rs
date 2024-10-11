@@ -111,6 +111,7 @@ impl<
         SelectAndRerandomizePath<L, P0, P1>,
         Variable<P0::ScalarField>,
     ) {
+        // TODO: Use batching technique.
         let (path, rerandomization) = curve_tree.select_and_rerandomize_prover_gadget(
             index,
             0,

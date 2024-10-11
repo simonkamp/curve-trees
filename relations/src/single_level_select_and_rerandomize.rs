@@ -1,6 +1,6 @@
 use ark_serialize::CanonicalSerialize;
 use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
+use bulletproofs::{affine_from_bytes_tai, BulletproofGens, PedersenGens};
 
 use crate::curve::{checked_curve_addition_helper, curve_check, PointRepresentation};
 use crate::lookup::*;
@@ -11,7 +11,7 @@ use ark_ec::{
     models::short_weierstrass::SWCurveConfig, short_weierstrass::Affine, AffineRepr, CurveGroup,
     VariableBaseMSM,
 };
-use ark_ff::{Field, PrimeField, UniformRand};
+use ark_ff::{Field, PrimeField};
 use rand::Rng;
 use std::iter;
 use std::marker::PhantomData;
@@ -33,7 +33,7 @@ impl<P: SWCurveConfig + Copy> SingleLayerParameters<P> {
         SingleLayerParameters {
             bp_gens: BulletproofGens::<Affine<P>>::new(generators_length, 1),
             pc_gens,
-            delta: Affine::<P>::rand(rng), // todo choose as a hash to be convincingly independent from all generators in the commitment
+            delta: affine_from_bytes_tai(b"curve_trees_delta"),
             coeff_a: P::COEFF_A,
             coeff_b: P::COEFF_B,
             tables,

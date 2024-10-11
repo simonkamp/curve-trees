@@ -312,6 +312,7 @@ pub fn read32(data: &[u8]) -> [u8; 32] {
     buf32
 }
 
+/// Hash a byte string to a curve point using try and increment
 pub fn affine_from_bytes_tai<C: AffineRepr>(bytes: &[u8]) -> C {
     use sha3::{Digest, Sha3_256};
 

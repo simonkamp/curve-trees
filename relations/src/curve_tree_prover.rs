@@ -80,7 +80,6 @@ impl<
         tree_index: usize,
         params: &SelRerandParameters<P0, P1>,
     ) -> CurveTreeWitnessPath<L, P0, P1> {
-        // todo capacity
         let mut even_internal_nodes: Vec<CurveTreeWitness<L, P0, P1>> = Vec::new();
         let mut odd_internal_nodes: Vec<CurveTreeWitness<L, P1, P0>> = Vec::new();
 
