@@ -24,7 +24,7 @@ use sha3::{Sha3XofReader, Shake256};
 ///
 /// * `B`: the `ristretto255` basepoint;
 /// * `B_blinding`: the result of `ristretto255` SHA3-512 // todo
-/// 
+///
 /// hash-to-group on input `B_bytes`.
 #[derive(Clone)]
 pub struct PedersenGens<C: AffineRepr> {

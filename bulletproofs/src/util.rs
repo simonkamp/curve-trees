@@ -93,7 +93,7 @@ impl<F: Field> VecPoly<F> {
     /// Compute an inner product of `lhs`, `rhs` which have the property that:
     /// - `lhs.0` is zero;
     /// - `rhs.2` is zero;
-    /// 
+    ///
     /// This is the case in the constraint system proof.
     pub fn inner_product(lhs: &Self, rhs: &Self) -> Poly<F> {
         // TODO: make checks that l_poly.0 and r_poly.2 are zero.
@@ -217,7 +217,7 @@ impl<F: Field> VecPoly3<F> {
     /// Compute an inner product of `lhs`, `rhs` which have the property that:
     /// - `lhs.0` is zero;
     /// - `rhs.2` is zero;
-    /// 
+    ///
     /// This is the case in the constraint system proof.
     pub fn special_inner_product(lhs: &Self, rhs: &Self) -> Poly6<F> {
         // TODO: make checks that l_poly.0 and r_poly.2 are zero.
