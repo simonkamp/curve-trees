@@ -48,8 +48,7 @@ pub fn test_curve_tree_with_parameters<
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
-    let sr_params =
-        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<P0, P1>::new(generators_length, generators_length);
 
     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
     let mut pallas_prover: Prover<_, Affine<P0>> =
@@ -61,10 +60,11 @@ pub fn test_curve_tree_with_parameters<
 
     let some_point = Affine::<P0>::rand(&mut rng);
     let set = vec![some_point];
-    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, 1, P0, P1>::from_set(&set, &sr_params, Some(depth));
     assert_eq!(curve_tree.height(), depth);
 
     let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
+        0,
         0,
         &mut pallas_prover,
         &mut vesta_prover,
@@ -114,13 +114,12 @@ pub fn test_curve_tree_batch_verification() {
     let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
         generators_length,
         generators_length,
-        &mut rng,
     );
 
     let some_point = PallasP::rand(&mut rng).into_affine();
     let set = vec![some_point];
     let curve_tree =
-        CurveTree::<32, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
+        CurveTree::<32, 1, PallasParameters, VestaParameters>::from_set(&set, &sr_params, Some(4));
     assert_eq!(curve_tree.height(), 4);
 
     let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -132,6 +131,7 @@ pub fn test_curve_tree_batch_verification() {
         Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
     let (path_commitments, _) = curve_tree.select_and_rerandomize_prover_gadget(
+        0,
         0,
         &mut pallas_prover,
         &mut vesta_prover,

@@ -117,8 +117,7 @@ fn bench_pour_with_parameters<
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2; // minimum sufficient power of 2
 
-    let sr_params =
-        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<P0, P1>::new(generators_length, generators_length);
 
     let schnorr_parameters = Schnorr::<Projective<P0>, Blake2s>::setup(&mut rng).unwrap();
     let (pk, sk) = Schnorr::keygen(&schnorr_parameters, &mut rng).unwrap();
@@ -139,7 +138,7 @@ fn bench_pour_with_parameters<
     );
     // Curve tree with two coins
     let set = vec![coin_0, coin_1];
-    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, 1, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let randomized_pk_0 = Coin::<P0, Projective<P0>>::rerandomized_pk(
         &pk,
@@ -293,13 +292,11 @@ fn bench_pour_with_parameters<
                     #[cfg(feature = "parallel")]
                     {
                         let proofs_and_commitment_paths = proofs.par_iter().map(|proof| {
-                            let cp0 = curve_tree.select_and_rerandomize_verification_commitments(
-                                proof.clone().randomized_path_0.clone(),
-                            );
-                            let cp1 = curve_tree.select_and_rerandomize_verification_commitments(
-                                proof.clone().randomized_path_1.clone(),
-                            );
-                            (proof, cp0, cp1)
+                            let mut path_0 = proof.randomized_path_0.clone();
+                            let mut path_1 = proof.randomized_path_1.clone();
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut path_0);
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut path_1);
+                            (proof, path_0, path_1)
                         });
                         let proofs_and_commitment_paths_clone = proofs_and_commitment_paths.clone();
                         rayon::join(

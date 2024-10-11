@@ -85,7 +85,7 @@ mod veccom_empty {
     /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
     fn gadget<F: Field, CS: ConstraintSystem<F>>(
         cs: &mut CS,
-        c2: LinearCombination<F>,
+        _c2: LinearCombination<F>,
         d1: LinearCombination<F>,
         d2: LinearCombination<F>,
     ) {
@@ -196,11 +196,11 @@ mod veccom_non_empty_do_nothing {
 
     fn gadget<F: Field, CS: ConstraintSystem<F>>(
         cs: &mut CS,
-        a1: LinearCombination<F>,
-        a2: LinearCombination<F>,
-        a3: LinearCombination<F>,
-        a4: LinearCombination<F>,
-        a5: LinearCombination<F>,
+        _a1: LinearCombination<F>,
+        _a2: LinearCombination<F>,
+        _a3: LinearCombination<F>,
+        _a4: LinearCombination<F>,
+        _a5: LinearCombination<F>,
         d1: LinearCombination<F>,
         d2: LinearCombination<F>,
     ) {
@@ -576,10 +576,10 @@ mod veccom_mul_seperate {
 
     /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
     fn gadget<F: Field, CS: ConstraintSystem<F>>(
-        cs: &mut CS,
-        a: LinearCombination<F>,
-        b: LinearCombination<F>,
-        ab: LinearCombination<F>,
+        _cs: &mut CS,
+        _a: LinearCombination<F>,
+        _b: LinearCombination<F>,
+        _ab: LinearCombination<F>,
     ) {
     }
 
@@ -589,7 +589,7 @@ mod veccom_mul_seperate {
         bp_gens: &BulletproofGens<C>,
         a: C::ScalarField,
         b: C::ScalarField,
-        ab: C::ScalarField,
+        _ab: C::ScalarField,
     ) -> Result<(R1CSProof<C>, C), R1CSError> {
         let mut transcript = Transcript::new(b"R1CSExampleGadget");
 
@@ -677,7 +677,7 @@ mod veccom_mul {
         b: LinearCombination<F>,
         ab: LinearCombination<F>,
     ) {
-        let (va, vb, vab) = cs.multiply(a, b);
+        let (_va, _vb, vab) = cs.multiply(a, b);
         cs.constrain(vab - ab)
     }
 

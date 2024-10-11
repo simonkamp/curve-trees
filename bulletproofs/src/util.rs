@@ -20,10 +20,11 @@ pub struct VecPoly1<F: Field>(pub Vec<F>, pub Vec<F>);
 #[derive(ZeroizeOnDrop)]
 pub struct VecPoly3<F: Field>(pub Vec<F>, pub Vec<F>, pub Vec<F>, pub Vec<F>);
 
-pub const T_LABELS: [&[u8]; 25] = [
+pub const T_LABELS: [&[u8]; 41] = [
     b"T_0", b"T_1", b"T_2", b"T_3", b"T_4", b"T_5", b"T_6", b"T_7", b"T_8", b"T_9", b"T_10",
     b"T_11", b"T_12", b"T_13", b"T_14", b"T_15", b"T_16", b"T_17", b"T_18", b"T_19", b"T_20",
-    b"T_21", b"T_22", b"T_23", b"T_24",
+    b"T_21", b"T_22", b"T_23", b"T_24", b"T_25", b"T_26", b"T_27", b"T_28", b"T_29", b"T_30",
+    b"T_31", b"T_32", b"T_33", b"T_34", b"T_35", b"T_36", b"T_37", b"T_38", b"T_39", b"T_40",
 ];
 
 /// The general case for Vector CP.
@@ -92,6 +93,7 @@ impl<F: Field> VecPoly<F> {
     /// Compute an inner product of `lhs`, `rhs` which have the property that:
     /// - `lhs.0` is zero;
     /// - `rhs.2` is zero;
+    ///
     /// This is the case in the constraint system proof.
     pub fn inner_product(lhs: &Self, rhs: &Self) -> Poly<F> {
         // TODO: make checks that l_poly.0 and r_poly.2 are zero.
@@ -149,7 +151,7 @@ impl<F: Field> Iterator for ScalarExp<F> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (usize::max_value(), None)
+        (usize::MAX, None)
     }
 }
 
@@ -215,6 +217,7 @@ impl<F: Field> VecPoly3<F> {
     /// Compute an inner product of `lhs`, `rhs` which have the property that:
     /// - `lhs.0` is zero;
     /// - `rhs.2` is zero;
+    ///
     /// This is the case in the constraint system proof.
     pub fn special_inner_product(lhs: &Self, rhs: &Self) -> Poly6<F> {
         // TODO: make checks that l_poly.0 and r_poly.2 are zero.
@@ -309,18 +312,16 @@ pub fn read32(data: &[u8]) -> [u8; 32] {
     buf32
 }
 
+/// Hash a byte string to a curve point using try and increment
 pub fn affine_from_bytes_tai<C: AffineRepr>(bytes: &[u8]) -> C {
-    extern crate crypto;
-    use crypto::digest::Digest;
-    use crypto::sha3::Sha3;
+    use sha3::{Digest, Sha3_256};
 
-    for i in 0..=u8::max_value() {
-        let mut sha = Sha3::sha3_256();
-        sha.input(bytes);
-        sha.input(&[i]);
-        let mut buf = [0u8; 32];
-        sha.result(&mut buf);
-        let res = C::from_random_bytes(&buf);
+    for i in 0..=u8::MAX {
+        let mut sha = Sha3_256::new();
+        sha.update(bytes);
+        sha.update([i]);
+        let result = sha.finalize();
+        let res = C::from_random_bytes(result.as_slice());
         if let Some(point) = res {
             return point;
         }

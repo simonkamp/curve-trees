@@ -74,6 +74,7 @@ fn single_membership<F: Field, Cs: ConstraintSystem<F>>(
     left - right
 }
 
+#[cfg(test)]
 impl<const N: usize, F: Field> Lookup3Bit<N, F> {
     fn lookup(&self, index: usize) -> [F; N] {
         assert!(index < WINDOW_ELEMS);

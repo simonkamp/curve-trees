@@ -116,12 +116,11 @@ fn bench_select_and_rerandomize_with_parameters<
     let mut rng = rand::thread_rng();
     let generators_length = 1 << generators_length_log_2;
 
-    let sr_params =
-        SelRerandParameters::<P0, P1>::new(generators_length, generators_length, &mut rng);
+    let sr_params = SelRerandParameters::<P0, P1>::new(generators_length, generators_length);
 
     let some_point = Affine::<P0>::rand(&mut rng);
     let set = vec![some_point];
-    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, 1, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let prove = |print| {
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -133,6 +132,7 @@ fn bench_select_and_rerandomize_with_parameters<
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let (path, _) = curve_tree.select_and_rerandomize_prover_gadget(
+            0,
             0,
             &mut pallas_prover,
             &mut vesta_prover,
@@ -338,7 +338,9 @@ fn bench_select_and_rerandomize_with_parameters<
                     #[cfg(feature = "parallel")]
                     {
                         let srvs = proofs.par_iter().map(|path| {
-                            curve_tree.select_and_rerandomize_verification_commitments(path.clone())
+                            let mut path = path.clone();
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                            path
                         });
                         let srvs_clone = srvs.clone();
                         rayon::join(
@@ -400,8 +402,8 @@ fn bench_select_and_rerandomize_with_parameters<
                         let mut vesta_verification_scalars_and_points =
                             Vec::with_capacity(proofs.len());
                         for path in proofs {
-                            let srv = curve_tree
-                                .select_and_rerandomize_verification_commitments(path.clone());
+                            let mut srv = path.clone();
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut srv);
                             {
                                 let pallas_transcript = Transcript::new(b"select_and_rerandomize");
                                 let mut pallas_verifier = Verifier::new(pallas_transcript);

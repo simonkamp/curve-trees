@@ -95,21 +95,19 @@ impl TranscriptProtocol for Transcript {
     }
 
     fn challenge_scalar<C: AffineRepr>(&mut self, label: &'static [u8]) -> C::ScalarField {
-        extern crate crypto;
-        use crypto::digest::Digest;
-        use crypto::sha3::Sha3;
+        use sha3::{Digest, Sha3_256};
 
         let mut bytes = [0u8; 64];
         self.challenge_bytes(label, &mut bytes);
 
-        for i in 0..=u8::max_value() {
-            let mut sha = Sha3::sha3_256();
-            sha.input(&bytes);
-            sha.input(&[i]);
-            let mut buf = [0u8; 32];
+        for i in 0..=u8::MAX {
+            let mut sha = Sha3_256::new();
+            sha.update(bytes);
+            sha.update([i]);
+            // let mut buf = [0u8; 32];
 
-            sha.result(&mut buf);
-            let res = <C::ScalarField as Field>::from_random_bytes(&buf);
+            let result = sha.finalize();
+            let res = <C::ScalarField as Field>::from_random_bytes(result.as_slice());
 
             if let Some(scalar) = res {
                 return scalar;

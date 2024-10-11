@@ -1,5 +1,4 @@
 #![allow(non_snake_case)]
-#![cfg_attr(feature = "docs", doc(include = "../docs/inner-product-protocol.md"))]
 
 extern crate alloc;
 

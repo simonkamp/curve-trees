@@ -24,6 +24,7 @@ use sha3::{Sha3XofReader, Shake256};
 ///
 /// * `B`: the `ristretto255` basepoint;
 /// * `B_blinding`: the result of `ristretto255` SHA3-512 // todo
+///
 /// hash-to-group on input `B_bytes`.
 #[derive(Clone)]
 pub struct PedersenGens<C: AffineRepr> {
@@ -101,7 +102,7 @@ impl<C: AffineRepr> Iterator for GeneratorsChain<C> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (usize::max_value(), None)
+        (usize::MAX, None)
     }
 }
 

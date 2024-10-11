@@ -106,28 +106,28 @@ impl<
         even_prover: &mut Prover<Transcript, Affine<P0>>,
         odd_prover: &mut Prover<Transcript, Affine<P1>>,
         parameters: &SelRerandParameters<P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
     ) -> (
         SelectAndRerandomizePath<L, P0, P1>,
         Variable<P0::ScalarField>,
     ) {
+        // TODO: Use batching technique.
         let (path, rerandomization) = curve_tree.select_and_rerandomize_prover_gadget(
             index,
+            0,
             even_prover,
             odd_prover,
             parameters,
             &mut rand::thread_rng(),
         );
 
+        // Todo: Avoid using vector commitment for efficiency. Can just subtract tag*G_tag from the coin outside the circuit. But we will need to change the generator of the value as well. To do that we need to prove knowledge of opening when minting using e.g. sigma protocols.
         let (rerandomized_point, variables) = even_prover.commit_vec(
             &[P0::ScalarField::from(self.value), self.tag],
             self.blinding + rerandomization,
             &parameters.even_parameters.bp_gens,
         );
-        assert_eq!(
-            path.even_commitments[path.even_commitments.len() - 1],
-            rerandomized_point
-        );
+        assert_eq!(path.selected_commitment, rerandomized_point);
 
         even_prover.constrain(variables[1] - self.tag);
 
@@ -145,16 +145,13 @@ pub fn verify_mint<P: SWCurveConfig>(
 }
 
 pub fn element_from_bytes_stat<F: PrimeField>(bytes: &[u8]) -> F {
-    // for the purpose of hashing to a 256 bit prime field, provides statistical security of ... todo
-    extern crate crypto;
-    use crypto::digest::Digest;
-    use crypto::sha3::Sha3;
+    // for the purpose of hashing to a 256 bit prime field F_p, reducing 512 bits mod p is statistically close to uniform.
+    use sha3::{Digest, Sha3_512};
 
-    let mut sha = Sha3::sha3_512();
-    sha.input(bytes);
-    let mut buf = [0u8; 32];
-    sha.result(&mut buf);
-    F::from_le_bytes_mod_order(&buf)
+    let mut sha = Sha3_512::new();
+    sha.update(bytes);
+    let result = sha.finalize();
+    F::from_le_bytes_mod_order(result.as_slice())
 }
 
 pub struct SpendingInfo<P: SWCurveConfig + Clone, C: CurveGroup> {
@@ -176,7 +173,7 @@ pub fn prove_pour<
     mut even_prover: Prover<Transcript, Affine<P0>>,
     mut odd_prover: Prover<Transcript, Affine<P1>>,
     sr_parameters: &SelRerandParameters<P0, P1>,
-    curve_tree: &CurveTree<L, P0, P1>,
+    curve_tree: &CurveTree<L, 1, P0, P1>,
     input_0: &SpendingInfo<P0, C>,
     input_1: &SpendingInfo<P0, C>,
     receiver_value_0: u64,
@@ -415,8 +412,8 @@ impl<
         const L: usize,
         F0: PrimeField,
         F1: PrimeField,
-        P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
         P1: SWCurveConfig<BaseField = F0, ScalarField = F1> + Copy,
+        P0: SWCurveConfig<BaseField = F1, ScalarField = F0> + Copy,
         C: CurveGroup,
     > Pour<L, P0, P1, C>
 {
@@ -427,7 +424,7 @@ impl<
         sr_parameters: &SelRerandParameters<P0, P1>,
         spend_commitments_0: &SelectAndRerandomizePath<L, P0, P1>,
         spend_commitments_1: &SelectAndRerandomizePath<L, P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
     ) -> VerificationTuple<Affine<P0>> {
         let mut even_verifier = Verifier::new(Transcript::new(ro_domain));
         // mint
@@ -467,7 +464,7 @@ impl<
         sr_parameters: &SelRerandParameters<P0, P1>,
         spend_commitments_0: &SelectAndRerandomizePath<L, P0, P1>,
         spend_commitments_1: &SelectAndRerandomizePath<L, P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
     ) -> VerificationTuple<Affine<P1>> {
         let mut odd_verifier = Verifier::new(Transcript::new(ro_domain));
         // spend
@@ -494,33 +491,37 @@ impl<
         self,
         ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
     ) -> (VerificationTuple<Affine<P0>>, VerificationTuple<Affine<P1>>) {
         #[cfg(feature = "parallel")]
         let (spend_commitments_0, spend_commitments_1) = {
             // todo this might not be worth the overhead
             rayon::join(
                 || {
-                    curve_tree.select_and_rerandomize_verification_commitments(
-                        self.randomized_path_0.clone(),
-                    )
+                    let mut path = self.randomized_path_0.clone();
+                    curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                    path
                 },
                 || {
-                    curve_tree.select_and_rerandomize_verification_commitments(
-                        self.randomized_path_1.clone(),
-                    )
+                    let mut path = self.randomized_path_1.clone();
+                    curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                    path
                 },
             )
         };
         #[cfg(not(feature = "parallel"))]
         let (spend_commitments_0, spend_commitments_1) = {
             (
-                curve_tree.select_and_rerandomize_verification_commitments(
-                    self.randomized_path_0.clone(),
-                ),
-                curve_tree.select_and_rerandomize_verification_commitments(
-                    self.randomized_path_1.clone(),
-                ),
+                {
+                    let mut path = self.randomized_path_0.clone();
+                    curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                    path
+                },
+                {
+                    let mut path = self.randomized_path_1.clone();
+                    curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                    path
+                },
             )
         };
 
@@ -585,7 +586,7 @@ fn verify_spend_even<
     commitments: &SelectAndRerandomizePath<L, P0, P1>,
     sr_parameters: &SelRerandParameters<P0, P1>,
     pk: &PublicKey<C>,
-    curve_tree: &CurveTree<L, P0, P1>,
+    curve_tree: &CurveTree<L, 1, P0, P1>,
 ) -> Variable<P0::ScalarField> {
     commitments.even_verifier_gadget(even_verifier, sr_parameters, curve_tree);
     let vars = even_verifier.commit_vec(L, commitments.get_rerandomized_leaf());
@@ -606,7 +607,7 @@ fn verify_spend_odd<
     odd_verifier: &mut Verifier<Transcript, Affine<P1>>,
     commitments: &SelectAndRerandomizePath<L, P0, P1>,
     sr_parameters: &SelRerandParameters<P0, P1>,
-    curve_tree: &CurveTree<L, P0, P1>,
+    curve_tree: &CurveTree<L, 1, P0, P1>,
 ) {
     commitments.odd_verifier_gadget(odd_verifier, sr_parameters, curve_tree);
 }
@@ -637,7 +638,7 @@ impl<
         self,
         ro_domain: &'static [u8],
         sr_parameters: &SelRerandParameters<P0, P1>,
-        curve_tree: &CurveTree<L, P0, P1>,
+        curve_tree: &CurveTree<L, 1, P0, P1>,
         sig_parameters: &Parameters<C, Blake2s>,
     ) -> (VerificationTuple<Affine<P0>>, VerificationTuple<Affine<P1>>) {
         let pour =
@@ -770,6 +771,7 @@ impl<
 mod tests {
     use super::*;
     use merlin::Transcript;
+
     type PallasParameters = ark_pallas::PallasConfig;
     type VestaParameters = ark_vesta::VestaConfig;
     type PallasP = ark_pallas::Projective;
@@ -797,7 +799,6 @@ mod tests {
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
             generators_length,
-            &mut rng,
         );
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -825,13 +826,13 @@ mod tests {
         );
         // Curve tree with two coins
         let set = vec![coin];
-        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+        let curve_tree = CurveTree::<256, 1, PallasParameters, VestaParameters>::from_set(
             &set,
             &sr_params,
             Some(4),
         );
 
-        let (path, _) = coin_aux.prove_spend(
+        let (mut path, _) = coin_aux.prove_spend(
             0,
             &mut pallas_prover,
             &mut vesta_prover,
@@ -852,7 +853,8 @@ mod tests {
             let vesta_transcript = Transcript::new(b"select_and_rerandomize");
             let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-            let commitments = curve_tree.select_and_rerandomize_verification_commitments(path);
+            curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+            let commitments = path;
             verify_spend_odd(&mut vesta_verifier, &commitments, &sr_params, &curve_tree);
             verify_spend_even::<256, _, _, _, _, PallasP>(
                 &mut pallas_verifier,
@@ -887,7 +889,6 @@ mod tests {
         let sr_params = SelRerandParameters::<PallasParameters, VestaParameters>::new(
             generators_length,
             generators_length,
-            &mut rng,
         );
 
         let pallas_transcript = Transcript::new(b"select_and_rerandomize");
@@ -917,7 +918,7 @@ mod tests {
         );
         // Curve tree with two coins
         let set = vec![coin_0, coin_1];
-        let curve_tree = CurveTree::<256, PallasParameters, VestaParameters>::from_set(
+        let curve_tree = CurveTree::<256, 1, PallasParameters, VestaParameters>::from_set(
             &set,
             &sr_params,
             Some(4),

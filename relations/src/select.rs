@@ -6,13 +6,13 @@ use ark_ff::Field;
 pub fn select<F: Field, Cs: ConstraintSystem<F>>(
     cs: &mut Cs,
     x: LinearCombination<F>,
-    xs: Vec<LinearCombination<F>>,
+    mut xs: impl Iterator<Item = LinearCombination<F>>,
 ) {
-    assert!(!xs.is_empty());
-
     // (x_1 - x) * (x_2 - x) * ... * (x_n - x) = 0
-    let mut product: LinearCombination<F> = xs[0].clone();
-    for xi in xs.iter() {
+    let first_factor: LinearCombination<F> =
+        xs.next().expect("Cannot select from empty list.") - x.clone(); // todo check if it adds an extra constraint to start from constant 1 and then use iterator
+    let mut product: LinearCombination<F> = first_factor;
+    for xi in xs {
         let (_, _, next_product) = cs.multiply(product, xi.clone() - x.clone());
         product = next_product.into();
     }
@@ -57,7 +57,7 @@ mod tests {
             select(
                 &mut prover,
                 x_var.into(),
-                xs_vars.into_iter().map(|v| v.into()).collect(),
+                xs_vars.into_iter().map(|v| v.into()),
             );
 
             let proof = prover.prove(&bpg).unwrap();
@@ -73,7 +73,7 @@ mod tests {
         select(
             &mut verifier,
             x_var.into(),
-            xs_vars.into_iter().map(|v| v.into()).collect(),
+            xs_vars.into_iter().map(|v| v.into()),
         );
 
         let res = verifier.verify(&proof, &pg, &bpg);

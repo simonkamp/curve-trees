@@ -70,7 +70,7 @@ fn bench_accumulator_with_parameters<
     let odd_generators_length = 1 << odd_generators_length_log_2;
 
     let sr_params =
-        SelRerandParameters::<P0, P1>::new(even_generators_length, odd_generators_length, &mut rng);
+        SelRerandParameters::<P0, P1>::new(even_generators_length, odd_generators_length);
 
     let leaf_elements: Vec<_> = (0..leaf_width)
         .map(|_| P0::ScalarField::rand(&mut rng))
@@ -84,7 +84,7 @@ fn bench_accumulator_with_parameters<
             .commit(&leaf_elements, P0::ScalarField::zero(), 0);
 
     let set = vec![leaf_commitment];
-    let curve_tree = CurveTree::<L, P0, P1>::from_set(&set, &sr_params, Some(depth));
+    let curve_tree = CurveTree::<L, 1, P0, P1>::from_set(&set, &sr_params, Some(depth));
 
     let prove = |print| {
         let pallas_transcript = Transcript::new(b"acc");
@@ -96,6 +96,7 @@ fn bench_accumulator_with_parameters<
             Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
         let (path, rerandomization) = curve_tree.select_and_rerandomize_prover_gadget(
+            0,
             0,
             &mut pallas_prover,
             &mut vesta_prover,
@@ -113,10 +114,7 @@ fn bench_accumulator_with_parameters<
         select(
             &mut pallas_prover,
             LinearCombination::from(element),
-            leaf_vars
-                .iter()
-                .map(|var| LinearCombination::from(*var))
-                .collect(),
+            leaf_vars.iter().map(|var| LinearCombination::from(*var)),
         );
 
         if print {
@@ -178,7 +176,9 @@ fn bench_accumulator_with_parameters<
                     #[cfg(feature = "parallel")]
                     {
                         let srvs = proofs.par_iter().map(|path| {
-                            curve_tree.select_and_rerandomize_verification_commitments(path.clone())
+                            let mut path = path.clone();
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                            path
                         });
                         let srvs_clone = srvs.clone();
                         rayon::join(
@@ -199,8 +199,7 @@ fn bench_accumulator_with_parameters<
                                             LinearCombination::from(element),
                                             leaf_vars
                                                 .iter()
-                                                .map(|var| LinearCombination::from(*var))
-                                                .collect(),
+                                                .map(|var| LinearCombination::from(*var)),
                                         );
                                         let pallas_vt = pallas_verifier
                                             .verification_scalars_and_points(&pallas_proof)
@@ -244,7 +243,9 @@ fn bench_accumulator_with_parameters<
                     #[cfg(not(feature = "parallel"))]
                     {
                         let srvs = proofs.iter().map(|path| {
-                            curve_tree.select_and_rerandomize_verification_commitments(path.clone())
+                            let mut path = path.clone();
+                            curve_tree.select_and_rerandomize_verification_commitments(&mut path);
+                            path
                         });
                         let srvs_clone = srvs.clone();
                         {
@@ -262,10 +263,7 @@ fn bench_accumulator_with_parameters<
                                     select(
                                         &mut pallas_verifier,
                                         LinearCombination::from(element),
-                                        leaf_vars
-                                            .iter()
-                                            .map(|var| LinearCombination::from(*var))
-                                            .collect(),
+                                        leaf_vars.iter().map(|var| LinearCombination::from(*var)),
                                     );
                                     let pallas_vt = pallas_verifier
                                         .verification_scalars_and_points(&pallas_proof)

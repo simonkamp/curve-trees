@@ -4,7 +4,6 @@ use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::Field;
 use ark_std::{One, UniformRand, Zero};
 use core::borrow::BorrowMut;
-use core::mem;
 use merlin::Transcript;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
@@ -472,7 +471,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
             // Note: the wrapper could've used &mut instead of ownership,
             // but specifying lifetimes for boxed closures is not going to be nice,
             // so we move the self into wrapper and then move it back out afterwards.
-            let mut callbacks = mem::replace(&mut self.deferred_constraints, Vec::new());
+            let mut callbacks = std::mem::take(&mut self.deferred_constraints);
             let mut wrapped_self = RandomizingProver { prover: self };
             for callback in callbacks.drain(..) {
                 callback(&mut wrapped_self)?;
@@ -1019,11 +1018,11 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
 
         // commit to T
         let transcript = self.transcript.borrow_mut();
-        for d in 0..t_poly.deg() + 1 {
+        for (d, td) in T.iter().enumerate() {
             if d == op_degree {
                 continue;
             }
-            transcript.append_point(util::T_LABELS[d], &T[d]);
+            transcript.append_point(util::T_LABELS[d], td);
         }
 
         let u = transcript.challenge_scalar::<C>(b"u");
