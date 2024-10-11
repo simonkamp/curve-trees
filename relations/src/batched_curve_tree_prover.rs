@@ -57,9 +57,12 @@ impl<
         params: &SelRerandParameters<P0, P1>,
     ) -> CurveTreeWitnessMultiPath<L, M, P0, P1> {
         let mut single_witnesses: Vec<CurveTreeWitnessPath<L, P0, P1>> = Vec::with_capacity(M);
-        for i in 0..M {
-            single_witnesses
-                .push(self.select_and_rerandomize_prover_witness(indices[i], i, params));
+        for (tree_index, leaf_index) in indices.iter().enumerate() {
+            single_witnesses.push(self.select_and_rerandomize_prover_witness(
+                *leaf_index,
+                tree_index,
+                params,
+            ));
         }
         let mut even_internal_nodes: Vec<[CurveTreeWitness<L, P0, P1>; M]> = Vec::new();
         for i in 0..single_witnesses[0].even_internal_nodes.len() {
@@ -147,10 +150,10 @@ impl<
         let mut even_rerandomization_scalars: Vec<P0::ScalarField> = Vec::with_capacity(odd_length);
         let mut even_rerandomized_commitments: Vec<Affine<P0>> = Vec::with_capacity(odd_length);
 
-        for even in &self.even_internal_nodes {
+        for even_multi_node in &self.even_internal_nodes {
             let mut sum_of_selected = Projective::<P1>::zero();
-            for i in 0..M {
-                sum_of_selected = sum_of_selected + even[i].child_witness; // todo: delta?
+            for even_node in even_multi_node {
+                sum_of_selected += even_node.child_witness; // todo: delta?
             }
 
             let rerandomization = F1::rand(rng);
@@ -166,11 +169,11 @@ impl<
 
         let mut rerandomization_scalars_of_selected = [F0::ZERO; M];
         let mut rerandomizations_of_selected = [Affine::<P0>::default(); M];
-        for (index, odd) in self.odd_internal_nodes.iter().enumerate() {
+        for (index, odd_multi_node) in self.odd_internal_nodes.iter().enumerate() {
             if index < self.odd_internal_nodes.len() - 1 {
                 let mut sum_of_selected = Projective::<P0>::zero();
-                for i in 0..M {
-                    sum_of_selected = sum_of_selected + odd[i].child_witness; // todo: I believe delta is accounted for?
+                for odd_node in odd_multi_node {
+                    sum_of_selected += odd_node.child_witness; // todo: I believe delta is accounted for?
                 }
 
                 let rerandomization: F0 = F0::rand(rng);
@@ -192,7 +195,8 @@ impl<
                         .B_blinding
                         .mul(rerandomization)
                         .into_affine();
-                    rerandomizations_of_selected[i] = (odd[i].child_witness + blinding).into();
+                    rerandomizations_of_selected[i] =
+                        (odd_multi_node[i].child_witness + blinding).into();
                 }
             }
         }
@@ -201,7 +205,6 @@ impl<
         let prove_even = |prover: &mut Prover<Transcript, Affine<P0>>| {
             for i in 0..even_length {
                 let parent_rerandomization = if self.root_is_even() {
-                    println!("Prover root is even");
                     if i == 0 {
                         // the parent is the the root and thus not rerandomized
                         F0::zero()
@@ -209,7 +212,6 @@ impl<
                         even_rerandomization_scalars[i - 1]
                     }
                 } else {
-                    println!("Prover root is odd");
                     even_rerandomization_scalars[i]
                 };
                 CurveTreeWitness::single_level_batched_select_and_rerandomize_prover_gadget(
@@ -237,7 +239,6 @@ impl<
                     odd_rerandomization_scalars[i]
                 };
                 if i < odd_length - 1 {
-                    println!("Odd prover iteration {}", i);
                     CurveTreeWitness::single_level_batched_select_and_rerandomize_prover_gadget(
                         &self.odd_internal_nodes[i],
                         prover,
@@ -320,7 +321,7 @@ impl<
             let mut sum_of_selected = Projective::<P1>::zero();
             let mut children: [Affine<P1>; M] = [Affine::<P1>::zero(); M];
             for i in 0..M {
-                sum_of_selected = sum_of_selected + nodes[i].child_witness; // todo: delta?
+                sum_of_selected += nodes[i].child_witness; // todo: delta?
                 children[i] = (nodes[i].child_witness + odd_parameters.delta).into_affine();
             }
             (children, sum_of_selected)
@@ -347,14 +348,14 @@ impl<
     ) -> Vec<LinearCombination<<P0>::ScalarField>> {
         let children_vars = if parent_rerandomization_scalar.is_zero() {
             let mut children_vars: Vec<LinearCombination<P0::ScalarField>> = Vec::new();
-            for i in 0..M {
-                children_vars.append(&mut nodes[i].siblings.map(constant).to_vec());
+            for node in nodes {
+                children_vars.append(&mut node.siblings.map(constant).to_vec());
             }
             children_vars
         } else {
             let mut children: Vec<P0::ScalarField> = Vec::new();
-            for i in 0..M {
-                children.append(&mut nodes[i].siblings.to_vec());
+            for node in nodes {
+                children.append(&mut node.siblings.to_vec());
             }
             let (_, children_vars) = prover.commit_vec(
                 &children,

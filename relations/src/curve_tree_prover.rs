@@ -177,7 +177,7 @@ impl<
         if !even {
             assert!(self.even_internal_nodes.len() + 1 == self.odd_internal_nodes.len())
         };
-        return even;
+        even
     }
 
     /// Commits to the root and rerandomizations of the path to the leaf specified by `index`

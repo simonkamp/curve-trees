@@ -153,6 +153,29 @@ impl<
     }
 }
 
+impl<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> CanonicalSerialize
+    for SelectAndRerandomizeMultiPath<L, M, P0, P1>
+{
+    fn serialize_with_mode<W: Write>(
+        &self,
+        mut writer: W,
+        compress: ark_serialize::Compress,
+    ) -> Result<(), SerializationError> {
+        self.selected_commitments
+            .serialize_with_mode(&mut writer, compress)?;
+        self.odd_commitments
+            .serialize_with_mode(&mut writer, compress)?;
+        self.even_commitments
+            .serialize_with_mode(&mut writer, compress)?;
+        Ok(())
+    }
+
+    fn serialized_size(&self, compress: ark_serialize::Compress) -> usize {
+        self.even_commitments.serialized_size(compress)
+            + self.odd_commitments.serialized_size(compress)
+            + self.selected_commitments.serialized_size(compress)
+    }
+}
 impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig> CanonicalSerialize
     for SelectAndRerandomizePath<L, P0, P1>
 {

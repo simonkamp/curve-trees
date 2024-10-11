@@ -34,7 +34,7 @@ impl<
                 );
                 let mut sum_of_roots = Projective::<P1>::zero();
                 for i in 0..M {
-                    sum_of_roots = sum_of_roots + ct.commitment(i)
+                    sum_of_roots += ct.commitment(i)
                 }
                 let mut odd_commitments_with_root = vec![sum_of_roots.into_affine()];
                 odd_commitments_with_root.append(&mut randomized_path.odd_commitments);
@@ -47,7 +47,7 @@ impl<
                 );
                 let mut sum_of_roots = Projective::<P0>::zero();
                 for i in 0..M {
-                    sum_of_roots = sum_of_roots + ct.commitment(i)
+                    sum_of_roots += ct.commitment(i)
                 }
                 let mut even_commitments_with_root = vec![sum_of_roots.into_affine()];
                 even_commitments_with_root.append(&mut randomized_path.even_commitments);
@@ -141,7 +141,6 @@ impl<
                                         .to_vec(),
                                     )
                                 }
-                                println!("verifier used even root without committing");
                                 children_xs
                             } else {
                                 panic!()
@@ -151,7 +150,6 @@ impl<
                     };
                     children.into_iter().map(constant).collect()
                 } else {
-                    println!("commit verifier even");
                     let variables =
                         even_verifier.commit_vec(L * M, self.even_commitments[parent_index]);
                     variables
@@ -219,11 +217,8 @@ impl<
                     }
                     _ => panic!(),
                 };
-                // children.map(|c| constant(c)).to_vec()
-                println!("verifier used odd root without committing");
                 children.into_iter().map(constant).collect()
             } else {
-                println!("commit verifier odd");
                 let variables = odd_verifier.commit_vec(L * M, self.odd_commitments[parent_index]);
                 variables
                     .iter()
@@ -233,7 +228,6 @@ impl<
             assert_eq!(variables.len(), M * L);
 
             if parent_index < self.odd_commitments.len() - 1 {
-                println!("Odd verifier iteration {}", parent_index);
                 single_level_batched_select_and_rerandomize(
                     odd_verifier,
                     &parameters.even_parameters,

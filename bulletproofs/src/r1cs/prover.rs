@@ -1019,6 +1019,7 @@ impl<'g, T: BorrowMut<Transcript>, C: AffineRepr> Prover<'g, T, C> {
 
         // commit to T
         let transcript = self.transcript.borrow_mut();
+        // println!("polydeg {}", t_poly.deg());
         for d in 0..t_poly.deg() + 1 {
             if d == op_degree {
                 continue;

@@ -97,7 +97,7 @@ pub fn single_level_select_and_rerandomize<
 
     // Show that the parent is committed to the witnessed child's x-coordinate
     let x_var = cs.allocate(child_plus_delta.map(|xy| xy.x)).unwrap();
-    select(cs, x_var.into(), children.to_owned().into_iter());
+    select(cs, x_var.into(), children.iter().cloned());
 
     // Proof that the opened x coordinate with the witnessed y is a point on the curve
     // Note that empty branches are encoded as 0 which works because x=0 does not satisfy the curve equation for any of the curves used.
@@ -160,7 +160,7 @@ pub fn single_level_batched_select_and_rerandomize<
             witness: ith_selected_witness,
         };
         // Show that the parent is committed to the ith child's x-coordinate
-        select(cs, x_var.into(), chunk.to_owned().into_iter());
+        select(cs, x_var.into(), chunk.iter().cloned());
 
         // Proof that the opened x coordinate with the witnessed y is a point on the curve
         // Note that empty branches are encoded as 0 which works because x=0 does not satisfy the curve equation for any of the curves used.
