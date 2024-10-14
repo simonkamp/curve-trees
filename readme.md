@@ -7,6 +7,7 @@ This repository contains:
 which is adapted to support any curve implemented using the [arkworks algebra library](https://github.com/arkworks-rs/algebra)
 in addition to batch verification and vector commitments (see [Generalized Bulletproofs](./bulletproofs/generalized-bulletproofs.md)).
 - Bulletproof constraints to show that a commitment is a rerandomization of a member of the set represented by a curve tree. I.e. the select and rerandomize relation.
+- Extensions for proving that batches of elements are in the set ([Curve Forests](https://eprint.iacr.org/2024/1647))
 - Benchmarks of the VCash anonymous payment system.
 - Benchmarks of an accumulator based on opening a commitment extracted using the select and rerandomize relation.
 
