@@ -218,11 +218,13 @@ fn test_same_point<C: DivisorCurve>() {
     let mut rng = StdRng::seed_from_u64(0);
     let p = Projective::<C>::rand(&mut rng);
     let mut points = vec![p, p];
-    let sum = points
-        .iter()
-        .copied()
-        .reduce(|a, b| a + b)
-        .unwrap_or_else(|| C::GENERATOR.into());
+    let sum = p + p;
+    points.push(-sum);
+    check_divisor(&mut rng, points);
+
+    let p = C::GENERATOR.into_group();
+    let mut points = vec![p, p];
+    let sum = p + p;
     points.push(-sum);
     check_divisor(&mut rng, points);
 }
@@ -231,7 +233,6 @@ fn test_subset_sum_to_infinity<C: DivisorCurve>() {
     let mut rng = StdRng::seed_from_u64(0);
     let mut check_divisor_times = Vec::new();
 
-    // Internally, a binary tree algorithm is used
     // This executes the first pass to end up with [0, 0] for further reductions
     {
         let p = Projective::<C>::rand(&mut rng);
@@ -266,6 +267,19 @@ fn test_subset_sum_to_infinity<C: DivisorCurve>() {
         let start = Instant::now();
         check_divisor(&mut rng, points);
         check_divisor_times.push(start.elapsed());
+    }
+
+    // Five points summing to infinity
+    {
+        let mut points = vec![
+            Projective::<C>::rand(&mut rng),
+            Projective::<C>::rand(&mut rng),
+            Projective::<C>::rand(&mut rng),
+            Projective::<C>::rand(&mut rng),
+        ];
+        let sum = points.iter().copied().reduce(|a, b| a + b).unwrap();
+        points.push(-sum);
+        check_divisor(&mut rng, points);
     }
 
     // Calculate median
@@ -433,37 +447,35 @@ fn test_divisor_ed25519() {
     test_divisor::<EdwardsProjective>();
 }*/
 
-macro_rules! divisor_tests {
-    ($config:ty) => {
-        test_same_point::<$config>();
-        test_subset_sum_to_infinity::<$config>();
-        test_divisor::<$config>();
-        decomposition_correctness::<$config>();
-        scalar_mul_divisor_correctness::<$config>();
-    };
+fn run_divisor_tests<C: DivisorCurve>() {
+    test_same_point::<C>();
+    test_subset_sum_to_infinity::<C>();
+    test_divisor::<C>();
+    decomposition_correctness::<C>();
+    scalar_mul_divisor_correctness::<C>();
 }
 
 #[test]
 fn test_divisor_pallas() {
-    divisor_tests!(ark_pallas::PallasConfig);
+    run_divisor_tests::<ark_pallas::PallasConfig>();
 }
 
 #[test]
 fn test_divisor_vesta() {
-    divisor_tests!(ark_vesta::VestaConfig);
+    run_divisor_tests::<ark_vesta::VestaConfig>();
 }
 
 #[test]
 fn test_divisor_helios() {
-    divisor_tests!(ark_helios::HeliosConfig);
+    run_divisor_tests::<ark_helios::HeliosConfig>();
 }
 
 #[test]
 fn test_divisor_selene() {
-    divisor_tests!(ark_selene::SeleneConfig);
+    run_divisor_tests::<ark_selene::SeleneConfig>();
 }
 
 #[test]
 fn test_divisor_wei25519() {
-    divisor_tests!(ark_wei25519::Wei25519Config);
+    run_divisor_tests::<ark_wei25519::Wei25519Config>();
 }

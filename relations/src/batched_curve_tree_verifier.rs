@@ -179,10 +179,10 @@ impl<
         }
         let mut root_children_selected_coord_vars = match root {
             Root::Even(node) => {
-                RootChildrenCoordsVars::Even(Self::process_root_nodes_for_given_multi_paths_with_common_root(node, max_num_indices, selected_children_count_grp_by_root_index, paths.len(), even_verifier))
+                RootChildrenCoordsVars::Even(Self::process_root_nodes_for_given_multi_paths_with_common_root(node, max_num_indices, selected_children_count_grp_by_root_index, paths.len(), even_verifier)?)
             }
             Root::Odd(node) => {
-                RootChildrenCoordsVars::Odd(SelectAndRerandomizeMultiPath::<L, M, P1, P0>::process_root_nodes_for_given_multi_paths_with_common_root(node, max_num_indices, selected_children_count_grp_by_root_index, paths.len(), odd_verifier))
+                RootChildrenCoordsVars::Odd(SelectAndRerandomizeMultiPath::<L, M, P1, P0>::process_root_nodes_for_given_multi_paths_with_common_root(node, max_num_indices, selected_children_count_grp_by_root_index, paths.len(), odd_verifier)?)
             }
         };
 
@@ -214,7 +214,7 @@ impl<
         selected_children_count_grp_by_root_index: Vec<u32>,
         num_paths: usize,
         verifier: &mut Verifier<T, Affine<P0>>,
-    ) -> Vec<Vec<LinearCombination<P0::ScalarField>>> {
+    ) -> Result<Vec<Vec<LinearCombination<P0::ScalarField>>>, Error> {
         let mut selected_children_of_root_xs = vec![vec![]; num_paths];
         for root_index in 0..max_num_indices as usize {
             let children_of_root = root_node.x_coord_children[root_index].as_slice();
@@ -225,12 +225,12 @@ impl<
             let c = verifier
                 .transcript()
                 .challenge_scalar(b"challenge-for-multi_select");
-            multi_select_public_set_ext_challenge(verifier, xs.clone(), children_of_root, c);
+            multi_select_public_set_ext_challenge(verifier, xs.clone(), children_of_root, c)?;
             for (j, x) in xs.into_iter().enumerate() {
                 selected_children_of_root_xs[j].push(x);
             }
         }
-        selected_children_of_root_xs
+        Ok(selected_children_of_root_xs)
     }
 
     pub fn process_non_root_nodes<T: BorrowMut<MerlinTranscript>>(
@@ -341,7 +341,7 @@ impl<
                         chunk.to_vec(),
                         None,
                         None,
-                    );
+                    )?;
                 }
             }
         }

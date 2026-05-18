@@ -774,3 +774,140 @@ mod veccom_mul {
         assert!(gadget_roundtrip_helper::<Affine>(5.into(), 5.into(), 25.into()).is_ok());
     }
 }
+
+mod veccom_shuffle_randomized {
+    use super::*;
+    use dock_crypto_utils::transcript::{MerlinTranscript, Transcript};
+    use rand::seq::SliceRandom;
+
+    const K: usize = 5;
+
+    struct VecShuffleProof(R1CSProof<Affine>);
+
+    impl VecShuffleProof {
+        fn gadget<CS: RandomizableConstraintSystem<<Affine as AffineRepr>::ScalarField>>(
+            cs: &mut CS,
+            x: Vec<Variable<<Affine as AffineRepr>::ScalarField>>,
+            y: Vec<Variable<<Affine as AffineRepr>::ScalarField>>,
+        ) -> Result<(), R1CSError> {
+            assert_eq!(x.len(), y.len());
+            let k = x.len();
+
+            if k == 1 {
+                cs.constrain(y[0] - x[0]);
+                return Ok(());
+            }
+
+            cs.specify_randomized_constraints(move |cs| {
+                let z = cs.challenge_scalar(b"shuffle challenge");
+
+                let (_, _, last_mulx_out) = cs.multiply(x[k - 1] - z, x[k - 2] - z);
+                let first_mulx_out = (0..k - 2).rev().fold(last_mulx_out, |prev_out, i| {
+                    let (_, _, o) = cs.multiply(prev_out.into(), x[i] - z);
+                    o
+                });
+
+                let (_, _, last_muly_out) = cs.multiply(y[k - 1] - z, y[k - 2] - z);
+                let first_muly_out = (0..k - 2).rev().fold(last_muly_out, |prev_out, i| {
+                    let (_, _, o) = cs.multiply(prev_out.into(), y[i] - z);
+                    o
+                });
+
+                cs.constrain(first_mulx_out - first_muly_out);
+                Ok(())
+            })
+        }
+
+        fn prove(
+            pc_gens: &PedersenGens<Affine>,
+            bp_gens: &BulletproofGens<Affine>,
+            input: &[<Affine as AffineRepr>::ScalarField],
+            output: &[<Affine as AffineRepr>::ScalarField],
+        ) -> Result<(Self, Affine, Affine), R1CSError> {
+            let mut transcript = MerlinTranscript::new(b"VecShuffleProofTest");
+            transcript.append_message(b"dom-sep", b"VecShuffleProof");
+            transcript.merlin.append_u64(b"k", input.len() as u64);
+
+            let mut prover = Prover::new(pc_gens, &mut transcript);
+            let mut rng = rand::thread_rng();
+
+            let (input_comm, input_vars) = prover.commit_vec(
+                input,
+                <Affine as AffineRepr>::ScalarField::rand(&mut rng),
+                bp_gens,
+            );
+            let (output_comm, output_vars) = prover.commit_vec(
+                output,
+                <Affine as AffineRepr>::ScalarField::rand(&mut rng),
+                bp_gens,
+            );
+
+            VecShuffleProof::gadget(&mut prover, input_vars, output_vars)?;
+            let proof = prover.prove(bp_gens)?;
+
+            Ok((VecShuffleProof(proof), input_comm, output_comm))
+        }
+
+        fn verify(
+            &self,
+            pc_gens: &PedersenGens<Affine>,
+            bp_gens: &BulletproofGens<Affine>,
+            input_comm: Affine,
+            output_comm: Affine,
+        ) -> Result<(), R1CSError> {
+            let mut transcript = MerlinTranscript::new(b"VecShuffleProofTest");
+            transcript.append_message(b"dom-sep", b"VecShuffleProof");
+            transcript.merlin.append_u64(b"k", K as u64);
+
+            let mut verifier = Verifier::new(&mut transcript);
+            let input_vars = verifier.commit_vec(K, input_comm);
+            let output_vars = verifier.commit_vec(K, output_comm);
+
+            VecShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
+            verifier.verify(&self.0, pc_gens, bp_gens)
+        }
+
+        fn verify_via_tuple(
+            &self,
+            pc_gens: &PedersenGens<Affine>,
+            bp_gens: &BulletproofGens<Affine>,
+            input_comm: Affine,
+            output_comm: Affine,
+        ) -> Result<(), R1CSError> {
+            let mut transcript = MerlinTranscript::new(b"VecShuffleProofTest");
+            transcript.append_message(b"dom-sep", b"VecShuffleProof");
+            transcript.merlin.append_u64(b"k", K as u64);
+
+            let mut verifier = Verifier::new(&mut transcript);
+            let input_vars = verifier.commit_vec(K, input_comm);
+            let output_vars = verifier.commit_vec(K, output_comm);
+
+            VecShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
+            let vt = verifier.verification_scalars_and_points(&self.0)?;
+            verify_given_verification_tuple(vt, pc_gens, bp_gens)
+        }
+    }
+
+    #[test]
+    fn test() {
+        type Scalar = <Affine as AffineRepr>::ScalarField;
+
+        let pc_gens = PedersenGens::<Affine>::default();
+        let bp_gens = BulletproofGens::<Affine>::new(((2usize * K).next_power_of_two()) as u32, 1);
+
+        let mut rng = rand::thread_rng();
+        let input: Vec<Scalar> = (0..K).map(|_| Scalar::rand(&mut rng)).collect();
+        let mut output = input.clone();
+        output.shuffle(&mut rng);
+
+        let (proof, input_comm, output_comm) =
+            VecShuffleProof::prove(&pc_gens, &bp_gens, &input, &output).unwrap();
+
+        assert!(proof
+            .verify(&pc_gens, &bp_gens, input_comm, output_comm)
+            .is_ok());
+        assert!(proof
+            .verify_via_tuple(&pc_gens, &bp_gens, input_comm, output_comm)
+            .is_ok());
+    }
+}

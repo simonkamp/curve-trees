@@ -483,12 +483,20 @@ pub fn discrete_log_challenge<
     let c1 = Box::new(ChallengePoint::new(curve, slope, c1_x, c1_y, inv_c1_two_y));
     let c2 = Box::new(ChallengePoint::new(curve, slope, c2_x, c2_y, inv_c2_two_y));
 
+    transcript.append(b"alpha[0]_num", &c0.p_1_n);
+    transcript.append(b"alpha[0]_den", &c0.p_1_d);
+    transcript.append(b"alpha[1]_num", &c1.p_1_n);
+    transcript.append(b"alpha[1]_den", &c1.p_1_d);
+    transcript.append(b"alpha[2]_num", &c2.p_1_n);
+    transcript.append(b"alpha[2]_den", &c2.p_1_d);
+
     // Fill in the inverted values
     let mut challenged_generators = Vec::with_capacity(generators.len());
     for _ in 0..generators.len() {
         let mut challenged_generator = GenericArray::default();
         for i in 0..Parameters::ScalarBits::USIZE {
             challenged_generator[i] = inversions.next().unwrap();
+            transcript.append(b"beta", &challenged_generator[i]);
         }
         challenged_generators.push(ChallengedGenerator(challenged_generator));
     }

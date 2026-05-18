@@ -51,6 +51,7 @@ ark-ec = { version = "0.5.0", default-features = false }
 ark-host-msm = { version = "0.5.0", default-features = false }
 ark-serialize = { version = "0.5.0", default-features = false }
 ark-std = { version = "0.5.0", default-features = false }
+ark-poly = { version = "0.5.0", default-features = false }
 ark-pallas = { version = "0.5.0", default-features = false, features = ["curve"] }
 ark-vesta = { version = "0.5.0", default-features = false }
 ark-secp256k1 = { version = "0.5.0", default-features = false }

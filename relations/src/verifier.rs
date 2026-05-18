@@ -491,7 +491,7 @@ impl<
         let challenge = verifier
             .transcript()
             .challenge_scalar(b"challenge-for-multi_select");
-        multi_select_public_set_ext_challenge(verifier, x_vars.clone(), all_x_coords, challenge);
+        multi_select_public_set_ext_challenge(verifier, x_vars.clone(), all_x_coords, challenge)?;
 
         // For each path, process its selected child of root
         for (path_idx, (x_var, rerandomized_child)) in x_vars

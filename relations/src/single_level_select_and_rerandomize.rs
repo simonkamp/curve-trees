@@ -25,7 +25,7 @@ pub fn single_level_select_and_rerandomize<
     all_children_plus_delta: Vec<LinearCombination<Fs>>, // Variables representing members of the (parent) vector commitment
     child_plus_delta: Option<Affine<C2>>,                // Witness of the selected child plus Delta
     child_rerandomization_scalar: Option<Fb>, // The scalar used for randomizing, i.e. child + Delta + child_rerandomization_scalar * H = rerandomized_child + Delta
-) {
+) -> Result<(), Error> {
     // Add the re-randomised child to the transcript
     cs.transcript()
         .append(b"rerandomized_child", &rerandomized_child);
@@ -33,7 +33,7 @@ pub fn single_level_select_and_rerandomize<
     // Show that child is part of `all_children` by showing that the child's x-coordinate is present in x-coordinates of the all children
     let x_var = cs.allocate(child_plus_delta.map(|xy| xy.x)).unwrap();
     let x_lc: LinearCombination<_> = x_var.into();
-    select(cs, x_lc.clone(), all_children_plus_delta.iter().cloned());
+    select(cs, x_lc.clone(), all_children_plus_delta.iter().cloned())?;
 
     validate_point_and_re_randomize(
         cs,
@@ -42,7 +42,7 @@ pub fn single_level_select_and_rerandomize<
         x_lc,
         child_plus_delta,
         child_rerandomization_scalar,
-    );
+    )
 }
 
 /// Circuit for the root level node's select and rerandomize relation.
@@ -59,7 +59,7 @@ pub fn root_level_select_and_rerandomize<
     all_children_plus_delta: &[Fs],  // Public set of x-coordinates of all children plus delta
     child_plus_delta: Option<Affine<C2>>, // Witness of the selected child plus Delta
     child_rerandomization_scalar: Option<Fb>, // The scalar used for randomizing, i.e. child + Delta + child_rerandomization_scalar * H = rerandomized_child + Delta
-) {
+) -> Result<(), Error> {
     // Add the re-randomised child to the transcript
     cs.transcript()
         .append(b"rerandomized_child", &rerandomized_child);
@@ -67,7 +67,7 @@ pub fn root_level_select_and_rerandomize<
     // Show that child is part of `all_children` by showing that the child's x-coordinate is present in x-coordinates of the all children
     let x_var = cs.allocate(child_plus_delta.map(|xy| xy.x)).unwrap();
     let x_lc: LinearCombination<_> = x_var.into();
-    select_public_set(cs, x_lc.clone(), all_children_plus_delta);
+    select_public_set(cs, x_lc.clone(), all_children_plus_delta)?;
 
     validate_point_and_re_randomize(
         cs,
@@ -76,7 +76,7 @@ pub fn root_level_select_and_rerandomize<
         x_lc,
         child_plus_delta,
         child_rerandomization_scalar,
-    );
+    )
 }
 
 /// Helper function to validate a point on the curve and prove rerandomization.
@@ -93,7 +93,7 @@ pub fn validate_point_and_re_randomize<
     x_lc: LinearCombination<Fs>,
     child_plus_delta: Option<Affine<C2>>,
     child_rerandomization_scalar: Option<Fb>,
-) {
+) -> Result<(), Error> {
     // Proof that the opened x coordinate with the witnessed y is a point on the curve
     // Note that empty branches are encoded as 0 which works because x=0 does not satisfy the curve equation for any of the curves used.
     let y_var = cs.allocate(child_plus_delta.map(|xy| xy.y)).unwrap();
@@ -115,8 +115,9 @@ pub fn validate_point_and_re_randomize<
         constant(rerandomized_child_plus_delta.x),
         constant(rerandomized_child_plus_delta.y),
         child_rerandomization_scalar,
-    )
-    .expect("Failed to re-randomize");
+    )?;
+
+    Ok(())
 }
 
 /// Circuit for the single level version of the batched select and rerandomize relation.
@@ -191,7 +192,7 @@ fn single_level_batched_select_and_rerandomize_inner<
     select_fn: F,
 ) -> Result<(), Error>
 where
-    F: Fn(&mut Cs, LinearCombination<Fs>, &[C]) -> (),
+    F: Fn(&mut Cs, LinearCombination<Fs>, &[C]) -> Result<(), Error>,
 {
     // Initialize the accumulated sum of the selected children to dummy values.
     let mut sum_of_selected = PointRepresentation {
@@ -211,7 +212,7 @@ where
             point: ith_selected_witness,
         };
         // Show that the parent is committed to the ith child's x-coordinate
-        select_fn(cs, x_var.into(), chunk);
+        select_fn(cs, x_var.into(), chunk)?;
 
         // Proof that the opened x coordinate with the witnessed y is a point on the curve
         // Note that empty branches are encoded as 0 which works because x=0 does not satisfy the curve equation for any of the curves used.
@@ -360,7 +361,8 @@ mod tests {
                 xs_vars.into_iter().map(|x| x.into()).collect(),
                 Some(child_plus_delta),
                 Some(rerandomization),
-            );
+            )
+            .unwrap();
             let proof = prover.prove(&sr_params.odd_parameters.bp_gens).unwrap();
             proof
         };
@@ -375,7 +377,8 @@ mod tests {
             xs_vars.into_iter().map(|x| x.into()).collect(),
             None,
             None,
-        );
+        )
+        .unwrap();
 
         verifier
             .verify(

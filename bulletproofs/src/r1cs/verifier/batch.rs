@@ -70,8 +70,9 @@ where
     let mut max_padded_n = 0;
     let mut max_proof_dep_scalars = 0;
     for vt in &verification_tuples {
-        if vt.padded_n() > max_padded_n {
-            max_padded_n = vt.padded_n()
+        let padded_n = vt.padded_n()?;
+        if padded_n > max_padded_n {
+            max_padded_n = padded_n
         }
         if vt.proof_dependent_scalars.len() > max_proof_dep_scalars {
             max_proof_dep_scalars = vt.proof_dependent_scalars.len();
@@ -87,7 +88,7 @@ where
     let mut random_scalar = C::ScalarField::one();
 
     for mut vt in verification_tuples {
-        let padded_n = vt.padded_n() as usize;
+        let padded_n = vt.padded_n()? as usize;
         let proof_dep_scalars = vt.proof_dependent_scalars.len();
 
         // length of vt.proof_independent_scalars = 2 + 2*padded_n
@@ -148,7 +149,7 @@ where
 {
     let mut ver_iter = verification_tuples.into_iter();
     let vt = ver_iter.next().ok_or(R1CSError::NoVerificationTuple)?;
-    let padded_n = vt.padded_n();
+    let padded_n = vt.padded_n()?;
     let (mut proof_points, mut proof_point_scalars, mut linear_combination) = (
         vt.proof_dependent_points,
         vt.proof_dependent_scalars,
@@ -158,11 +159,9 @@ where
     let mut random_scalar = C::ScalarField::one();
 
     for mut vt in ver_iter {
-        if padded_n != vt.padded_n() {
-            return Err(R1CSError::IncompatibleVerificationTuple(
-                vt.padded_n(),
-                padded_n,
-            ));
+        let expected = vt.padded_n()?;
+        if padded_n != expected {
+            return Err(R1CSError::IncompatibleVerificationTuple(expected, padded_n));
         }
         proof_points.append(&mut vt.proof_dependent_points);
 
@@ -207,10 +206,10 @@ where
 {
     let mut vt_iter = verification_tuples.iter();
     let vt = vt_iter.next().ok_or(R1CSError::NoVerificationTuple)?;
-    let padded_n = vt.padded_n();
+    let padded_n = vt.padded_n()?;
     let mut same_size = true;
     for vt in vt_iter {
-        if padded_n != vt.padded_n() {
+        if padded_n != vt.padded_n()? {
             same_size = false;
             break;
         }
@@ -241,8 +240,9 @@ pub fn add_verification_tuples_to_rmc_0<C: AffineRepr>(
     let mut max_padded_n = 0;
     let mut max_proof_dep_scalars = 0;
     for vt in &verification_tuples {
-        if vt.padded_n() > max_padded_n {
-            max_padded_n = vt.padded_n()
+        let padded_n = vt.padded_n()?;
+        if padded_n > max_padded_n {
+            max_padded_n = padded_n
         }
         if vt.proof_dependent_scalars.len() > max_proof_dep_scalars {
             max_proof_dep_scalars = vt.proof_dependent_scalars.len();
@@ -267,7 +267,7 @@ pub fn add_verification_tuples_to_rmc_0<C: AffineRepr>(
         .collect::<Vec<_>>();
 
     for mut vt in verification_tuples {
-        let padded_n = vt.padded_n();
+        let padded_n = vt.padded_n()?;
         let proof_dep_scalars = vt.proof_dependent_scalars.len();
 
         // length of vt.proof_independent_scalars = 2 + 2*padded_n

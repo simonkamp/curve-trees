@@ -25,6 +25,7 @@ pub mod util;
 pub mod error;
 use error::Error;
 
+use crate::divisor::Evals;
 pub use curves::DivisorCurve;
 pub use scalar_decomposition::ScalarDecomposition;
 
@@ -162,11 +163,17 @@ fn finish_line<F: PrimeField>(
 fn lines_and_denoms<C: DivisorCurve>(
     points: &[Projective<C>],
 ) -> Result<Vec<(SmallDivisor<C::BaseField>, Denom<C::BaseField>)>, Error> {
-    // All the pairs of points from which lines will be created
+    // All the pairs of points from which lines will be created.
+    // Builds a binary tree where `pairs` will contain leaves, followed by nodes above that leaf level,
+    // followed by nodes of next upper level and so on. If number of nodes at any level is odd, the last node
+    // is processed at next (upper) level
+    // Each leaf is a pair of points and each parent is the sum of its 2 children.
     let pairs = {
         let mut pairs = Vec::<[Projective<C>; 2]>::with_capacity(points.len());
         let mut divs = Vec::<Projective<C>>::with_capacity(points.len().div_ceil(2));
 
+        // Take 2 consecutive points from `points` and them to `pairs`. If length of `points` is odd, its last point is paired with point at infinity.
+        // `divs` will contain the sums of each pair from `pairs`
         let mut iter = points.iter().copied();
         while let Some(a) = iter.next() {
             let b = iter.next();
@@ -195,6 +202,7 @@ fn lines_and_denoms<C: DivisorCurve>(
         pairs
     };
 
+    // Get (x, y) coordinates of each point in the `pairs` list.
     let g: Projective<C> = C::GENERATOR.into();
     let (a_xy, b_xy) = {
         let mut pts = pairs
@@ -267,24 +275,6 @@ fn lines_and_denoms<C: DivisorCurve>(
         .collect())
 }
 
-/// Convert divisor from univariate to bivariate representation.
-fn divisor_to_poly<C: DivisorCurve>(
-    divisor: &DivisorEvals<C::BaseField>,
-    interpolator: &Interpolator<C::BaseField>,
-) -> Result<DivisorPoly<C::BaseField>, Error> {
-    let [a, b] = divisor.interpolate(interpolator)?;
-    let zero_coefficient = a[0];
-    let x_coefficients = a[1..].to_vec();
-    let yx_coefficients = b[1..].to_vec();
-    let y_coefficient = b[0];
-    Ok(DivisorPoly {
-        zero_coefficient,
-        x_coefficients,
-        yx_coefficients,
-        y_coefficient,
-    })
-}
-
 /// Create a divisor interpolating the following points.
 ///
 /// Returns an error if:
@@ -292,6 +282,11 @@ fn divisor_to_poly<C: DivisorCurve>(
 ///   - The points don't sum to the point at infinity
 ///   - A passed in point was the point at infinity
 ///   - If too small of an interpolator was passed in
+///
+/// Output: DivisorPoly representing `D(x,y) = a(x) - b(x)*y` such that:
+///   - `D(P_i) = 0` for each input point `P_i`
+///   - D has poles only at the point at infinity
+///   - Coefficient of `x^1` is normalized to 1
 ///
 /// If the arguments were valid, this function executes in an amount of time constant to the amount
 /// of points.
@@ -325,7 +320,7 @@ pub fn new_divisor<C: DivisorCurve>(
     let points_len = points.len();
 
     let modulus =
-        DivisorEvals::compute_modulus(C::COEFF_A, C::COEFF_B, interpolator.required_evaluations());
+        Evals::compute_modulus(C::COEFF_A, C::COEFF_B, interpolator.required_evaluations());
     // Create the initial set of divisors
     let mut divs = vec![];
     let mut all_lines = lines_and_denoms::<C>(points)?.into_iter();
@@ -378,7 +373,7 @@ pub fn new_divisor<C: DivisorCurve>(
 
     // Return the unified divisor
     let divisor = divs.remove(0);
-    let mut divisor = divisor_to_poly::<C>(&divisor, interpolator)?;
+    let mut divisor = divisor.to_poly(interpolator)?;
     trim(&mut divisor, points_len);
     Ok(divisor)
 }

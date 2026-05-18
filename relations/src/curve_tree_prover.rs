@@ -194,7 +194,7 @@ impl<
         rng: &mut R,
     ) -> Result<(SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField), Error> {
         let witness = self.get_path_to_leaf_for_proof(leaf_index, tree_index)?;
-        Ok(witness.select_and_rerandomize_prover_gadget(even_prover, odd_prover, parameters, rng))
+        witness.select_and_rerandomize_prover_gadget(even_prover, odd_prover, parameters, rng)
     }
 
     fn generate_paths(
@@ -389,7 +389,7 @@ impl<
         odd_prover: &mut Prover<MerlinTranscript, Affine<P1>>,
         parameters: &SelRerandProofParameters<P0, P1>,
         rng: &mut R,
-    ) -> (SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField) {
+    ) -> Result<(SelectAndRerandomizePath<L, P0, P1>, P0::ScalarField), Error> {
         let (
             even_rerandomized_nodes,
             odd_rerandomized_nodes,
@@ -408,7 +408,7 @@ impl<
                 &odd_rerandomized_nodes[0],
                 odd_rerandomization_scalars[0],
                 &self.even_internal_nodes[0].x_coord_children,
-            );
+            )?;
         } else {
             self.odd_internal_nodes[0].root_level_select_and_rerandomize_prover_gadget(
                 odd_prover,
@@ -416,7 +416,7 @@ impl<
                 &even_rerandomized_nodes[0],
                 even_rerandomization_scalars[0],
                 &self.odd_internal_nodes[0].x_coord_children,
-            );
+            )?;
         }
 
         // Select and rerandomize for non-root nodes
@@ -429,15 +429,15 @@ impl<
             even_rerandomization_scalars,
             odd_rerandomization_scalars,
             parameters,
-        );
+        )?;
 
-        (
+        Ok((
             SelectAndRerandomizePath {
-                odd_commitments: odd_rerandomized_nodes,
                 even_commitments: even_rerandomized_nodes,
+                odd_commitments: odd_rerandomized_nodes,
             },
             re_randomization_of_leaf, // This is the scalar applied to the selected leaf for rerandomization
-        )
+        ))
     }
 
     // TODO: Use the optimized path
@@ -569,7 +569,7 @@ impl<
                 even_rerandomization_scalars,
                 odd_rerandomization_scalars,
                 parameters,
-            );
+            )?;
 
             randomized_paths.push(SelectAndRerandomizePath {
                 odd_commitments: odd_rerandomized_nodes,
@@ -683,11 +683,11 @@ impl<
         mut even_rerandomization_scalars: Vec<P0::ScalarField>,
         mut odd_rerandomization_scalars: Vec<P1::ScalarField>,
         parameters: &SelRerandProofParameters<P0, P1>,
-    ) {
+    ) -> Result<(), Error> {
         let even_length = self.even_internal_nodes.len();
         let odd_length = self.odd_internal_nodes.len();
 
-        let prove_even = |prover: &mut Prover<MerlinTranscript, Affine<P0>>| {
+        let prove_even = |prover: &mut Prover<MerlinTranscript, Affine<P0>>| -> Result<(), Error> {
             for i in 0..even_length {
                 // Because root is already processed in the function called before this
                 let index = if root_is_even { i + 1 } else { i };
@@ -701,11 +701,12 @@ impl<
                     even_rerandomization_scalars[i],
                     &odd_rerandomized_nodes[index],
                     odd_rerandomization_scalars[index],
-                );
+                )?;
             }
+            Ok(())
         };
 
-        let prove_odd = |prover: &mut Prover<MerlinTranscript, Affine<P1>>| {
+        let prove_odd = |prover: &mut Prover<MerlinTranscript, Affine<P1>>| -> Result<(), Error> {
             for i in 0..odd_length {
                 // Because root is already processed in the function called before this
                 let index = if !root_is_even { i + 1 } else { i };
@@ -719,21 +720,27 @@ impl<
                     odd_rerandomization_scalars[i],
                     &even_rerandomized_nodes[index],
                     even_rerandomization_scalars[index],
-                );
+                )?;
             }
+            Ok(())
         };
 
         #[cfg(not(feature = "parallel"))]
-        prove_even(even_prover);
+        let even_res = prove_even(even_prover);
 
         #[cfg(not(feature = "parallel"))]
-        prove_odd(odd_prover);
+        let odd_res = prove_odd(odd_prover);
 
         #[cfg(feature = "parallel")]
-        rayon::join(|| prove_even(even_prover), || prove_odd(odd_prover));
+        let (even_res, odd_res) = rayon::join(|| prove_even(even_prover), || prove_odd(odd_prover));
+
+        even_res?;
+        odd_res?;
 
         Zeroize::zeroize(&mut odd_rerandomization_scalars);
         Zeroize::zeroize(&mut even_rerandomization_scalars);
+
+        Ok(())
     }
 }
 
@@ -754,7 +761,7 @@ impl<
         self_rerandomization_scalar: P0::ScalarField,
         rerandomized_child: &Affine<P1>,
         child_rerandomization_scalar: P1::ScalarField,
-    ) {
+    ) -> Result<(), Error> {
         // In this case this (`self`) is a non-root inner node and the children (and the scalar used for rerandomizing) are part of the witness.
         // Allocate variables for x-coordinates (which are committed in `self_node_rerandomized`) of child nodes with `self_rerandomization_scalar` as the blinding
         let children = prover
@@ -772,7 +779,7 @@ impl<
             rerandomized_child,
             child_rerandomization_scalar,
             children,
-        );
+        )
     }
 
     /// Proves the select and rerandomize for one of the children represented by the variables.
@@ -783,7 +790,7 @@ impl<
         rerandomized_child: &Affine<P1>,
         child_rerandomization_scalar: P1::ScalarField,
         all_children_vars: Vec<LinearCombination<<P0>::ScalarField>>,
-    ) {
+    ) -> Result<(), Error> {
         let child_commitment = self.child_node_to_randomize;
 
         single_level_select_and_rerandomize(
@@ -793,7 +800,9 @@ impl<
             all_children_vars,
             Some((child_commitment + parameters.sl_params.delta).into_affine()),
             Some(child_rerandomization_scalar),
-        );
+        )?;
+
+        Ok(())
     }
 
     /// Proves the select and rerandomize for children of the root node.
@@ -804,7 +813,7 @@ impl<
         rerandomized_child: &Affine<P1>,
         child_rerandomization_scalar: P1::ScalarField,
         children_of_root: &[P0::ScalarField],
-    ) {
+    ) -> Result<(), Error> {
         let child_commitment = self.child_node_to_randomize;
         root_level_select_and_rerandomize(
             prover,
@@ -813,7 +822,9 @@ impl<
             children_of_root,
             Some((child_commitment + parameters.sl_params.delta).into_affine()),
             Some(child_rerandomization_scalar),
-        );
+        )?;
+
+        Ok(())
     }
 }
 
@@ -843,7 +854,7 @@ pub(crate) fn allocate_children_of_root_and_enforce_membership<
         x_coords_selected_children.clone(),
         &all_x_coords_root_children,
         c,
-    );
+    )?;
     Ok(x_coords_selected_children)
 }
 
@@ -891,7 +902,7 @@ impl<F0: PrimeField, F1: PrimeField> RootChildrenCoordsVars<F0, F1> {
                     x_var,
                     child_plus_delta,
                     odd_child_rerandomization_scalar,
-                );
+                )?;
             }
             Self::Odd(coords) => {
                 if is_root_even {
@@ -917,7 +928,7 @@ impl<F0: PrimeField, F1: PrimeField> RootChildrenCoordsVars<F0, F1> {
                     x_var,
                     child_plus_delta,
                     even_child_rerandomization_scalar,
-                );
+                )?;
             }
         }
         Ok(())

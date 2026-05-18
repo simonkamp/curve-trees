@@ -562,7 +562,7 @@ impl<
         let challenge = prover
             .transcript()
             .challenge_scalar(b"challenge-for-multi_select");
-        multi_select_public_set_ext_challenge(prover, x_vars.clone(), x_coords, challenge);
+        multi_select_public_set_ext_challenge(prover, x_vars.clone(), x_coords, challenge)?;
 
         // For each path, create divisor proof for its selected child of root
         for (path_idx, (x_var, child)) in x_vars
@@ -622,7 +622,7 @@ pub fn select_root<
     let x = cs.allocate(child_plus_delta.map(|xy| xy.x))?;
     let y = cs.allocate(child_plus_delta.map(|xy| xy.y))?;
     let x_lc: LinearCombination<_> = x.into();
-    select_public_set(cs, x_lc.clone(), all_children_plus_delta);
+    select_public_set(cs, x_lc.clone(), all_children_plus_delta)?;
     let (x_rerand, y_rerand) = (*rerandomized_child + delta)
         .into_affine()
         .xy()
@@ -652,7 +652,7 @@ pub fn select_non_root<
     let x = cs.allocate(child_plus_delta.map(|xy| xy.x))?;
     let y = cs.allocate(child_plus_delta.map(|xy| xy.y))?;
     let x_lc: LinearCombination<_> = x.into();
-    select(cs, x_lc.clone(), all_children_plus_delta.iter().cloned());
+    select(cs, x_lc.clone(), all_children_plus_delta.iter().cloned())?;
     let (x_rerand, y_rerand) = (*rerandomized_child + delta)
         .into_affine()
         .xy()

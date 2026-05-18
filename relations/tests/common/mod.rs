@@ -37,12 +37,14 @@ pub fn check_proof<
     let mut vesta_prover: Prover<_, Affine<P1>> =
         Prover::new(&sr_params.odd_parameters.pc_gens, vesta_transcript);
 
-    let (path_commitments, re_randomization_of_leaf) = path.select_and_rerandomize_prover_gadget(
-        &mut pallas_prover,
-        &mut vesta_prover,
-        &sr_proof_params,
-        rng,
-    );
+    let (path_commitments, re_randomization_of_leaf) = path
+        .select_and_rerandomize_prover_gadget(
+            &mut pallas_prover,
+            &mut vesta_prover,
+            &sr_proof_params,
+            rng,
+        )
+        .unwrap();
 
     let (pallas_proof, vesta_proof) = prove(
         pallas_prover,
@@ -62,12 +64,14 @@ pub fn check_proof<
         let vesta_transcript = MerlinTranscript::new(PROOF_LABEL);
         let mut vesta_verifier = Verifier::new(vesta_transcript);
 
-        path_commitments.select_and_rerandomize_verifier_gadget(
-            &root,
-            &mut pallas_verifier,
-            &mut vesta_verifier,
-            &sr_proof_params,
-        );
+        path_commitments
+            .select_and_rerandomize_verifier_gadget(
+                &root,
+                &mut pallas_verifier,
+                &mut vesta_verifier,
+                &sr_proof_params,
+            )
+            .unwrap();
         let rerandomized_leaf = path_commitments.get_rerandomized_leaf();
 
         verify(
@@ -85,7 +89,8 @@ pub fn check_proof<
 
         assert_eq!(
             rerandomized_leaf.into_group(),
-            leaf + (sr_params.even_parameters.pc_gens.B_blinding * re_randomization_of_leaf)
+            leaf.into_group()
+                + (sr_params.even_parameters.pc_gens.B_blinding * re_randomization_of_leaf)
         );
         start.elapsed()
     };

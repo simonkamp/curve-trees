@@ -15,6 +15,7 @@ ark-ff = { workspace = true, default-features = false }
 ark-ec = { workspace = true, default-features = false }
 ark-serialize = { workspace = true, default-features = false }
 ark-std = { workspace = true, default-features = false }
+ark-poly = { workspace = true, default-features = false }
 ark-crypto-primitives = { version = "0.5.0", optional = true, default-features = false, features = ["signature"] }
 digest = { version = "0.10.7", default-features = false }
 blake2 = { version = "0.10", default-features = false }
@@ -42,11 +43,11 @@ ark-ec-divisors = {path = "../ark-ec-divisors", features = ["default", "helios",
 default = ["asm", "std", "parallel"]
 
 no_std = []
-std = ["ark-crypto-primitives", "rand/std", "thiserror/std", "bulletproofs/std", "ark-serialize/std", "dock_crypto_utils/std", "ark-ec-divisors/std", "ark-dlog-gadget/std"]
+std = ["ark-crypto-primitives", "rand/std", "thiserror/std", "bulletproofs/std", "ark-serialize/std", "ark-poly/std", "dock_crypto_utils/std", "ark-ec-divisors/std", "ark-dlog-gadget/std"]
 
 asm = ["ark-ff/asm", "bulletproofs/asm"]
 parallel = ["std", "rayon" ]
-parallel_full = [ "parallel", "bulletproofs/parallel_full", "dock_crypto_utils/parallel_full", "ark-ec-divisors/parallel_full", "ark-dlog-gadget/parallel_full" ]
+parallel_full = [ "parallel", "ark-poly/parallel", "bulletproofs/parallel_full", "dock_crypto_utils/parallel_full", "ark-ec-divisors/parallel_full", "ark-dlog-gadget/parallel_full" ]
 bench_prover = []
 detailed_benchmarks = []
 usenix = ["bench_prover"]

@@ -37,6 +37,7 @@ pub struct R1CSProof<C: AffineRepr> {
     pub(super) S1: C,
     /// Commitment to the (A_I2, A_O2, S2) tuple if the second phase
     pub(super) second_phase: Option<(C, C, C)>,
+    /// Commitments to the transmitted coefficients of \(t(X)\), in increasing degree order.
     pub(super) T: Vec<C>,
     /// Evaluation of the polynomial \\(t(x)\\) at the challenge point \\(x\\)
     pub(super) t_x: C::ScalarField,

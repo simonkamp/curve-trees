@@ -25,7 +25,7 @@ impl<
         even_verifier: &mut Verifier<T, Affine<P0>>,
         odd_verifier: &mut Verifier<T, Affine<P1>>,
         parameters: &SelRerandProofParameters<P0, P1>,
-    ) {
+    ) -> Result<(), Error> {
         let root_is_even = match root {
             Root::Even(root) => {
                 let child = &self.odd_commitments[0];
@@ -36,7 +36,7 @@ impl<
                     &root.x_coord_children[0],
                     None,
                     None,
-                );
+                )?;
                 true
             }
             Root::Odd(root) => {
@@ -48,12 +48,13 @@ impl<
                     &root.x_coord_children[0],
                     None,
                     None,
-                );
+                )?;
                 false
             }
         };
 
-        self.process_non_root_nodes(even_verifier, odd_verifier, root_is_even, parameters);
+        self.process_non_root_nodes(even_verifier, odd_verifier, root_is_even, parameters)?;
+        Ok(())
     }
 
     pub fn select_and_rerandomize_verifier_gadget_for_common_root<
@@ -91,7 +92,7 @@ impl<
         root_is_even: bool,
         even_verifier: &mut Verifier<T, Affine<P0>>,
         odd_parameters: &SingleLayerProofParameters<P1>,
-    ) {
+    ) -> Result<(), Error> {
         // Last item of self.even_commitments.len() is for leaf
         for parent_index in 0..(self.even_commitments.len() - 1) {
             // If the root is at even level, then the first element in self.odd_commitments will be child
@@ -115,8 +116,10 @@ impl<
                 variables,
                 None,
                 None,
-            );
+            )?;
         }
+
+        Ok(())
     }
 
     /// Used after calling [`root_level_select_and_rerandomize`]
@@ -125,7 +128,7 @@ impl<
         root_is_even: bool,
         odd_verifier: &mut Verifier<T, Affine<P1>>,
         even_parameters: &SingleLayerProofParameters<P0>,
-    ) {
+    ) -> Result<(), Error> {
         for parent_index in 0..self.odd_commitments.len() {
             // If the root is at odd level, then the first element in self.even_commitments will be child
             // of the root and its already processed in `root_level_select_and_rerandomize`
@@ -148,8 +151,10 @@ impl<
                 variables,
                 None,
                 None,
-            );
+            )?;
         }
+
+        Ok(())
     }
 
     pub fn process_root_nodes_for_given_paths_with_common_root<T: BorrowMut<MerlinTranscript>>(
@@ -210,7 +215,7 @@ impl<
             )?;
 
             // Process non-root nodes
-            path.process_non_root_nodes(even_verifier, odd_verifier, is_root_even, parameters);
+            path.process_non_root_nodes(even_verifier, odd_verifier, is_root_even, parameters)?;
         }
 
         Ok(())
@@ -222,13 +227,13 @@ impl<
         odd_verifier: &mut Verifier<T, Affine<P1>>,
         root_is_even: bool,
         parameters: &SelRerandProofParameters<P0, P1>,
-    ) {
+    ) -> Result<(), Error> {
         let verify_even = |even_verifier: &mut Verifier<T, Affine<P0>>| {
             self.even_verifier_gadget_for_non_root_nodes(
                 root_is_even,
                 even_verifier,
                 &parameters.odd_parameters,
-            );
+            )
         };
 
         let verify_odd = |odd_verifier: &mut Verifier<T, Affine<P1>>| {
@@ -236,17 +241,23 @@ impl<
                 root_is_even,
                 odd_verifier,
                 &parameters.even_parameters,
-            );
+            )
         };
 
         #[cfg(not(feature = "parallel"))]
-        verify_even(even_verifier);
+        let even_res = verify_even(even_verifier);
 
         #[cfg(not(feature = "parallel"))]
-        verify_odd(odd_verifier);
+        let odd_res = verify_odd(odd_verifier);
 
         #[cfg(feature = "parallel")]
-        rayon::join(|| verify_even(even_verifier), || verify_odd(odd_verifier));
+        let (even_res, odd_res) =
+            rayon::join(|| verify_even(even_verifier), || verify_odd(odd_verifier));
+
+        even_res?;
+        odd_res?;
+
+        Ok(())
     }
 
     /// Get the public rerandomization of the selected (leaf) commitment

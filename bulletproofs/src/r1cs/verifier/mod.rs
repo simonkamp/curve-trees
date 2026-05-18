@@ -5,7 +5,7 @@ use alloc::{boxed::Box, vec, vec::Vec};
 
 use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::Field;
-use ark_std::{format, One, UniformRand, Zero};
+use ark_std::{format, string::ToString, One, UniformRand, Zero};
 use core::borrow::BorrowMut;
 use core::mem;
 use dock_crypto_utils::randomized_mult_checker::RandomizedMultChecker;
@@ -20,7 +20,7 @@ use super::proof::R1CSProof;
 
 use crate::errors::R1CSError;
 use crate::generators::{BulletproofGens, PedersenGens};
-use crate::r1cs::Metrics;
+use crate::r1cs::{degree, t_poly_degree, transmitted_t_degree_indices, Metrics};
 use crate::transcript::TranscriptProtocol;
 
 use super::op_splits;
@@ -515,13 +515,21 @@ impl<T: BorrowMut<MerlinTranscript>, C: AffineRepr> Verifier<T, C> {
         // is prefixed with a separate label.
         let transcript = self.transcript.borrow_mut();
         transcript.merlin.append_u64(b"m", self.V.len() as u64);
+        transcript
+            .merlin
+            .append_u64(b"c", self.vec_comms.len() as u64);
+        for i in 0..self.vec_comms.len() {
+            transcript
+                .merlin
+                .append_u64(b"c_i", self.vec_comms[i].1 as u64);
+        }
 
         // number of commitments
         let ncomm = self.vec_comms.len();
 
-        // op_degree = 2 + 2 * floor(#comm / 2)
-        let op_degree = 2 + 2 * (ncomm / 2);
-        let t_poly_deg = 2 * (op_degree + 1);
+        let op_degree = degree(ncomm);
+        let t_poly_deg = t_poly_degree(op_degree);
+        let transmitted_t_degrees = transmitted_t_degree_indices(op_degree);
         let ops = op_splits(op_degree);
 
         // #[cfg(debug_assertions)]
@@ -535,11 +543,11 @@ impl<T: BorrowMut<MerlinTranscript>, C: AffineRepr> Verifier<T, C> {
         let op_aO = ops[1];
         let op_vec = &ops[2..];
 
-        if proof.T.len() != (t_poly_deg + 1) {
+        if proof.T.len() != transmitted_t_degrees.len() {
             return Err(R1CSError::VerificationErrorWithReason(format!(
                 "Invalid length for proof.T: {} {}",
                 proof.T.len(),
-                t_poly_deg + 1
+                transmitted_t_degrees.len()
             )));
         }
         transcript.validate_and_append_point(b"A_I1", &proof.A_I1)?;
@@ -575,13 +583,9 @@ impl<T: BorrowMut<MerlinTranscript>, C: AffineRepr> Verifier<T, C> {
         let z = TranscriptProtocol::challenge_scalar::<C>(transcript, b"z");
 
         let transcript = self.transcript.borrow_mut();
-        for d in 0..t_poly_deg + 1 {
-            if d == op_degree {
-                continue;
-            }
-            // log::debug!("{}", &proof.T[d]);
+        for (d, T_d) in transmitted_t_degrees.iter().copied().zip(proof.T.iter()) {
             transcript.append_index(b"t_poly degree", d as u64);
-            transcript.validate_and_append_point(b"t_poly", &proof.T[d])?;
+            transcript.validate_and_append_point(b"t_poly", T_d)?;
         }
 
         let u = TranscriptProtocol::challenge_scalar::<C>(transcript, b"u");
@@ -692,27 +696,21 @@ impl<T: BorrowMut<MerlinTranscript>, C: AffineRepr> Verifier<T, C> {
             }
         }
 
-        debug_assert_eq!(proof.T[op_degree], C::zero());
-        debug_assert_eq!(proof.T.len(), t_poly_deg + 1);
-
         // homomorphically evaluate t polynomial at x
         let mut T_points = vec![];
         let mut T_scalars = vec![];
-        for (d, _rx) in rxs.iter().enumerate().take(t_poly_deg + 1) {
-            if d == op_degree {
-                continue;
-            }
+        for (d, T_d) in transmitted_t_degrees
+            .iter()
+            .copied()
+            .zip(proof.T.iter().copied())
+        {
             #[cfg(debug_assertions)]
             {
-                log::debug!("T[{}]: {} {}", d, proof.T[d].clone(), _rx);
+                log::debug!("T[{}]: {} {}", d, T_d, rxs[d]);
             }
-            T_points.push(proof.T[d]);
+            T_points.push(T_d);
             T_scalars.push(rxs[d]);
         }
-
-        debug_assert!(ncomm == 0 || A_I2 == C::zero());
-        debug_assert!(ncomm == 0 || A_O2 == C::zero());
-        debug_assert!(ncomm == 0 || S2 == C::zero());
 
         let xI = xs[op_aLaR.0];
         let xO = xs[op_aO.0];
@@ -767,7 +765,7 @@ pub fn verify_given_verification_tuple<C: AffineRepr>(
     pc_gens: &PedersenGens<C>,
     bp_gens: &BulletproofGens<C>,
 ) -> Result<(), R1CSError> {
-    let padded_n = verification_tuple.padded_n();
+    let padded_n = verification_tuple.padded_n()?;
 
     msm_check(
         verification_tuple.proof_dependent_points,
@@ -785,7 +783,7 @@ pub fn add_verification_tuple_to_rmc<C: AffineRepr>(
     bp_gens: &BulletproofGens<C>,
     rmc: &mut RandomizedMultChecker<C>,
 ) -> Result<(), R1CSError> {
-    let padded_n = verification_tuple.padded_n();
+    let padded_n = verification_tuple.padded_n()?;
     let VerificationTuple {
         proof_dependent_points,
         proof_dependent_scalars,
@@ -809,7 +807,7 @@ pub fn add_pre_randomized_verification_tuple_to_rmc<C: AffineRepr>(
     bp_gens: &BulletproofGens<C>,
     rmc: &mut RandomizedMultChecker<C>,
 ) -> Result<(), R1CSError> {
-    let padded_n = verification_tuple.padded_n();
+    let padded_n = verification_tuple.padded_n()?;
     let VerificationTuple {
         proof_dependent_points,
         proof_dependent_scalars,
@@ -837,9 +835,14 @@ pub struct VerificationTuple<C: AffineRepr> {
 }
 
 impl<C: AffineRepr> VerificationTuple<C> {
-    pub fn padded_n(&self) -> u32 {
+    pub fn padded_n(&self) -> Result<u32, R1CSError> {
+        let scalar_minus_g_and_h = self
+            .proof_independent_scalars
+            .len()
+            .checked_sub(2)
+            .ok_or_else(|| R1CSError::VerificationErrorWithReason("proof_independent_scalars.len()-2 failed. Such a small proof would never happen in practice".to_string()))?;
         // This can be be safely cast to 32 since parameters length always fits in u32
-        ((self.proof_independent_scalars.len() - 2) / 2) as u32
+        Ok((scalar_minus_g_and_h / 2) as u32)
     }
 }
 

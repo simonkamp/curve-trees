@@ -67,6 +67,10 @@ pub enum Error {
     #[error("Number of selected indices must be greater than 0")]
     NeedNonZeroNumberOfIndices,
 
+    /// Set size must be greater than 0
+    #[error("Set size must be greater than 0")]
+    NeedNonZeroSetSize,
+
     /// Malformed proof input
     #[error("Malformed proof input: {0}")]
     MalformedProofInput(String),

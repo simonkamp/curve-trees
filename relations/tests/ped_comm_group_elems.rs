@@ -149,7 +149,8 @@ pub fn check_naive<
                 &mut vesta_prover,
                 &sr_proof_params,
                 &mut rng,
-            );
+            )
+            .unwrap();
 
         let blindings_for_points = (0..nested.len())
             .map(|_| <P1::ScalarField>::rand(&mut rng))
@@ -202,12 +203,14 @@ pub fn check_naive<
 
             let clock = Instant::now();
 
-            path_commitments.select_and_rerandomize_verifier_gadget(
-                &root,
-                &mut pallas_verifier,
-                &mut vesta_verifier,
-                &sr_proof_params,
-            );
+            path_commitments
+                .select_and_rerandomize_verifier_gadget(
+                    &root,
+                    &mut pallas_verifier,
+                    &mut vesta_verifier,
+                    &sr_proof_params,
+                )
+                .unwrap();
             let rerandomized_leaf = path_commitments.get_rerandomized_leaf();
 
             verify_naive(
@@ -234,7 +237,7 @@ pub fn check_naive<
             assert!(pallas_res.is_ok());
             assert_eq!(
                 rerandomized_leaf.into_group(),
-                curve_tree.get_leaf(*leaf_index).unwrap()
+                curve_tree.get_leaf(*leaf_index).unwrap().into_group()
                     + (sr_params.even_parameters.pc_gens.B_blinding * re_randomization_of_leaf)
             )
         }
@@ -399,12 +402,14 @@ pub fn check<
 
             let clock = Instant::now();
 
-            path_commitments.select_and_rerandomize_verifier_gadget(
-                &root,
-                &mut pallas_verifier,
-                &mut vesta_verifier,
-                &sr_proof_params,
-            );
+            path_commitments
+                .select_and_rerandomize_verifier_gadget(
+                    &root,
+                    &mut pallas_verifier,
+                    &mut vesta_verifier,
+                    &sr_proof_params,
+                )
+                .unwrap();
             let rerandomized_leaf = path_commitments.get_rerandomized_leaf();
 
             verify_new::<_, _, P0, P1, Params>(
@@ -433,7 +438,7 @@ pub fn check<
             assert!(pallas_res.is_ok());
             assert_eq!(
                 rerandomized_leaf.into_group(),
-                curve_tree.get_leaf(*leaf_index).unwrap()
+                curve_tree.get_leaf(*leaf_index).unwrap().into_group()
                     + (sr_params.even_parameters.pc_gens.B_blinding * re_randomization_of_leaf)
             )
         }

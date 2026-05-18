@@ -306,7 +306,7 @@ impl<
                 // Select
                 let children_lc: Vec<LinearCombination<F1>> =
                     chunk.iter().map(|v| (*v).into()).collect();
-                select(odd_verifier, x_var.clone(), children_lc.into_iter());
+                select(odd_verifier, x_var.clone(), children_lc.into_iter())?;
 
                 // Add transcript entry for rerandomized leaf
                 let selected_commitment =

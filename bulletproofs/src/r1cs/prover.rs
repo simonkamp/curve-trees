@@ -20,7 +20,7 @@ use super::proof::R1CSProof;
 use crate::errors::R1CSError;
 use crate::generators::{BulletproofGens, PedersenGens};
 use crate::inner_product_proof::InnerProductProof;
-use crate::r1cs::Metrics;
+use crate::r1cs::{degree, t_poly_degree, transmitted_t_degree_indices, Metrics};
 use crate::transcript::TranscriptProtocol;
 
 use super::op_splits;
@@ -59,15 +59,13 @@ unsafe impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Send for Prover<'
 #[derive(ZeroizeOnDrop)]
 pub struct Secrets<F: Field> {
     /// Stores assignments to the "left" of multiplication gates
-    pub(crate) a_L: Vec<F>,
+    a_L: Vec<F>,
     /// Stores assignments to the "right" of multiplication gates
     a_R: Vec<F>,
     /// Stores assignments to the "output" of multiplication gates
     a_O: Vec<F>,
-    /// High-level witness data (value openings to V commitments)
-    pub(crate) v: Vec<F>,
-    /// High-level witness data (blinding openings to V commitments)
-    v_blinding: Vec<F>,
+    /// High-level witness data (blinding, value) openings to V commitments
+    v_open: Vec<(F, F)>,
     /// Each item of the vector is pair with first element as the blinding and the next is the vector of elements committed in a Pedersen commitment
     pub vec_open: Vec<(F, Vec<F>)>,
 }
@@ -296,8 +294,7 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
             pc_gens,
             transcript,
             secrets: Secrets {
-                v: Vec::new(),
-                v_blinding: Vec::new(),
+                v_open: Vec::new(),
                 a_L: Vec::new(),
                 a_R: Vec::new(),
                 a_O: Vec::new(),
@@ -331,9 +328,8 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
         v: C::ScalarField,
         v_blinding: C::ScalarField,
     ) -> (C, Variable<C::ScalarField>) {
-        let i = self.secrets.v.len();
-        self.secrets.v.push(v);
-        self.secrets.v_blinding.push(v_blinding);
+        let i = self.secrets.v_open.len();
+        self.secrets.v_open.push((v_blinding, v));
 
         // Add the commitment to the transcript.
         let V = self.pc_gens.commit(v, v_blinding);
@@ -416,7 +412,7 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
         Vec<Vec<C::ScalarField>>,
     ) {
         let n = self.secrets.a_L.len();
-        let m = self.secrets.v.len();
+        let m = self.secrets.v_open.len();
 
         let mut wL = vec![C::ScalarField::zero(); n];
         let mut wR = vec![C::ScalarField::zero(); n];
@@ -471,7 +467,7 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
                         Variable::MultiplierLeft(i) => self.secrets.a_L[*i],
                         Variable::MultiplierRight(i) => self.secrets.a_R[*i],
                         Variable::MultiplierOutput(i) => self.secrets.a_O[*i],
-                        Variable::Committed(i) => self.secrets.v[*i],
+                        Variable::Committed(i) => self.secrets.v_open[*i].1,
                         Variable::One(_) => C::ScalarField::one(),
                     }
             })
@@ -553,11 +549,10 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
         use crate::util;
         use core::iter;
 
-        // number of commitments
+        // number of vector commitments
         let ncomm = self.secrets.vec_open.len();
 
-        // op_degree = 2 + 2 * floor(#comm / 2)
-        let op_degree = 2 + 2 * (ncomm / 2);
+        let op_degree = degree(ncomm);
 
         let ops = op_splits(op_degree);
         let veccom_ops = &ops[2..];
@@ -577,7 +572,17 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
         self.transcript
             .borrow_mut()
             .merlin
-            .append_u64(b"m", self.secrets.v.len() as u64);
+            .append_u64(b"m", self.secrets.v_open.len() as u64);
+        self.transcript
+            .borrow_mut()
+            .merlin
+            .append_u64(b"c", self.secrets.vec_open.len() as u64);
+        for i in 0..self.secrets.vec_open.len() {
+            self.transcript
+                .borrow_mut()
+                .merlin
+                .append_u64(b"c_i", self.secrets.vec_open[i].1.len() as u64);
+        }
 
         // // Create a `TranscriptRng` from the high-level witness data
         // //
@@ -596,7 +601,7 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
         //     let mut builder = self.transcript.borrow_mut().build_rng();
 
         //     // Commit the blinding factors for the input wires
-        //     for v_b in &self.secrets.v_blinding {
+        //     for (v_b, _) in &self.secrets.v {
         //         builder = builder.rekey_with_witness_bytes(b"v_blinding", &util::field_as_bytes(v_b));
         //     }
 
@@ -807,9 +812,6 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
         let s_R2: Zeroizing<Vec<C::ScalarField>> =
             Zeroizing::new((0..n2).map(|_| C::ScalarField::rand(rng)).collect());
 
-        // both not supported atm.
-        assert!(!has_2nd_phase_commitments || self.secrets.vec_open.is_empty());
-
         let (A_I2, A_O2, S2) = if has_2nd_phase_commitments {
             (
                 // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
@@ -916,125 +918,119 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
         debug_assert_eq!(op_degree % 2, 0, "op_degree must be even");
 
         let mid_degree = op_degree / 2;
+        debug_assert_eq!(ops[0].0, mid_degree);
+        debug_assert_eq!(ops[0].1, mid_degree);
+        debug_assert_eq!(ops[1].0, op_degree);
+        debug_assert_eq!(ops[1].1, 0);
 
-        // 1 comm => op_degree = 2
-        // 2 comm => op_degree = 4
-        // 3 comm => op_degree = 4
-        // 4 comm => op_degree = 6
-        // 5 comm => op_degree = 6
-        // etc.
-        // op_degree = 2 + 2 * floor(#comm / 2)
+        // The fixed generalized Bulletproofs uses op_degree = 2 * ncomm + 2.
+        // The prefix of op_splits(op_degree) that we actually use is then:
+        //   (mid, mid), (op_degree, 0), (op_degree - 1, 1), (op_degree - 2, 2), ...
+        // so veccom_ops[j] places vector commitment j at (op_degree - (j + 1), j + 1).
+        // This leaves all left coefficients below mid equal to zero, matching Table 2.
+        //
+        // 0 commitments => op_degree = 2, mid = 1
+        //
+        // Left:
+        // 0 : -
+        // 1 : aL + y^-n o wR
+        // 2 : aO
+        // 3 : sL
+        //
+        // Right:
+        // 0 : wO - y^n
+        // 1 : y^n o aR + wL
+        // 2 : -
+        // 3 : y^n o sR
+        //
+        // 1 commitment => op_degree = 4, mid = 2
+        //
+        // Left:
+        // 0 : -
+        // 1 : -
+        // 2 : aL + y^-n o wR
+        // 3 : com1
+        // 4 : aO
+        // 5 : sL
+        //
+        // Right:
+        // 0 : wO - y^n
+        // 1 : Wc1
+        // 2 : y^n o aR + wL
+        // 3 : -
+        // 4 : -
+        // 5 : y^n o sR
+        //
+        // 2 commitments => op_degree = 6, mid = 3
+        //
+        // Left:
+        // 0 : -
+        // 1 : -
+        // 2 : -
+        // 3 : aL + y^-n o wR
+        // 4 : com2
+        // 5 : com1
+        // 6 : aO
+        // 7 : sL
+        //
+        // Right:
+        // 0 : wO - y^n
+        // 1 : Wc1
+        // 2 : Wc2
+        // 3 : y^n o aR + wL
+        // 4 : -
+        // 5 : -
+        // 6 : -
+        // 7 : y^n o sR
+        //
+        // 3 commitments => op_degree = 8, mid = 4
+        //
+        // Left:
+        // 0 : -
+        // 1 : -
+        // 2 : -
+        // 3 : -
+        // 4 : aL + y^-n o wR
+        // 5 : com3
+        // 6 : com2
+        // 7 : com1
+        // 8 : aO
+        // 9 : sL
+        //
+        // Right:
+        // 0 : wO - y^n
+        // 1 : Wc1
+        // 2 : Wc2
+        // 3 : Wc3
+        // 4 : y^n o aR + wL
+        // 5 : -
+        // 6 : -
+        // 7 : -
+        // 8 : -
+        // 9 : y^n o sR
+        //
+        // In the fixed bulletproofs draft, the high right slots paired with committed vectors would also
+        // contain `y o c_{k,R}`. But we dont have `c_{k,R}` like Monero so leave those slots as zero.
 
         for (i, (sl, sr)) in sLsR.enumerate() {
             debug_assert!(i < self.secrets.a_L.len());
-
-            // The first (original) op_degree is 2, which permits a single vector commitment:
-            //
-            // Left:
-            // 0 : com1
-            // 1 : aL + wR
-            // 2 : aO
-            // 3 : sL
-            //
-            // Right:
-            // 0 : Wo
-            // 1 : aR + wL
-            // 2 : Wc1
-            // 3 : sR
-            //
-            // Since a_L and a_R must be at the same power, only even op_degrees are possible :(
-            // Hence the next valid op_degree is 4, which permits up to 3 vector commitments:
-            //
-            // Left:
-            // 0 : com1
-            // 1 : com2
-            // 2 : aL
-            // 3 : aO
-            // 4 : com3
-            // 5 : sL
-            //
-            // Right:
-            // 0 : Wc3
-            // 1 : Wo
-            // 2 : aR
-            // 3 : Wc2
-            // 4 : Wc1
-            // 5 : sR
-            //
-            // The next valid op_degree is 6, this permits up to 5 vector commitments:
-            //
-            // Left:
-            // 0 : com1
-            // 1 : com2
-            // 2 : com3
-            // 3 : aL
-            // 4 : aO
-            // 5 : com4
-            // 6 : com5
-            // 7 : sL
-            //
-            // Right:
-            // 0 : Wc5
-            // 1 : Wc4
-            // 2 : Wo
-            // 3 : aR
-            // 4 : Wc3
-            // 5 : Wc2
-            // 6 : Wc1
-            // 7 : sR
-            //
-            // Note that the x^0, x^1 term is zero.
-            // For every additional commitment r_poly degree increases by 2,
-            // but the number of zero terms increase by 1
-            //
-            // The op_degree is 6, the total degree is 11.
-            //
-            // Left:
-            // 1 : com1
-            // 2 : com2
-            // 3 : com3
-            // 4 : aL
-            // 5 : aO
-            // 6 : -
-            // 7 : -
-            // 8 : -
-            // 9 : sL
-            //
-            // Right:
-            // 3 : Wo
-            // 4 : aR
-            // 5 : Wc3
-            // 6 : Wc2
-            // 7 : Wc1
-            // 8 : -
-            // 9 : sR
-            //
-            // op_degree is 8
-
-            // l_poly.0 = 0
 
             // a_L and a_R constraints:
             //
             // l_poly.1 = a_L + y^-n * (z * z^Q * W_R)
             // r_poly.1 = y^n * a_R + (z * z^Q * W_L)
-            debug_assert_eq!(l_poly.coeff_mut(mid_degree)[i], C::ScalarField::zero());
-            debug_assert_eq!(r_poly.coeff_mut(mid_degree)[i], C::ScalarField::zero());
-            l_poly.coeff_mut(ops[0].0)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
-            r_poly.coeff_mut(ops[0].1)[i] = exp_y[i] * self.secrets.a_R[i] + wL[i];
+            l_poly.coeff_mut(mid_degree)[i] = self.secrets.a_L[i] + exp_y_inv[i] * wR[i];
+            r_poly.coeff_mut(mid_degree)[i] = exp_y[i] * self.secrets.a_R[i] + wL[i];
 
             // a_O constraints:
             //
             // l_poly.2 = a_O
             // r_poly.0 = (z * z^Q * W_O) - y^n
-            debug_assert_eq!(l_poly.coeff_mut(op_degree)[i], C::ScalarField::zero());
-            debug_assert_eq!(r_poly.coeff_mut(0)[i], C::ScalarField::zero());
-            l_poly.coeff_mut(ops[1].0)[i] = self.secrets.a_O[i];
-            r_poly.coeff_mut(ops[1].1)[i] = wO[i] - exp_y[i];
+            l_poly.coeff_mut(op_degree)[i] = self.secrets.a_O[i];
+            r_poly.coeff_mut(0)[i] = wO[i] - exp_y[i];
 
             // masks:
             // l_poly.3 = s_L (mask)
-            debug_assert_eq!(l_poly.coeff_mut(op_degree + 1)[i], C::ScalarField::zero());
-            debug_assert_eq!(r_poly.coeff_mut(op_degree + 1)[i], C::ScalarField::zero());
             l_poly.coeff_mut(op_degree + 1)[i] = *sl;
             r_poly.coeff_mut(op_degree + 1)[i] = exp_y[i] * sr;
         }
@@ -1046,45 +1042,51 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
 
             // copy values to l_poly r_poly
             for i in 0..w.1.len() {
-                debug_assert_eq!(l_poly.coeff_mut(l_deg)[i], C::ScalarField::zero());
-                debug_assert_eq!(r_poly.coeff_mut(r_deg)[i], C::ScalarField::zero());
+                debug_assert_eq!(l_poly.coeff(l_deg)[i], C::ScalarField::zero());
+                debug_assert_eq!(r_poly.coeff(r_deg)[i], C::ScalarField::zero());
                 l_poly.coeff_mut(l_deg)[i] = w.1[i];
                 r_poly.coeff_mut(r_deg)[i] = wVCs[j][i];
             }
         }
 
         let mut t_poly = util::VecPoly::inner_product(&l_poly, &r_poly);
-        debug_assert_eq!(t_poly.deg(), 2 * (op_degree + 1));
+        debug_assert_eq!(t_poly.deg(), t_poly_degree(op_degree));
 
-        // commit to t-poly
+        // As per fixed bulletproofs draft, every omitted low-degree coefficient of t(X) is zero because
+        // l_poly has no support below mid_degree. The omitted coefficient at op_degree is not
+        // zero,it is the synthetic target coefficient reconstructed from the public commitments.
+        #[cfg(debug_assertions)]
+        for d in 0..mid_degree {
+            debug_assert_eq!(
+                t_poly.coeff_mut()[d],
+                C::ScalarField::zero(),
+                "t_poly coefficient below mid should be zero"
+            );
+        }
+
+        // commit to coefficients of t-poly
+
+        // create blinding poly for t-poly
         let mut t_blinding_poly = util::Poly::zero(t_poly.deg());
-        for d in 0..t_poly.deg() + 1 {
-            if d == op_degree {
-                continue;
-            }
-            t_blinding_poly.coeff()[d] = C::ScalarField::rand(rng);
-            // log::debug!("T_{}", d);
-        }
+        let transmitted_t_degrees = transmitted_t_degree_indices(op_degree);
+        let mut T = Vec::with_capacity(transmitted_t_degrees.len());
 
-        // commit to t-poly
-        let mut T = vec![C::zero(); t_poly.deg() + 1];
-        for d in 0..t_poly.deg() + 1 {
-            if d == op_degree {
-                continue;
-            }
-            T[d] = self
-                .pc_gens
-                .commit(t_poly.coeff()[d], t_blinding_poly.coeff()[d]);
-        }
+        // Since the terms we care about are coefficient of degree `op_degree` in `t_poly`
+        // and we already have commitments to it, no need of committing here.
+        t_blinding_poly.coeff_mut()[op_degree] = wV
+            .iter()
+            .zip(self.secrets.v_open.iter())
+            .map(|(c, (v_blinding, _))| *c * v_blinding)
+            .sum();
 
-        // commit to T
         let transcript = self.transcript.borrow_mut();
-        for (d, td) in T.iter().enumerate() {
-            if d == op_degree {
-                continue;
-            }
+        for d in transmitted_t_degrees {
+            let b = C::ScalarField::rand(rng);
+            let T_d = self.pc_gens.commit(t_poly.coeff_mut()[d], b);
+            t_blinding_poly.coeff_mut()[d] = b;
             transcript.append_index(b"t_poly degree", d as u64);
-            transcript.append_point(b"t_poly", td);
+            transcript.append_point(b"t_poly", &T_d);
+            T.push(T_d);
         }
 
         let u = TranscriptProtocol::challenge_scalar::<C>(transcript, b"u");
@@ -1098,12 +1100,6 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
 
         // #[cfg(debug_assertions)]
         // println!("prover: x = {}", x);
-
-        t_blinding_poly.coeff()[op_degree] = wV
-            .iter()
-            .zip(self.secrets.v_blinding.iter())
-            .map(|(c, v_blinding)| *c * v_blinding)
-            .sum();
 
         let t_x = t_poly.eval(x);
         let t_x_blinding = t_blinding_poly.eval(x);
@@ -1165,7 +1161,11 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
             // publicly computable correction
             t2 += delta;
 
-            assert_eq!(t_poly.coeff()[op_degree], t2, "t_poly term check failed");
+            assert_eq!(
+                t_poly.coeff_mut()[op_degree],
+                t2,
+                "t_poly term check failed"
+            );
             log::debug!("sanity check passed");
         }
 

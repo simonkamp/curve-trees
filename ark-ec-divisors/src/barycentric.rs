@@ -11,7 +11,7 @@ use core::{
     ops::{AddAssign, Mul},
 };
 
-/// The coefficients for a univariate polynomial with the leading coefficient _first_.
+/// The coefficients for a univariate polynomial with the coefficient of highest degree first.
 // TODO: This is opposite to how Poly stores coefficients, make these consistent
 #[cfg_attr(test, derive(Debug, PartialEq))]
 #[derive(Clone)]
@@ -82,32 +82,33 @@ impl<F: Field> UnivariatePoly<F> {
 
 /// Precomputed weights for barycentric interpolation
 struct Weights<F: Field> {
+    /// The denominator terms with i-th terms as `w_i = 1 / \prod_{i≠j}(i - j)`
     inverted_weights: Vec<F>,
     l: UnivariatePoly<F>,
 }
 
 impl<F: PrimeField> Weights<F> {
-    /// `l(x) = (x-0)(x-1)(x-2)...(x-domain_size - 1)`
-    fn l(domain_size: u16) -> UnivariatePoly<F> {
-        assert_ne!(domain_size, 0);
-
-        let mut poly = UnivariatePoly(vec![F::ONE]);
-        for i in 0..domain_size {
-            let i: F = F::from(u64::from(i));
-            poly.mul_x_c(-i);
-        }
-        poly
-    }
-
     /// Create new weights for barycentric interpolation over the domain `{0, 1, ..., n-1}`
     fn new(domain_size: u16) -> Self {
-        assert_ne!(domain_size, 0);
+        assert!(domain_size > 0);
 
-        // Calculate barycentric weights:
-        // w_i = 1 / ∏_{j≠i} (i - j)
+        // i-th weight is inverse of a term say D_i
+        // D_i = \prod_{j=0 to n-1, j≠i} (i - j) = \prod_{j=0 to i-1} (i - j) * \prod_{j=i+1 to n-1} (i - j) = (i-0)*(i-1)...*(i-(i-1))*(i-(i+1))...(i-(n-1))
+        // split D_i into 2 parts:
+        // left = \prod_{j=0 to i-1} (i - j) = (i-0)*(i-1)...*(i-(i-1)),
+        // right = \prod_{j=i+1 to n-1} (i - j) = (i-(i+1))...*(i-(n-1))
+        // left = i!, right = (-1)^{n-1-i}*(n-1-i)!
 
-        let start = Some(-F::ONE);
-        let diffs = successors(start, |prev| Some(*prev - F::ONE));
+        // Build each i! incrementally from previous (i-1)!
+        let diffs = successors(Some(F::ONE), |prev| Some(*prev + F::ONE));
+        let diff_products_left = diffs.scan(F::ONE, |product, diff| {
+            *product *= diff;
+            Some(*product)
+        });
+        let diff_products_left = [F::ONE].into_iter().chain(diff_products_left);
+
+        // Build each (-1)^{n-1-i}*(n-1-i)! incrementally from previous
+        let diffs = successors(Some(-F::ONE), |prev| Some(*prev - F::ONE));
         let diff_products = diffs.scan(F::ONE, |product, diff| {
             *product *= diff;
             Some(*product)
@@ -117,23 +118,15 @@ impl<F: PrimeField> Weights<F> {
         diff_products.push(F::ONE);
         let diff_products_right = diff_products.into_iter();
 
-        let diffs = successors(Some(F::ONE), |prev| Some(*prev + F::ONE));
-        let diff_products_left = diffs.scan(F::ONE, |product, diff| {
-            *product *= diff;
-            Some(*product)
-        });
-        let diff_products_left = [F::ONE].into_iter().chain(diff_products_left);
-
-        let weights: Vec<F> = diff_products_left
+        let mut weights: Vec<F> = diff_products_left
             .zip(diff_products_right)
             .map(|(left, right)| left * right)
             .collect();
 
-        let mut inverted_weights = weights.clone();
         // Batch invert the weights
-        ark_ff::batch_inversion(&mut inverted_weights);
+        ark_ff::batch_inversion(&mut weights);
         Weights {
-            inverted_weights,
+            inverted_weights: weights,
             l: Self::l(domain_size),
         }
     }
@@ -147,6 +140,18 @@ impl<F: PrimeField> Weights<F> {
             debug_assert_eq!(rem, F::zero());
             li
         }) * self.inverted_weights[i as usize]
+    }
+
+    /// `l(x) = (x-0)(x-1)(x-2)...(x-domain_size - 1)`
+    fn l(domain_size: u16) -> UnivariatePoly<F> {
+        assert!(domain_size > 0);
+        // Start with poly = x
+        let mut poly = UnivariatePoly(vec![F::ONE, F::ZERO]);
+        for i in 1..domain_size {
+            let i: F = F::from(u64::from(i));
+            poly.mul_x_c(-i);
+        }
+        poly
     }
 }
 
@@ -211,49 +216,45 @@ impl<F: PrimeField> Interpolator<F> {
         Ok(poly)
     }
 
-    /// Evaluate the interpolator at a specific point using the barycentric formula
-    ///
+    /// Evaluate the interpolating polynomial at `x` using the type-2 barycentric formula
     /// This is more efficient than full interpolation when you only need a single point evaluation
-    #[cfg(test)]
+    ///  `p(x) = [\sum_i w_i * y_i / (x - i)] / [\sum_i w_i / (x - i)]`
     pub fn evaluate_at(&self, x: F, evals: &[F]) -> Result<F, Error> {
-        if evals.len() < self.lagrange_polys.len() {
-            return Err(Error::InsufficientEvaluations(
-                evals.len(),
-                self.lagrange_polys.len(),
-            ));
+        let n = self.lagrange_polys.len();
+        if evals.len() < n {
+            return Err(Error::InsufficientEvaluations(evals.len(), n));
         }
 
-        let mut numerator = F::zero();
-        let mut denominator = F::zero();
+        let mut num = F::zero();
+        let mut den = F::zero();
 
-        let weights = self.inverted_weights();
-        for (i, (eval, weight)) in evals.iter().zip(weights.iter()).enumerate() {
-            let x_minus_i = x - F::from(u64::from(i as u16));
-            let term = *weight / x_minus_i;
-            numerator += *eval * term;
-            denominator += term;
+        // Prepare 1/(x - i) for each i
+        let mut x_minus_i_invs = Vec::with_capacity(n);
+        for i in 0..n {
+            let x_minus_i = x - F::from(i as u64);
+            // p(x_i) = y_i
+            if x_minus_i.is_zero() {
+                return Ok(evals[i]);
+            }
+            x_minus_i_invs.push(x_minus_i);
+        }
+        ark_ff::batch_inversion(&mut x_minus_i_invs);
+
+        for (i, x_minus_i_inv) in x_minus_i_invs.into_iter().enumerate() {
+            let w_i = self.barycentric_weight(i);
+            let t = w_i * x_minus_i_inv;
+            num += evals[i] * t;
+            den += t;
         }
 
-        Ok(numerator / denominator)
+        Ok(num / den)
     }
 
-    #[cfg(test)]
-    /// Get the inverted weights for manual barycentric evaluation
-    fn inverted_weights(&self) -> Vec<F> {
-        // Extract weights from the first Lagrange polynomial if available
-        if let Some(_first_li) = self.lagrange_polys.first() {
-            // Weights are embedded in the leading coefficients of the Lagrange polynomials
-            // For now, return a simple pattern
-            let mut weights = vec![F::zero(); self.lagrange_polys.len()];
-            for (i, li) in self.lagrange_polys.iter().enumerate() {
-                if let Some(&leading_coeff) = li.0.first() {
-                    weights[i] = leading_coeff;
-                }
-            }
-            weights
-        } else {
-            vec![F::zero(); self.lagrange_polys.len()]
-        }
+    /// Extract the barycentric weight `w_i` from the stored Lagrange polynomial `L_i`.
+    /// `L_i(x) = w_i * l(x)/(x - i)`
+    fn barycentric_weight(&self, i: usize) -> F {
+        // highest-degree coefficient
+        self.lagrange_polys[i].0[0]
     }
 }
 

@@ -170,7 +170,7 @@ $$
 
 ### Inner Product of Vector Polyomials
 
-The "inner product" between two vector polynomials is defined in the inutitive way (for any module over any ring):  taking the coordinate-wise product of polynomials and summing:
+The "inner product" between two vector polynomials is defined in the intuitive way (for any module over any ring):  taking the coordinate-wise product of polynomials and summing:
 $$
 \langle
 \vec{f}(X), \vec{g}(X)
@@ -221,7 +221,9 @@ $$
 Then we define:
 
 $$
-\vec{f_L}(X) = \sum_{i=1}^t \vec{L_i} \cdot X^i \\
+\vec{f_L}(X) = \sum_{i=1}^t \vec{L_i} \cdot X^i
+$$
+$$
 \vec{f_R}(X) = \sum_{i=1}^{t} \vec{R_i} \cdot X^{t - i} 
 $$
 
@@ -231,12 +233,16 @@ This observation suggest the following approach to reduce a sum of multiple inne
 
 1. Prover sends commitments to $\{ \delta_i \}_{i \in 0, \ldots, 2 \cdot t - 1}$ the coefficients, were we are intrested in $\delta_t = \Delta$, which is usually implicit (e.g. fixed to $0$). Then both parties locally define:
 $$
-\vec{f_L}(X) = \sum_{i=1}^t \vec{L_i} \cdot X^i \in \mathbb{F}[X]^n \\
-\vec{f_R}(X) = \sum_{i=1}^{t} \vec{R_i} \cdot X^{t - i} \in \mathbb{F}[X]^n \\
+\vec{f_L}(X) = \sum_{i=1}^t \vec{L_i} \cdot X^i \in \mathbb{F}[X]^n
+$$
+$$
+\vec{f_R}(X) = \sum_{i=1}^{t} \vec{R_i} \cdot X^{t - i} \in \mathbb{F}[X]^n
+$$
+$$
 g(X) = \sum_{i = 0}^{2 \cdot t - 1} \delta_i \cdot X^i \in \mathbb{F}[X]
 $$
-1. Verifier samples $x \gets \mathbb{F}$
-1. Both sides compute commitments to the vectors:
+2. Verifier samples $x \gets \mathbb{F}$
+3. Both sides compute commitments to the vectors:
 $$
 \vec{f_L}(x), \vec{f_R}(x)\in \mathbb{F}^n
 $$
@@ -254,7 +260,7 @@ $$
 \mathsf{PedersenVec}_{[\vec{C}^{-1}] \ \circ \ \vec{G}}(\vec{V} \circ \vec{C}) =
 \mathsf{PedersenVec}_{\vec{G}}(\vec{V})
 $$
-In other words, we can homomorphically compute a Hadamard product, where one side is public, simply by a change of basis: rather than a commitment to $\vec{V}$ in bais $\vec{G}$ it is a commitment to $\vec{V} \circ \vec{C}$ in basis $\left[\vec{C}^{-1}\right] \circ \vec{G}$, in other words: if the commitment was opened you would check the correctness by re-commiting using $\left[\vec{C}^{-1}\right] \circ \vec{G}$.
+In other words, we can homomorphically compute a Hadamard product, where one side is public, simply by a change of basis: rather than a commitment to $\vec{V}$ in basis $\vec{G}$ it is a commitment to $\vec{V} \circ \vec{C}$ in basis $\left[\vec{C}^{-1}\right] \circ \vec{G}$, in other words: if the commitment was opened you would check the correctness by re-commiting using $\left[\vec{C}^{-1}\right] \circ \vec{G}$.
 
 ## What Inner Products?
 
@@ -290,10 +296,10 @@ $$
 \vec{y},
 \vec{a_L} \circ \vec{a_R}
 \rangle -
-\color{brown}{\langle \vec{y}, \vec{a_O} \rangle} +
+\textcolor{brown}{\langle \vec{y}, \vec{a_O} \rangle} +
 \langle \vec{w_L}, \vec{a_L} \rangle + 
 \langle \vec{w_R}, \vec{a_R} \rangle +
-\color{brown}{\langle \vec{w_O}, \vec{a_O} \rangle} +
+\textcolor{brown}{\langle \vec{w_O}, \vec{a_O} \rangle} +
 \langle \vec{w_C}, \vec{a_C} \rangle =
 \langle \vec{w_V}, \vec{v} \rangle +
 w_c
@@ -309,17 +315,17 @@ $$
 \rangle +
 \langle \vec{w_L}, \vec{a_L} \rangle + 
 \langle \vec{w_R}, \vec{a_R} \rangle +
-\color{brown}{\langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle} +
+\textcolor{brown}{\langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle} +
 \langle \vec{w_C}, \vec{a_C} \rangle =
 \langle \vec{w_V}, \vec{v} \rangle +
 w_c
 \in \mathbb{F}
 $$
 
-Note that the left size of the inner product $\langle \vec{y}, \vec{a_L} \circ \vec{a_R} \rangle$ is public, so lets move one secret two each side, using $\langle \vec{y}, \vec{a_L} \circ \vec{a_R} \rangle = \langle \vec{a_L}, \vec{y} \circ \vec{a_R} \rangle$ get rid of the Hadamard product between secret values:
+Note that the left size of the inner product $\langle \vec{y}, \vec{a_L} \circ \vec{a_R} \rangle$ is public, so lets move one secret to each side, using $\langle \vec{y}, \vec{a_L} \circ \vec{a_R} \rangle = \langle \vec{a_L}, \vec{y} \circ \vec{a_R} \rangle$ get rid of the Hadamard product between secret values:
 
 $$
-\color{magenta}{
+\textcolor{magenta}{
 \langle
 \vec{y},
 \vec{a_L} \circ \vec{a_R}
@@ -336,7 +342,7 @@ $$
 <center><b>Becomes</b></center>
 
 $$
-\color{magenta}{ \langle \vec{a_L}, \vec{y} \circ \vec{a_R} \rangle } +
+\textcolor{magenta}{ \langle \vec{a_L}, \vec{y} \circ \vec{a_R} \rangle } +
 \langle \vec{w_L}, \vec{a_L} \rangle + 
 \langle \vec{w_R}, \vec{a_R} \rangle +
 \langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle +
@@ -348,14 +354,14 @@ $$
 
 Note that we *know* how to deal with a Hadamard product between a secret and a public value.
 
-Using $\color{blue}{\langle \vec{a_R}, \vec{w_R} \rangle = \langle  \vec{w_R} \circ (\vec{y})^{-1}, \vec{a_R} \circ \vec{y} \rangle}$ rewrite:
+Using $\textcolor{blue}{\langle \vec{a_R}, \vec{w_R} \rangle = \langle  \vec{w_R} \circ (\vec{y})^{-1}, \vec{a_R} \circ \vec{y} \rangle}$ rewrite:
 
 $$
 \langle
 \vec{a_L}, \vec{y} \circ \vec{a_R}
 \rangle +
 \langle \vec{w_L}, \vec{a_L} \rangle + 
-\color{blue}{\langle \vec{w_R}, \vec{a_R} \rangle} +
+\textcolor{blue}{\langle \vec{w_R}, \vec{a_R} \rangle} +
 \langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle +
 \langle \vec{w_C}, \vec{a_C} \rangle \\ =
 \langle \vec{w_V}, \vec{v} \rangle +
@@ -371,7 +377,7 @@ $$
 \vec{a_L}, \vec{y} \circ \vec{a_R}
 \rangle +
 \langle \vec{w_L}, \vec{a_L} \rangle + 
-\color{blue}{\langle  \vec{w_R} \circ (\vec{y})^{-1}, \vec{a_R} \circ \vec{y} \rangle} +
+\textcolor{blue}{\langle  \vec{w_R} \circ (\vec{y})^{-1}, \vec{a_R} \circ \vec{y} \rangle} +
 \langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle +
 \langle \vec{w_C}, \vec{a_C} \rangle \\ =
 \langle \vec{w_V}, \vec{v} \rangle +
@@ -382,11 +388,11 @@ $$
 Collect $\vec{y} \circ \vec{a_R}$ terms (our motivation for the previous step):
 
 $$
-\color{green}{ \langle
+\textcolor{green}{ \langle
 \vec{a_L}, \vec{y} \circ \vec{a_R}
 \rangle } +
 \langle \vec{w_L}, \vec{a_L} \rangle + 
- \color{green}{ \langle  \vec{w_R} \circ (\vec{y})^{-1}, \vec{a_R} \circ \vec{y} \rangle} +
+ \textcolor{green}{ \langle  \vec{w_R} \circ (\vec{y})^{-1}, \vec{a_R} \circ \vec{y} \rangle} +
 \langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle +
 \langle \vec{w_C}, \vec{a_C} \rangle = \\
 \langle \vec{w_V}, \vec{v} \rangle +
@@ -398,7 +404,7 @@ $$
 <center><b>Becomes</b></center>
 
 $$
-\color{green}{ \langle
+\textcolor{green}{ \langle
 \vec{a_L} + \vec{w_R} \circ (\vec{y})^{-1},\vec{y} \circ \vec{a_R}
 \rangle } +
 \langle \vec{w_L}, \vec{a_L} \rangle +
@@ -409,7 +415,7 @@ w_c
 \in \mathbb{F}
 $$
 
-Add $\color{red}{\delta(y, z) = \langle (\vec{y})^{-1} \circ \vec{w_R}, \vec{w_L} \rangle}$ to both sides:
+Add $\textcolor{red}{\delta(y, z) = \langle (\vec{y})^{-1} \circ \vec{w_R}, \vec{w_L} \rangle}$ to both sides:
 
 $$
 \langle
@@ -432,10 +438,10 @@ $$
 \langle \vec{w_L}, \vec{a_L} \rangle +
 \langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle +
 \langle \vec{w_C}, \vec{a_C} \rangle +
-\color{red}{\langle (\vec{y})^{-1} \circ \vec{w_R}, \vec{w_L} \rangle} \\ = 
+\textcolor{red}{\langle (\vec{y})^{-1} \circ \vec{w_R}, \vec{w_L} \rangle} \\ = 
 \langle \vec{w_V}, \vec{v} \rangle +
 w_c +
-\color{red}{\delta(y, z)}
+\textcolor{red}{\delta(y, z)}
 \in \mathbb{F}
 $$
 
@@ -447,10 +453,10 @@ $$
 \langle
 \vec{a_L} + \vec{w_R} \circ (\vec{y})^{-1}, \vec{y} \circ \vec{a_R}
 \rangle +
-\color{orange}{\langle \vec{w_L}, \vec{a_L} \rangle} + 
+\textcolor{orange}{\langle \vec{w_L}, \vec{a_L} \rangle} + 
 \langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle \\ + 
 \langle \vec{w_C}, \vec{a_C} \rangle +
-\color{orange}{\langle (\vec{y})^{-1} \circ \vec{w_R}, \vec{w_L} \rangle} =
+\textcolor{orange}{\langle (\vec{y})^{-1} \circ \vec{w_R}, \vec{w_L} \rangle} =
 \langle \vec{w_V}, \vec{v} \rangle +
 w_c +
 \delta(y, z)
@@ -465,7 +471,7 @@ $$
 \rangle +
 \langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle \\ + 
 \langle \vec{w_C}, \vec{a_C} \rangle +
-\color{orange}{\langle (\vec{y})^{-1} \circ \vec{w_R} + \vec{a_L}, \vec{w_L} \rangle} =
+\textcolor{orange}{\langle (\vec{y})^{-1} \circ \vec{w_R} + \vec{a_L}, \vec{w_L} \rangle} =
 \langle \vec{w_V}, \vec{v} \rangle +
 w_c +
 \delta(y, z)
@@ -475,13 +481,13 @@ $$
 Combine $\vec{a_L} + \vec{w_R} \circ (\vec{y})^{-1}$ terms:
 
 $$
-\color{purple}{
+\textcolor{purple}{
 \langle
 \vec{a_L} + \vec{w_R} \circ (\vec{y})^{-1}, \vec{y} \circ \vec{a_R}
 \rangle } +
 \langle \vec{w_O} - \vec{y}, \vec{a_O} \rangle \\ + 
 \langle \vec{w_C}, \vec{a_C} \rangle +
-\color{purple}{\langle (\vec{y})^{-1} \circ \vec{w_R} + \vec{a_L}, \vec{w_L} \rangle} =
+\textcolor{purple}{\langle (\vec{y})^{-1} \circ \vec{w_R} + \vec{a_L}, \vec{w_L} \rangle} =
 \langle \vec{w_V}, \vec{v} \rangle +
 w_c +
 \delta(y, z)
@@ -491,7 +497,7 @@ $$
 <center><b>Becomes</b></center>
 
 $$
-\color{purple}{
+\textcolor{purple}{
 \langle
 \vec{a_L} + \vec{w_R} \circ (\vec{y})^{-1}, \vec{y} \circ \vec{a_R} +\vec{w_L}
 \rangle } +

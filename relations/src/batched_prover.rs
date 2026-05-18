@@ -206,7 +206,7 @@ impl<
                 let y_var = odd_prover.allocate(Some(child_plus_delta.y)).unwrap();
 
                 // Select on odd_prover
-                select(odd_prover, x_var.into(), chunk.iter().cloned());
+                select(odd_prover, x_var.into(), chunk.iter().cloned())?;
 
                 // Add transcript entry for rerandomized leaf
                 odd_prover
@@ -407,7 +407,7 @@ pub fn batched_select_and_accumulate_root<
         let y_var = cs.allocate(ith_selected_witness.map(|xy| xy.y)).unwrap();
 
         // Select from public set
-        select_public_set(cs, x_var.into(), chunk);
+        select_public_set(cs, x_var.into(), chunk)?;
 
         // Curve check
         curve_check(cs, x_var.into(), y_var.into(), C::COEFF_A, C::COEFF_B);
@@ -461,7 +461,7 @@ pub fn batched_select_and_accumulate_non_root<
         let y_var = cs.allocate(ith_selected_witness.map(|xy| xy.y)).unwrap();
 
         // Select from public set
-        select(cs, x_var.into(), chunk.iter().cloned());
+        select(cs, x_var.into(), chunk.iter().cloned())?;
 
         // Curve check
         curve_check(cs, x_var.into(), y_var.into(), C::COEFF_A, C::COEFF_B);

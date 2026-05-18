@@ -30,12 +30,14 @@ fn op_splits(op_deg: usize) -> Vec<(usize, usize)> {
     debug_assert_eq!(op_deg % 2, 0);
     let mid = op_deg / 2;
 
-    // the first two are special
+    // the first two are set to match dalek's implementation exactly
     let mut op_splits = Vec::with_capacity(op_deg);
+    // for `a_L` and `a_R`
     op_splits.push((mid, mid));
+    // for `a_O`
     op_splits.push((op_deg, 0));
 
-    // all other deg splits
+    // all other deg splits, start from 1 since `a_O` is at 0
     for r_deg in 1..op_deg + 1 {
         if r_deg == mid {
             // already taken
@@ -46,4 +48,26 @@ fn op_splits(op_deg: usize) -> Vec<(usize, usize)> {
     }
 
     op_splits
+}
+
+fn degree(ncomm: usize) -> usize {
+    // Table 1 of the fixed generalized Bulletproofs draft uses n' = 2 * ncomm + 2.
+    2 + 2 * ncomm
+}
+
+fn t_poly_degree(op_degree: usize) -> usize {
+    2 * (op_degree + 1)
+}
+
+fn transmitted_t_degree_indices(op_degree: usize) -> Vec<usize> {
+    let mid = op_degree / 2;
+    let t_poly_deg = t_poly_degree(op_degree);
+
+    let mut degrees = Vec::with_capacity(t_poly_deg - mid);
+    for d in mid..t_poly_deg + 1 {
+        if d != op_degree {
+            degrees.push(d);
+        }
+    }
+    degrees
 }

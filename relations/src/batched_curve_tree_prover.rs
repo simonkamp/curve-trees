@@ -776,7 +776,7 @@ impl<
                                     .into_affine(),
                             ),
                             Some(rerandomization_scalars_of_selected[inclusion_index]),
-                        );
+                        )?;
                     }
                 }
             }
@@ -882,7 +882,7 @@ impl<
                     all_x_coords_root_children,
                     selected_children_plus_delta_grp_by_root_index,
                     even_prover,
-                );
+                )?;
             Ok((
                 RootChildrenSelected::Even(selected_children_plus_delta),
                 RootChildrenCoordsVars::Even(selected_children_of_root_xs),
@@ -918,7 +918,7 @@ impl<
                 all_x_coords_root_children,
                 selected_children_plus_delta_grp_by_root_index,
                 odd_prover,
-            );
+            )?;
             Ok((
                 RootChildrenSelected::Odd(selected_children_plus_delta),
                 RootChildrenCoordsVars::Odd(selected_children_of_root_xs),
@@ -932,7 +932,7 @@ impl<
         all_x_coords_root_children: Vec<F0>,
         mut selected_children_plus_delta_grp_by_root_index: Vec<Vec<Affine<P1>>>,
         prover: &mut Prover<MerlinTranscript, Affine<P0>>,
-    ) -> (Vec<Vec<Affine<P1>>>, Vec<Vec<LinearCombination<F0>>>) {
+    ) -> Result<(Vec<Vec<Affine<P1>>>, Vec<Vec<LinearCombination<F0>>>), Error> {
         let mut selected_children_plus_delta = vec![vec![]; num_paths];
         // Split the variables of the vector commitments into chunks corresponding to the `max_num_indices` roots.
         let chunks = all_x_coords_root_children
@@ -947,7 +947,7 @@ impl<
             let c = prover
                 .transcript()
                 .challenge_scalar(b"challenge-for-multi_select");
-            multi_select_public_set_ext_challenge(prover, xs.clone(), chunk, c);
+            multi_select_public_set_ext_challenge(prover, xs.clone(), chunk, c)?;
             for (j, x) in xs.into_iter().enumerate() {
                 selected_children_of_root_xs[j].push(x);
             }
@@ -959,7 +959,7 @@ impl<
                 selected_children_plus_delta[j].push(child);
             }
         }
-        (selected_children_plus_delta, selected_children_of_root_xs)
+        Ok((selected_children_plus_delta, selected_children_of_root_xs))
     }
 
     pub fn randomize_nodes<R: CryptoRngCore>(

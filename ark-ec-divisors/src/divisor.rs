@@ -3,6 +3,7 @@ use ark_std::{vec, vec::Vec};
 use core::ops::Div;
 use subtle::{Choice, ConditionallySelectable, CtOption};
 
+use crate::DivisorPoly;
 use crate::barycentric::Interpolator;
 use crate::error::Error;
 
@@ -19,6 +20,20 @@ pub(super) struct Evals<F: PrimeField> {
 impl<F: PrimeField> Evals<F> {
     fn new(evals: Vec<F>, degree: u16) -> Self {
         Self { evals, degree }
+    }
+
+    /// Compute evaluations of the curve modulus polynomial `x^3 + ax + b`.
+    ///
+    /// This computes the evaluations of the curve equation at `x = 0, 1, 2, ..., n-1`.
+    pub(super) fn compute_modulus(a: F, b: F, amount_of_evals: u16) -> Evals<F> {
+        let mut evals = Vec::with_capacity(amount_of_evals as usize);
+        for i in 0..amount_of_evals {
+            let x = F::from(u64::from(i));
+            let x_cube = x.square() * x;
+            let ax = x * a;
+            evals.push(x_cube + ax + b);
+        }
+        Self::new(evals, 3)
     }
 
     fn len(&self) -> usize {
@@ -100,20 +115,6 @@ impl<F: PrimeField> Div<Evals<F>> for DivisorEvals<F> {
 }
 
 impl<F: PrimeField> DivisorEvals<F> {
-    /// Compute evaluations of the curve modulus polynomial `x^3 + ax + b`.
-    ///
-    /// This computes the evaluations of the curve equation at `x = 0, 1, 2, ..., n-1`.
-    pub(super) fn compute_modulus(a: F, b: F, amount_of_evals: u16) -> Evals<F> {
-        let mut evals = Vec::with_capacity(amount_of_evals as usize);
-        for i in 0..amount_of_evals {
-            let x = F::from(u64::from(i));
-            let x_cube = x.square() * x;
-            let ax = x * a;
-            evals.push(x_cube + ax + b);
-        }
-        Evals::new(evals, 3)
-    }
-
     pub(super) fn from_small(small: SmallDivisor<F>, modulus: &Evals<F>) -> Self {
         let SmallDivisor {
             x_coefficient,
@@ -257,6 +258,21 @@ impl<F: PrimeField> DivisorEvals<F> {
             degree: 2,
         };
         self / denominator
+    }
+
+    /// Convert divisor from univariate to bivariate representation.
+    pub fn to_poly(&self, interpolator: &Interpolator<F>) -> Result<DivisorPoly<F>, Error> {
+        let [a, b] = self.interpolate(interpolator)?;
+        let zero_coefficient = a[0];
+        let x_coefficients = a[1..].to_vec();
+        let yx_coefficients = b[1..].to_vec();
+        let y_coefficient = b[0];
+        Ok(DivisorPoly {
+            zero_coefficient,
+            x_coefficients,
+            yx_coefficients,
+            y_coefficient,
+        })
     }
 
     pub(super) fn merge(

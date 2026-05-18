@@ -9,6 +9,7 @@ use ark_std::UniformRand;
 use std::time::Instant;
 
 use ark_pallas::Affine;
+use ark_std::iterable::Iterable;
 use bulletproofs::r1cs::verifier::{batch_verify_with_given_randomness, batch_verify_with_rng};
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
@@ -16,7 +17,6 @@ use dock_crypto_utils::randomized_mult_checker::RandomizedMultCheckerGuard;
 use dock_crypto_utils::transcript::{MerlinTranscript, Transcript};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
-// Shuffle gadget (documented in markdown file)
 
 /// A proof-of-shuffle.
 struct ShuffleProof<C: AffineRepr>(R1CSProof<C>);
@@ -399,7 +399,7 @@ fn example_gadget_proof<C: AffineRepr>(
     let mut rng = rand::thread_rng();
     let (commitments, vars): (Vec<_>, Vec<_>) = [a1, a2, b1, b2, c1]
         .iter()
-        .map(|x| prover.commit(C::ScalarField::from(*x), C::ScalarField::rand(&mut rng)))
+        .map(|x| prover.commit(C::ScalarField::from(x), C::ScalarField::rand(&mut rng)))
         .unzip();
 
     assert_eq!(C::ScalarField::from(a1), prover.eval(&vars[0].into()));
@@ -534,9 +534,9 @@ fn range_proof_gadget() {
         let (min, max) = (0u64, ((1u128 << n) - 1) as u64);
         let values: Vec<u64> = (0..m).map(|_| rng.gen_range(min..max)).collect();
         for v in values {
-            assert!(range_proof_helper::<Affine>(v.into(), *n).is_ok());
+            assert!(range_proof_helper::<Affine>(v.into(), n).is_ok());
         }
-        assert!(range_proof_helper::<Affine>((max + 1).into(), *n).is_err());
+        assert!(range_proof_helper::<Affine>((max + 1).into(), n).is_err());
     }
 }
 
@@ -586,12 +586,23 @@ fn range_proof_helper<C: AffineRepr>(v_val: u64, n: usize) -> Result<(), R1CSErr
     assert!(range_proof(&mut verifier, var.into(), None, n).is_ok());
 
     let r = C::ScalarField::rand(&mut rng);
+    let vt = verifier.verification_scalars_and_points(&proof)?;
+    let mut vt_clone = vt.clone();
     let res = RandomizedMultCheckerGuard::new(r).with_err(R1CSError::VerificationError, |rmc| {
-        let vt = verifier.verification_scalars_and_points(&proof)?;
         add_verification_tuple_to_rmc(vt, &pc_gens, &bp_gens, rmc)?;
         Ok(())
     });
     assert!(res.is_ok());
+
+    assert!(vt_clone.padded_n().is_ok());
+
+    vt_clone.proof_independent_scalars.drain(1..);
+    assert!(vt_clone.padded_n().is_err());
+    assert!(verify_given_verification_tuple(vt_clone.clone(), &pc_gens, &bp_gens).is_err());
+
+    vt_clone.proof_independent_scalars.clear();
+    assert!(vt_clone.padded_n().is_err());
+    assert!(verify_given_verification_tuple(vt_clone, &pc_gens, &bp_gens).is_err());
 
     Ok(())
 }

@@ -211,7 +211,6 @@ impl<F: PrimeField> ScalarDecomposition<F> {
         let mut generator_iter = generator_source.iter();
         let generator: Projective<C> = generator_iter.next().unwrap();
 
-        // NOTE: Even this does not need to be direct multiplication as we have multiples of generator in the iterator
         // Write the inverse of the resulting point
         // divisor_points[0] = -(generator * self.scalar)
         divisor_points[0] = generator * (-self.scalar);

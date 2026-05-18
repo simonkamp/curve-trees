@@ -11,7 +11,7 @@ use zeroize::Zeroize;
 #[derive(Clone, Debug, Zeroize, Eq)]
 pub struct DivisorPoly<F: PrimeField> {
     /// The coefficient for the `y^1` term.
-    /// After reduction modulo `y^2 = x^3 + Ax + B`, only a single y-degree-1 term remains.
+    /// After reduction modulo `y^2 = x^3 + Ax + B`, only a single degree-1 `y` term remains.
     pub y_coefficient: F,
     /// `c[j] * y^1 * x^(j + 1)`
     /// After reduction there is only one y-degree, so this is a flat vec of x-coefficients
@@ -115,6 +115,17 @@ impl<F: PrimeField> DivisorPoly<F> {
             x_coefficients: vec![],
             zero_coefficient: F::zero(),
         }
+    }
+
+    /// Normalize the x coefficient to 1.
+    ///
+    /// Panics if there is no x coefficient to normalize or if it cannot be normalized to 1.
+    #[must_use]
+    pub fn normalize_x_coefficient(self) -> Result<Self, Error> {
+        let scalar = self.x_coefficients[0]
+            .inverse()
+            .ok_or_else(|| Error::InvertingZero)?;
+        Ok(self * scalar)
     }
 }
 
@@ -272,7 +283,7 @@ impl<F: PrimeField> Mul<&Poly<F>> for Poly<F> {
 }*/
 
 impl<F: PrimeField> DivisorPoly<F> {
-    /// Evaluate this polynomial with the specified x/y values.
+    /// Evaluate this polynomial with the specified `x`, `y` values.
     ///
     /// Panics on polynomials with terms whose powers exceed 2^64.
     #[cfg(test)]
@@ -359,17 +370,6 @@ impl<F: PrimeField> DivisorPoly<F> {
         };
 
         (diff_x, diff_y)
-    }
-
-    /// Normalize the x coefficient to 1.
-    ///
-    /// Panics if there is no x coefficient to normalize or if it cannot be normalized to 1.
-    #[must_use]
-    pub fn normalize_x_coefficient(self) -> Result<Self, Error> {
-        let scalar = self.x_coefficients[0]
-            .inverse()
-            .ok_or_else(|| Error::InvertingZero)?;
-        Ok(self * scalar)
     }
 }
 
