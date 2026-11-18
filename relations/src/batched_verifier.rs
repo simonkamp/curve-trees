@@ -36,13 +36,12 @@ impl<
         odd_verifier: &mut Verifier<MerlinTranscript, Affine<P1>>,
         parameters: &(impl SelRerandProofParametersRef<P0, P1, Parameters0, Parameters1> + Sync),
     ) -> Result<()> {
+        self.check_lengths_for_root_and_width_of_path(root)?;
+
         let even_parameters = parameters.even_parameters();
         let odd_parameters = parameters.odd_parameters();
 
         let num_indices_usize = self.path.selected_commitments.len();
-        if num_indices_usize == 0 {
-            return Err(Error::NeedNonZeroNumberOfIndices);
-        }
         let num_indices = num_indices_usize as u32;
 
         let mut even_node_divisors = Vec::new();
@@ -50,10 +49,9 @@ impl<
         // Leaf items kept separate from the summed items for the height > 1 path (see constraints_for_dlogs_presummed).
         let mut odd_leaf_divisors = Vec::new();
 
-        // A proof with no rerandomized path commitments is for a height-1 tree. The root is
-        // itself the parent of the leaves, so select each leaf directly from the public root
-        // x-coords.
-        if self.path.even_commitments.is_empty() && self.path.odd_commitments.is_empty() {
+        // In a tree of height 1, the root is itself the parent of the leaves, so select each leaf
+        // directly from the public root x-coords.
+        if root.height() == 1 {
             let root_node = match root {
                 Root::Odd(root_node) => root_node,
                 Root::Even(_) => {
@@ -446,14 +444,14 @@ impl<
         if num_multi_paths == 0 {
             return Err(Error::NeedNonZeroNumberOfPaths);
         }
+        for path in paths {
+            path.check_lengths_for_root_and_width_of_path(root)?;
+        }
 
         let num_indices_per_mp = paths
             .iter()
             .map(|p| p.path.selected_commitments.len())
             .collect::<Vec<_>>();
-        if num_indices_per_mp.iter().any(|&n| n == 0) {
-            return Err(Error::NeedNonZeroNumberOfIndices);
-        }
         // maximum number of leaves in any multi-path
         let max_leaves_mp = num_indices_per_mp.iter().copied().max().unwrap();
 
@@ -465,11 +463,7 @@ impl<
         let mut odd_leaf_divisors: Vec<Vec<DlogItem<F1, Parameters1>>> =
             vec![Vec::new(); num_multi_paths];
 
-        let is_height_one = paths
-            .iter()
-            .all(|p| p.path.even_commitments.is_empty() && p.path.odd_commitments.is_empty());
-
-        if is_height_one {
+        if root.height() == 1 {
             let root_node = match root {
                 Root::Odd(root_node) => root_node,
                 Root::Even(_) => {

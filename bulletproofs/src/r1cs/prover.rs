@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 #[cfg(not(feature = "std"))]
-use alloc::{borrow::ToOwned, boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, vec, vec::Vec};
 
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::Field;
@@ -387,7 +387,9 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
             .collect();
 
         // add the opening (values || blinding) to the secrets
-        self.secrets.vec_open.push((v_blinding, v.to_owned()));
+        self.secrets
+            .vec_open
+            .push((v_blinding, committed_vec_opening(v)));
 
         // add the commitment to the transcript.
         self.transcript
@@ -522,7 +524,7 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
     pub fn size(&self) -> u32 {
         let mut n = self.secrets.a_L.len();
         for (_, v) in self.secrets.vec_open.iter() {
-            n = core::cmp::max(n, v.len());
+            n = core::cmp::max(n, committed_vec_dimension(v));
         }
         n as u32
     }
@@ -584,10 +586,10 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
             .merlin
             .append_u64(b"c", self.secrets.vec_open.len() as u64);
         for i in 0..self.secrets.vec_open.len() {
-            self.transcript
-                .borrow_mut()
-                .merlin
-                .append_u64(b"c_i", self.secrets.vec_open[i].1.len() as u64);
+            self.transcript.borrow_mut().merlin.append_u64(
+                b"c_i",
+                committed_vec_dimension(&self.secrets.vec_open[i].1) as u64,
+            );
         }
 
         // // Create a `TranscriptRng` from the high-level witness data
@@ -1373,4 +1375,17 @@ impl<'g, T: BorrowMut<MerlinTranscript>, C: AffineRepr> Prover<'g, T, C> {
         };
         Ok((proof, self.transcript))
     }
+}
+
+/// Returns the opening the prover stores for a vector commitment to `v`. Created for mocking.
+#[cfg_attr(feature = "nightly_mocking_tests", mocktopus::macros::mockable)]
+pub fn committed_vec_opening<F: Clone>(v: &[F]) -> Vec<F> {
+    v.to_vec()
+}
+
+/// Returns the dimension the prover declares for a vector commitment with opening `opening`.
+/// Created for mocking.
+#[cfg_attr(feature = "nightly_mocking_tests", mocktopus::macros::mockable)]
+pub fn committed_vec_dimension<F>(opening: &[F]) -> usize {
+    opening.len()
 }

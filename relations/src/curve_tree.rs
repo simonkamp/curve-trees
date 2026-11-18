@@ -181,6 +181,7 @@ impl<
                 CurveTreeNode::InnerNode(n) => Root::Even(RootNode {
                     commitments: n.commitments_to_children.clone(),
                     x_coord_children: n.x_coord_children.clone(),
+                    height: n.height as u8,
                 }),
                 _ => unreachable!("Root of a curve tree can't be a leaf"),
             },
@@ -188,6 +189,7 @@ impl<
                 CurveTreeNode::InnerNode(n) => Root::Odd(RootNode {
                     commitments: n.commitments_to_children.clone(),
                     x_coord_children: n.x_coord_children.clone(),
+                    height: n.height as u8,
                 }),
                 _ => unreachable!("Root of a curve tree can't be a leaf"),
             },
@@ -300,7 +302,7 @@ impl<
     }
 }
 
-/// A rerandomized path in the tree going from root to leaf (excluding both root and leaf). Given to the verifier to verify the proof
+/// A rerandomized path in the tree going from root to leaf (excluding root). Given to the verifier to verify the proof
 /// The last element in `odd_commitments` is the rerandomized parent of the selected leaf.
 /// The last element in `even_commitments` is the randomized leaf, and second last item is the rerandomized
 /// parent of the last element in `odd_commitments`, etc.
@@ -352,6 +354,111 @@ pub struct SelectAndRerandomizeMultiPathWithDivisorComms<
     pub odd_divisor_comms: Vec<DivisorComms<Affine<P1>>>,
 }
 
+impl<const L: usize, P0: SWCurveConfig, P1: SWCurveConfig>
+    SelectAndRerandomizePathWithDivisorComms<L, P0, P1>
+{
+    /// Errors unless `root` has a valid height and the path and divisor commitment lengths are
+    /// those of a path from `root` to a leaf.
+    pub fn check_lengths_for_root(&self, root: &Root<L, 1, P0, P1>) -> Result<(), Error> {
+        root.check_height()?;
+        let height = root.height();
+        let h = height as usize;
+        // The leaf node is part of `self.path.even_commitments`
+        check_path_len(
+            height,
+            "even_commitments",
+            self.path.even_commitments.len(),
+            (h + 1) / 2,
+        )?;
+        check_path_len(
+            height,
+            "odd_commitments",
+            self.path.odd_commitments.len(),
+            h / 2,
+        )?;
+        check_path_len(
+            height,
+            "even_divisor_comms",
+            self.even_divisor_comms.len(),
+            h / 2,
+        )?;
+        check_path_len(
+            height,
+            "odd_divisor_comms",
+            self.odd_divisor_comms.len(),
+            (h + 1) / 2,
+        )
+    }
+}
+
+impl<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig>
+    SelectAndRerandomizeMultiPathWithDivisorComms<L, M, P0, P1>
+{
+    /// Errors unless `root` has a valid height, the number of selected leaves is in `[1, M]` and the
+    /// path and divisor commitment lengths are those of a multi-path from `root` to the selected leaves.
+    pub fn check_lengths_for_root_and_width_of_path(
+        &self,
+        root: &Root<L, M, P0, P1>,
+    ) -> Result<(), Error> {
+        root.check_height()?;
+        let num_indices = self.path.selected_commitments.len();
+        if num_indices == 0 {
+            return Err(Error::NeedNonZeroNumberOfIndices);
+        }
+        if num_indices > M {
+            return Err(Error::MoreIndicesThanSupportedBatchSize(
+                num_indices as u32,
+                M as u32,
+            ));
+        }
+        let height = root.height();
+        let h = height as usize;
+        // The leaf node is not part of `self.path.even_commitments`
+        check_path_len(
+            height,
+            "even_commitments",
+            self.path.even_commitments.len(),
+            (h - 1) / 2,
+        )?;
+        check_path_len(
+            height,
+            "odd_commitments",
+            self.path.odd_commitments.len(),
+            h / 2,
+        )?;
+        check_path_len(
+            height,
+            "even_divisor_comms",
+            self.even_divisor_comms.len(),
+            h / 2,
+        )?;
+        check_path_len(
+            height,
+            "odd_divisor_comms",
+            self.odd_divisor_comms.len(),
+            (h - 1) / 2 + num_indices,
+        )
+    }
+}
+
+fn check_path_len(
+    height: u8,
+    field: &'static str,
+    got: usize,
+    expected: usize,
+) -> Result<(), Error> {
+    if got == expected {
+        Ok(())
+    } else {
+        Err(Error::PathLengthMismatch {
+            height,
+            field,
+            expected,
+            got,
+        })
+    }
+}
+
 /// A list of `L` potential nodes
 type Children<const L: usize, const M: usize, P0, P1> = [Option<CurveTreeNode<L, M, P1, P0>>; L];
 
@@ -380,6 +487,30 @@ impl<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> Root<
             Self::Odd(_) => false,
         }
     }
+
+    pub fn height(&self) -> u8 {
+        match self {
+            Self::Even(n) => n.height,
+            Self::Odd(n) => n.height,
+        }
+    }
+
+    pub fn check_height(&self) -> Result<(), Error> {
+        let height = self.height();
+        // An even root has an even height of at least 2 and an odd root has an odd height.
+        let valid = match self {
+            Self::Even(_) => height >= 2 && height % 2 == 0,
+            Self::Odd(_) => height % 2 == 1,
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(Error::InvalidRootHeight {
+                height,
+                is_even: self.is_even(),
+            })
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
@@ -388,6 +519,8 @@ pub struct RootNode<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCur
     pub commitments: [Affine<P0>; M],
     /// x-coordinates of the immediate children
     pub x_coord_children: Vec<[P1::BaseField; L]>,
+    /// Height of the tree. Leaves are at height 0.
+    pub height: u8,
 }
 
 impl<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> core::fmt::Debug
@@ -397,6 +530,7 @@ impl<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> core:
         fmt.debug_struct("RootNode")
             .field("commitments", &self.commitments)
             .field("x_coord_children", &self.x_coord_children)
+            .field("height", &self.height)
             .finish()
     }
 }
@@ -615,6 +749,8 @@ impl<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> Valid
     for Root<L, M, P0, P1>
 {
     fn check(&self) -> Result<(), SerializationError> {
+        self.check_height()
+            .map_err(|_| SerializationError::InvalidData)?;
         match self {
             Self::Even(n) => n.check(),
             Self::Odd(n) => n.check(),
@@ -659,18 +795,23 @@ impl<const L: usize, const M: usize, P0: SWCurveConfig, P1: SWCurveConfig> Canon
         validate: Validate,
     ) -> Result<Self, SerializationError> {
         let t: u8 = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
-        match t {
-            0u8 => Ok(Self::Even(CanonicalDeserialize::deserialize_with_mode(
+        let root = match t {
+            0u8 => Self::Even(CanonicalDeserialize::deserialize_with_mode(
                 &mut reader,
                 compress,
                 validate,
-            )?)),
-            1u8 => Ok(Self::Odd(CanonicalDeserialize::deserialize_with_mode(
+            )?),
+            1u8 => Self::Odd(CanonicalDeserialize::deserialize_with_mode(
                 &mut reader,
                 compress,
                 validate,
-            )?)),
-            _ => Err(SerializationError::InvalidData),
+            )?),
+            _ => return Err(SerializationError::InvalidData),
+        };
+        if matches!(validate, Validate::Yes) {
+            root.check_height()
+                .map_err(|_| SerializationError::InvalidData)?;
         }
+        Ok(root)
     }
 }

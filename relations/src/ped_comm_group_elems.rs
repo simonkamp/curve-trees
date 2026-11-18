@@ -67,6 +67,7 @@ use ark_std::{
     string::ToString,
     vec::Vec,
 };
+use bulletproofs::r1cs::constraint_system::constrain_lc_with_scalar;
 use bulletproofs::r1cs::{ConstraintSystem, Prover, Variable, Verifier};
 use bulletproofs::BulletproofGens;
 use dock_crypto_utils::msm::multiply_field_elems_with_same_group_elem;
@@ -93,6 +94,7 @@ impl<P: SWCurveConfig> ReRandomizedPoints<P> {
 }
 
 const RE_RANDOMIZED_POINTS: &'static [u8; 20] = b"re_randomized_points";
+const PUBLIC_SUFFIX: &'static [u8; 13] = b"public_suffix";
 
 /// Fewest scalars for which a `BatchMulPreprocessing` table beats one scalar multiplication each.
 const MIN_SCALARS_FOR_FIXED_BASE_TABLE: usize = 32;
@@ -118,6 +120,44 @@ pub fn prove<
     shared_dlog_indices: &BTreeSet<usize>,
     a_l_estimate: Option<u16>,
 ) -> Result<(ReRandomizedPoints<P1>, Vec<DivisorComms<Affine<P0>>>), Error> {
+    prove_given_public_suffix(
+        rng,
+        prover,
+        points,
+        re_randomized_comm,
+        &[],
+        blinding_of_comm,
+        blindings_for_points,
+        parameters,
+        bp_gens,
+        shared_dlog_indices,
+        a_l_estimate,
+    )
+}
+
+/// Same as [`prove`] but `re_randomized_comm` opens to `[points[0].x, points[0].y, ..., points[n].x, points[n].y] || public_suffix`
+/// and each suffix coordinate is constrained to equal its public value. The opened dimension is `2 * points.len() + public_suffix.len()`.
+/// `public_suffix` is added to the transcript.
+pub fn prove_given_public_suffix<
+    R: CryptoRngCore,
+    Fb: PrimeField,
+    Fs: PrimeField,
+    P0: SWCurveConfig<ScalarField = Fs> + Copy,
+    P1: DivisorCurve<BaseField = Fs, ScalarField = Fb> + Copy,
+    Parameters: DiscreteLogParameters,
+>(
+    rng: &mut R,
+    prover: &mut Prover<MerlinTranscript, Affine<P0>>,
+    points: &[Affine<P1>],
+    re_randomized_comm: &Affine<P0>,
+    public_suffix: &[Fs],
+    blinding_of_comm: P0::ScalarField,
+    blindings_for_points: &[P1::ScalarField],
+    parameters: &SingleLayerProofParametersNew<P1, Parameters>,
+    bp_gens: &BulletproofGens<Affine<P0>>,
+    shared_dlog_indices: &BTreeSet<usize>,
+    a_l_estimate: Option<u16>,
+) -> Result<(ReRandomizedPoints<P1>, Vec<DivisorComms<Affine<P0>>>), Error> {
     let size = points.len();
     if blindings_for_points.len() != size {
         return Err(Error::MismatchedSize(blindings_for_points.len(), size));
@@ -127,13 +167,14 @@ pub fn prove<
         |a| a as usize,
     ));
 
-    // [points[0].x, points[0].y, ..., points[n].x, points[n].y]
-    let mut coords = Vec::with_capacity(2 * size);
+    // [points[0].x, points[0].y, ..., points[n].x, points[n].y] || public_suffix
+    let mut coords = Vec::with_capacity(2 * size + public_suffix.len());
     for p in points {
         let (x, y) = p.xy().ok_or_else(|| Error::PointCantBeZero)?;
         coords.push(x);
         coords.push(y);
     }
+    coords.extend_from_slice(public_suffix);
 
     let blinding_base = parameters.sl_params.pc_gens.B_blinding.into_group();
     let mut blinders_b_blinding =
@@ -182,6 +223,9 @@ pub fn prove<
         &coords,
         &re_randomized_points,
     );
+    prover.transcript().append(PUBLIC_SUFFIX, &public_suffix);
+
+    constrain_public_suffix(prover, &coord_vars[2 * size..], public_suffix);
 
     let cs = CurveSpec {
         a: P1::COEFF_A,
@@ -284,6 +328,36 @@ pub fn verify<
     shared_dlog_indices: &BTreeSet<usize>,
     a_l_estimate: Option<u16>,
 ) -> Result<(), Error> {
+    verify_given_public_suffix(
+        verifier,
+        re_randomized_comm,
+        &[],
+        re_randomized_points,
+        comms,
+        parameters,
+        shared_dlog_indices,
+        a_l_estimate,
+    )
+}
+
+/// Same as [`verify`] but `re_randomized_comm` is opened at dimension `2 * re_randomized_points.len() + public_suffix.len()`
+/// and the coordinates after the points are constrained to equal `public_suffix`. `public_suffix` is added to the transcript.
+pub fn verify_given_public_suffix<
+    Fb: PrimeField,
+    Fs: PrimeField,
+    P0: SWCurveConfig<ScalarField = Fs> + Copy,
+    P1: SWCurveConfig<BaseField = Fs, ScalarField = Fb> + Copy,
+    Parameters: DiscreteLogParameters,
+>(
+    verifier: &mut Verifier<MerlinTranscript, Affine<P0>>,
+    re_randomized_comm: Affine<P0>,
+    public_suffix: &[Fs],
+    re_randomized_points: &ReRandomizedPoints<P1>,
+    comms: &[DivisorComms<Affine<P0>>],
+    parameters: &SingleLayerProofParametersNew<P1, Parameters>,
+    shared_dlog_indices: &BTreeSet<usize>,
+    a_l_estimate: Option<u16>,
+) -> Result<(), Error> {
     let size = re_randomized_points.len();
 
     if comms.len() != size {
@@ -312,12 +386,15 @@ pub fn verify<
         |a| a as usize,
     ));
 
-    // Commit to both coordinates of the original points
-    let coord_vars = verifier.commit_vec(2 * size, re_randomized_comm);
+    // Commit to both coordinates of the original points and the public suffix
+    let coord_vars = verifier.commit_vec(2 * size + public_suffix.len(), re_randomized_comm);
 
     verifier
         .transcript()
         .append(RE_RANDOMIZED_POINTS, re_randomized_points);
+    verifier.transcript().append(PUBLIC_SUFFIX, &public_suffix);
+
+    constrain_public_suffix(verifier, &coord_vars[2 * size..], public_suffix);
 
     let cs = CurveSpec {
         a: P1::COEFF_A,
@@ -391,6 +468,17 @@ pub fn verify<
     }
 
     Ok(())
+}
+
+/// Constrains each of `suffix_vars` to equal the corresponding element of `public_suffix`.
+fn constrain_public_suffix<Fs: PrimeField, CS: ConstraintSystem<Fs>>(
+    cs: &mut CS,
+    suffix_vars: &[Variable<Fs>],
+    public_suffix: &[Fs],
+) {
+    for (var, value) in suffix_vars.iter().zip(public_suffix) {
+        constrain_lc_with_scalar(cs, (*var).into(), *value);
+    }
 }
 
 /// This is just to allow mocking
@@ -629,6 +717,104 @@ mod tests {
             result.is_err(),
             "expected verify to reject the reflected point, got: {result:?}",
         );
+    }
+
+    #[test]
+    fn public_suffix_is_constrained() {
+        // The commitment holds the points' coordinates followed by a suffix. An invalid suffix is
+        // rejected.
+        let mut rng = rand::thread_rng();
+
+        let sr_params = SelRerandParameters::<PallasConfig, VestaConfig>::new(1 << 13, 1 << 13)
+            .expect("Failed to create SelRerandParameters");
+
+        let odd_proof_params =
+            SingleLayerProofParametersNew::<VestaConfig, VestaParams>::from_single_layer_params(
+                sr_params.odd_parameters.clone(),
+            );
+
+        let nesting_size = 2;
+        let nested: Vec<Affine<VestaConfig>> = (0..nesting_size)
+            .map(|_| Affine::<VestaConfig>::rand(&mut rng))
+            .collect();
+        let real_suffix = [
+            VestaBase::rand(&mut rng),
+            VestaBase::rand(&mut rng),
+            VestaBase::zero(),
+            VestaBase::from(1u64),
+        ];
+        let mut coords: Vec<VestaBase> = nested
+            .iter()
+            .flat_map(|n| {
+                let (x, y) = n.xy().unwrap();
+                [x, y]
+            })
+            .collect();
+        coords.extend_from_slice(&real_suffix);
+        let blinding_of_comm = VestaBase::rand(&mut rng);
+        let re_randomized_comm =
+            sr_params
+                .even_parameters
+                .commit(coords.as_slice(), blinding_of_comm, 0);
+        let shared_dlog_indices: BTreeSet<usize> = [0].into_iter().collect();
+
+        let mut check = |expected_suffix: &[VestaBase]| {
+            let blindings_for_points: Vec<PallasBase> = (0..nesting_size)
+                .map(|_| PallasBase::rand(&mut rng))
+                .collect();
+
+            let transcript = MerlinTranscript::new(b"ped_comm_group_elems_test");
+            let mut pallas_prover: Prover<_, Affine<PallasConfig>> =
+                Prover::new(&sr_params.even_parameters.pc_gens, transcript);
+            let (re_randomized_nested, comms) =
+                prove_given_public_suffix::<_, _, _, PallasConfig, VestaConfig, VestaParams>(
+                    &mut rng,
+                    &mut pallas_prover,
+                    &nested,
+                    &re_randomized_comm,
+                    &real_suffix,
+                    blinding_of_comm,
+                    &blindings_for_points,
+                    &odd_proof_params,
+                    &sr_params.even_parameters.bp_gens,
+                    &shared_dlog_indices,
+                    None,
+                )
+                .unwrap();
+            let proof = pallas_prover
+                .prove_with_rng(&sr_params.even_parameters.bp_gens, &mut rng)
+                .unwrap();
+
+            let transcript = MerlinTranscript::new(b"ped_comm_group_elems_test");
+            let mut pallas_verifier: Verifier<_, Affine<PallasConfig>> = Verifier::new(transcript);
+            verify_given_public_suffix::<_, _, PallasConfig, VestaConfig, VestaParams>(
+                &mut pallas_verifier,
+                re_randomized_comm,
+                expected_suffix,
+                &re_randomized_nested,
+                &comms,
+                &odd_proof_params,
+                &shared_dlog_indices,
+                None,
+            )
+            .unwrap();
+            pallas_verifier.verify(
+                &proof,
+                &sr_params.even_parameters.pc_gens,
+                &sr_params.even_parameters.bp_gens,
+            )
+        };
+
+        check(&real_suffix).unwrap();
+
+        assert!(check(&[VestaBase::zero(); 4]).is_err());
+
+        let mut wrong_suffix = real_suffix;
+        wrong_suffix[3] = real_suffix[2].clone();
+        assert!(check(&wrong_suffix).is_err());
+
+        let short_suffix = real_suffix[..3].as_ref();
+        assert!(check(short_suffix).is_err());
     }
 
     // Run as cargo +nightly nextest run --features nightly_mocking_tests mocking_tests

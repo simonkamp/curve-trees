@@ -85,6 +85,8 @@ impl<
         odd_verifier: &mut Verifier<MerlinTranscript, Affine<P1>>,
         parameters: &(impl SelRerandProofParametersRef<P0, P1, Parameters0, Parameters1> + Sync),
     ) -> Result<()> {
+        self.check_lengths_for_root(root)?;
+
         let even_parameters = parameters.even_parameters();
         let odd_parameters = parameters.odd_parameters();
 

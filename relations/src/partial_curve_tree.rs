@@ -236,11 +236,19 @@ impl<
         if is_root_at_odd_level {
             let node = self.odd_levels.last().unwrap().get(&0).unwrap();
             let default_node = self.odd_level_default_nodes.last().unwrap();
-            Root::Odd(LeanCurveTree::inner_root_node(node, default_node))
+            Root::Odd(LeanCurveTree::inner_root_node(
+                node,
+                default_node,
+                self.height,
+            ))
         } else {
             let node = self.even_levels.last().unwrap().get(&0).unwrap();
             let default_node = self.even_level_default_nodes.last().unwrap();
-            Root::Even(LeanCurveTree::inner_root_node(node, default_node))
+            Root::Even(LeanCurveTree::inner_root_node(
+                node,
+                default_node,
+                self.height,
+            ))
         }
     }
 

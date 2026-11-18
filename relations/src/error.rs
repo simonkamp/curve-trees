@@ -95,6 +95,23 @@ pub enum Error {
     #[error("Inconsistent number of indices across multi-paths")]
     InconsistentNumberOfIndices,
 
+    /// Root height is 0 or its parity doesn't match the root's level
+    #[error("Invalid root height {height} for a root with is_even = {is_even}")]
+    InvalidRootHeight { height: u8, is_even: bool },
+
+    /// Path length doesn't match the root's height
+    #[error("Path length mismatch for tree height {height}: {field} has length {got}, expected {expected}")]
+    PathLengthMismatch {
+        height: u8,
+        field: &'static str,
+        expected: usize,
+        got: usize,
+    },
+
+    /// Witness path height doesn't match the root's height
+    #[error("Witness path height {got} doesn't match root height {expected}")]
+    WitnessPathHeightMismatch { expected: u8, got: usize },
+
     /// DivisorError error
     #[error("Divisor error: {0}")]
     Divisor(DivisorError),

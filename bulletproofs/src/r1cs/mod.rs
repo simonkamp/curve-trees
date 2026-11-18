@@ -27,6 +27,9 @@ pub use verifier::batch::combine_verification_tuples;
 
 pub use crate::errors::R1CSError;
 
+#[cfg(feature = "nightly_mocking_tests")]
+pub use self::prover::{committed_vec_dimension, committed_vec_opening};
+
 /// Returns
 /// - degrees of polynomials l(x) and r(x) which will potentially contain terms involving a_L, a_R, a_O,
 ///   etc except the blinding terms s_L and s_R

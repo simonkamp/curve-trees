@@ -14,14 +14,8 @@ use ark_std::{boxed::Box, format, string::ToString, vec::Vec};
 use bulletproofs::r1cs::{ConstraintSystem, LinearCombination, Verifier};
 use dock_crypto_utils::transcript::{MerlinTranscript, Transcript};
 
-// NOTE: These do not verify that the path is of correct length. This means a prover might have
-// supplied a membership proof of an inner node and not a leaf. This is fine because the (randomized) leaf
-// is never used in isolation but used in other relations as well (outside this project). A malicious
-// prover using a shorter path will only be able to prove membership only and not the actual relation
-// involving the leaf. Adding the path length check would require callers to pass the height to these
-// functions. Another potential DoS vector is the verifier, giving a long path to consume resources as
-// each node in path leads to one scalar mult check. If these apply, the caller should enforce the
-// appropriate height check
+// NOTE: The verifier gadgets reject a path whose commitment or divisor commitment lengths don't match
+// the root's height before touching the transcript or constraint system.
 
 impl<
         const L: usize,
@@ -41,6 +35,8 @@ impl<
         odd_verifier: &mut Verifier<MerlinTranscript, Affine<P1>>,
         parameters: &(impl SelRerandProofParametersRef<P0, P1, Parameters0, Parameters1> + Sync),
     ) -> Result<()> {
+        self.check_lengths_for_root(root)?;
+
         let even_parameters = parameters.even_parameters();
         let odd_parameters = parameters.odd_parameters();
 
@@ -159,6 +155,9 @@ impl<
         let num_paths = paths.len();
         if num_paths == 0 {
             return Err(Error::NeedNonZeroNumberOfPaths);
+        }
+        for path in paths {
+            path.check_lengths_for_root(root)?;
         }
 
         let mut even_node_divisors = Vec::with_capacity(num_paths);

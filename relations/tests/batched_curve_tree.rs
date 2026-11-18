@@ -1337,9 +1337,15 @@ pub fn test_batched_divisor_malformed_proof_inputs() {
     }
 
     let mut missing_root_child = valid_path_commitments.clone();
-    match &root {
-        Root::Even(_) => missing_root_child.path.odd_commitments.clear(),
-        Root::Odd(_) => missing_root_child.path.even_commitments.clear(),
+    let expected_field = match &root {
+        Root::Even(_) => {
+            missing_root_child.path.odd_commitments.clear();
+            "odd_commitments"
+        }
+        Root::Odd(_) => {
+            missing_root_child.path.even_commitments.clear();
+            "even_commitments"
+        }
     };
     let pallas_transcript = MerlinTranscript::new(b"malformed-batched-root-child");
     let mut pallas_verifier = Verifier::new(pallas_transcript);
@@ -1354,9 +1360,7 @@ pub fn test_batched_divisor_malformed_proof_inputs() {
         )
         .unwrap_err();
     match err {
-        RelError::MalformedProofInput(msg) => {
-            assert!(msg.contains("missing root child commitment"), "{msg}")
-        }
+        RelError::PathLengthMismatch { field, .. } => assert_eq!(field, expected_field),
         other => panic!("unexpected error variant: {other:?}"),
     }
 }

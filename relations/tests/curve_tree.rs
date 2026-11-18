@@ -1826,15 +1826,21 @@ pub fn test_single_path_divisor_malformed_proof_inputs() {
         )
         .unwrap();
 
-    let assert_malformed = |err: Error, expected: &str| match err {
-        Error::MalformedProofInput(msg) => assert!(msg.contains(expected), "{msg}"),
+    let assert_length_mismatch = |err: Error, expected_field: &str| match err {
+        Error::PathLengthMismatch { field, .. } => assert_eq!(field, expected_field),
         other => panic!("unexpected error variant: {other:?}"),
     };
 
     let mut missing_root_child = valid_path_commitments.clone();
-    match &root {
-        Root::Even(_) => missing_root_child.path.odd_commitments.clear(),
-        Root::Odd(_) => missing_root_child.path.even_commitments.clear(),
+    let expected_field = match &root {
+        Root::Even(_) => {
+            missing_root_child.path.odd_commitments.clear();
+            "odd_commitments"
+        }
+        Root::Odd(_) => {
+            missing_root_child.path.even_commitments.clear();
+            "even_commitments"
+        }
     };
     let pallas_transcript = MerlinTranscript::new(b"malformed-single-path-root-child");
     let mut pallas_verifier = Verifier::new(pallas_transcript);
@@ -1848,12 +1854,18 @@ pub fn test_single_path_divisor_malformed_proof_inputs() {
             &sr_proof_params,
         )
         .unwrap_err();
-    assert_malformed(err, "missing root child commitment");
+    assert_length_mismatch(err, expected_field);
 
     let mut missing_root_divisor = valid_path_commitments.clone();
-    match &root {
-        Root::Even(_) => missing_root_divisor.even_divisor_comms.clear(),
-        Root::Odd(_) => missing_root_divisor.odd_divisor_comms.clear(),
+    let expected_field = match &root {
+        Root::Even(_) => {
+            missing_root_divisor.even_divisor_comms.clear();
+            "even_divisor_comms"
+        }
+        Root::Odd(_) => {
+            missing_root_divisor.odd_divisor_comms.clear();
+            "odd_divisor_comms"
+        }
     };
     let pallas_transcript = MerlinTranscript::new(b"malformed-single-path-root-divisor");
     let mut pallas_verifier = Verifier::new(pallas_transcript);
@@ -1867,7 +1879,7 @@ pub fn test_single_path_divisor_malformed_proof_inputs() {
             &sr_proof_params,
         )
         .unwrap_err();
-    assert_malformed(err, "missing root divisor commitment");
+    assert_length_mismatch(err, expected_field);
 
     let mut missing_even_non_root_chain = valid_path_commitments.clone();
     missing_even_non_root_chain.path.even_commitments.clear();
@@ -1883,7 +1895,7 @@ pub fn test_single_path_divisor_malformed_proof_inputs() {
             &sr_proof_params,
         )
         .unwrap_err();
-    assert_malformed(err, "even_commitments must contain at least one element");
+    assert_length_mismatch(err, "even_commitments");
 }
 
 #[test]

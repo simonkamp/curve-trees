@@ -1,5 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+// Mockable prover functions are for negative testing only. Prevent shipping a release build with them.
+#[cfg(all(feature = "nightly_mocking_tests", not(debug_assertions)))]
+compile_error!(
+    "The feature `nightly_mocking_tests` is for testing only and must not be enabled in release builds."
+);
+
 extern crate alloc;
 
 mod util;

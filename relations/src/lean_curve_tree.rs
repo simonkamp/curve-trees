@@ -204,13 +204,19 @@ impl<
         if is_root_at_odd_level {
             let node = self.odd_level_path_nodes.last().unwrap();
             let default_node = self.odd_level_default_nodes.last().unwrap();
-            // Root::Odd(LeanCurveTree::<L, P0, P1>::inner_root_node(node, default_node))
-            Root::Odd(LeanCurveTree::inner_root_node(node, default_node))
+            Root::Odd(LeanCurveTree::inner_root_node(
+                node,
+                default_node,
+                self.height,
+            ))
         } else {
             let node = self.even_level_path_nodes.last().unwrap();
             let default_node = self.even_level_default_nodes.last().unwrap();
-            // Root::Even(LeanCurveTree::<L, P1, P0>::inner_root_node(node, default_node))
-            Root::Even(LeanCurveTree::inner_root_node(node, default_node))
+            Root::Even(LeanCurveTree::inner_root_node(
+                node,
+                default_node,
+                self.height,
+            ))
         }
     }
 
@@ -291,6 +297,7 @@ impl<
     pub(crate) fn inner_root_node(
         node: &Node<P0, P1>,
         default_node: &DefaultNode<P0, P1>,
+        height: u8,
     ) -> RootNode<L, 1, P1, P0> {
         let mut x_coord = [default_node.x_coord; L];
         for i in 0..L {
@@ -301,6 +308,7 @@ impl<
         RootNode {
             commitments: [node.commitment],
             x_coord_children: vec![x_coord],
+            height,
         }
     }
 
